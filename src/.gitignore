@@ -1,9 +1,0 @@
-node_modules
-.env
-*.db
-*.db-journal
-backend/data/*.db
-frontend/dist
-coverage
-npm-debug.log*
-.DS_Store
