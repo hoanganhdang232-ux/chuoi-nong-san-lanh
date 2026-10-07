@@ -138,88 +138,69 @@ export function getBatchGenealogy(batchId, organizationId, isAuditor) {
           "SELECT * FROM batches WHERE organization_id = ? ORDER BY id ASC",
         )
         .all(organizationId);
+  const byId = new Map(allBatches.map((item) => [item.id, item]));
+  const relationRows = db
+    .prepare("SELECT parent_batch_id, child_batch_id FROM batch_relations")
+    .all();
+  const parents = new Map();
+  const children = new Map();
+  for (const batch of allBatches) {
+    const legacyParents = [batch.parent_batch_id, ...parseBatchIds(batch.source_batch_ids)].filter(Boolean);
+    parents.set(batch.id, [...new Set(legacyParents)]);
+    children.set(batch.id, []);
+  }
+  for (const relation of relationRows) {
+    if (!byId.has(relation.parent_batch_id) || !byId.has(relation.child_batch_id)) continue;
+    parents.set(relation.child_batch_id, [...new Set([...(parents.get(relation.child_batch_id) || []), relation.parent_batch_id])]);
+  }
+  for (const [childId, parentIds] of parents) {
+    for (const parentId of parentIds) {
+      if (children.has(parentId)) children.get(parentId).push(childId);
+    }
+  }
+  const toView = (batch) => ({
+    id: batch.id, batch_code: batch.batch_code, product_id: batch.product_id,
+    organization_id: batch.organization_id, status: batch.status,
+    remaining_quantity: batch.remaining_quantity, parent_batch_id: batch.parent_batch_id,
+    source_batch_ids: parseBatchIds(batch.source_batch_ids),
+  });
   const ancestors = [];
-  const seenAncestors = new Set();
-  const visitedForward = new Set();
   const descendants = [];
-
-  function walkAncestors(currentId) {
-    if (!currentId || seenAncestors.has(currentId)) return;
-
-    const batch = allBatches.find((item) => item.id === currentId);
-    if (!batch) return;
-    seenAncestors.add(currentId);
-
-    if (batch.parent_batch_id) {
-      walkAncestors(batch.parent_batch_id);
-    }
-
-    for (const sourceId of parseBatchIds(batch.source_batch_ids)) {
-      walkAncestors(sourceId);
-    }
-
-    ancestors.push({
-      id: batch.id,
-      batch_code: batch.batch_code,
-      product_id: batch.product_id,
-      organization_id: batch.organization_id,
-      status: batch.status,
-      remaining_quantity: batch.remaining_quantity,
-      parent_batch_id: batch.parent_batch_id,
-      source_batch_ids: parseBatchIds(batch.source_batch_ids),
-    });
-  }
-
-  function walkDescendants(currentId) {
-    if (!currentId || visitedForward.has(currentId)) return;
-    visitedForward.add(currentId);
-
-    const directChildren = allBatches.filter(
-      (item) => item.parent_batch_id === currentId,
-    );
-
-    const mergedChildren = allBatches.filter((item) =>
-      parseBatchIds(item.source_batch_ids).includes(currentId),
-    );
-
-    const children = [...directChildren, ...mergedChildren].filter(
-      (item, index, list) =>
-        list.findIndex((entry) => entry.id === item.id) === index,
-    );
-
-    for (const child of children) {
-      descendants.push({
-        id: child.id,
-        batch_code: child.batch_code,
-        product_id: child.product_id,
-        organization_id: child.organization_id,
-        status: child.status,
-        remaining_quantity: child.remaining_quantity,
-        parent_batch_id: child.parent_batch_id,
-        source_batch_ids: parseBatchIds(child.source_batch_ids),
-      });
-      walkDescendants(child.id);
+  let cycleDetected = false;
+  const ancestorSeen = new Set([rootBatch.id]);
+  ancestors.push(toView(rootBatch));
+  const ancestorQueue = [{ id: rootBatch.id, path: new Set([rootBatch.id]) }];
+  while (ancestorQueue.length) {
+    const current = ancestorQueue.shift();
+    for (const parentId of parents.get(current.id) || []) {
+      if (current.path.has(parentId)) { cycleDetected = true; continue; }
+      const parent = byId.get(parentId);
+      if (!parent) continue;
+      if (!ancestorSeen.has(parentId)) {
+        ancestorSeen.add(parentId);
+        ancestors.push(toView(parent));
+      }
+      ancestorQueue.push({ id: parentId, path: new Set([...current.path, parentId]) });
     }
   }
-
-  walkAncestors(rootBatch.id);
-  walkDescendants(rootBatch.id);
-
-  const dedupedAncestors = ancestors.filter(
-    (item, index, list) =>
-      list.findIndex((entry) => entry.id === item.id) === index,
-  );
-  const dedupedDescendants = descendants.filter(
-    (item, index, list) =>
-      list.findIndex((entry) => entry.id === item.id) === index,
-  );
+  const descendantSeen = new Set([rootBatch.id]);
+  const descendantQueue = [rootBatch.id];
+  while (descendantQueue.length) {
+    const currentId = descendantQueue.shift();
+    for (const childId of children.get(currentId) || []) {
+      if (descendantSeen.has(childId)) { cycleDetected = true; continue; }
+      descendantSeen.add(childId);
+      const child = byId.get(childId);
+      if (child) { descendants.push(toView(child)); descendantQueue.push(childId); }
+    }
+  }
 
   return {
     batch: getBatchWithEvents(rootBatch.id, organizationId, isAuditor),
-    ancestors: dedupedAncestors,
-    descendants: dedupedDescendants,
-    roots: dedupedAncestors.filter((item) => !item.parent_batch_id),
-    cycleDetected: false,
+    ancestors,
+    descendants,
+    roots: ancestors.filter((item) => (parents.get(item.id) || []).length === 0),
+    cycleDetected,
   };
 }
 

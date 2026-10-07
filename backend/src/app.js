@@ -8,6 +8,7 @@ import transferRoutes from "./routes/transferRoutes.js";
 import featureRoutes from "./routes/featureRoutes.js";
 import { runMigrations } from "./db/migrations.js";
 import { ensureDemoFarmerAccount } from "./db/seed.js";
+import { processOverdueTransfers } from "./services/transferService.js";
 
 const frontendDistPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -46,5 +47,10 @@ export function createApp() {
 
   runMigrations();
   ensureDemoFarmerAccount();
+  // Run once at startup and then hourly. The interval is intentionally
+  // unref'd so it never prevents tests or a graceful server shutdown.
+  processOverdueTransfers();
+  const overdueTimer = setInterval(processOverdueTransfers, 60 * 60 * 1000);
+  overdueTimer.unref?.();
   return app;
 }

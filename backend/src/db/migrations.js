@@ -100,10 +100,22 @@ export function runMigrations() {
       reason TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      overdue_notified_at TEXT,
       FOREIGN KEY (batch_id) REFERENCES batches(id),
       FOREIGN KEY (from_organization_id) REFERENCES organizations(id),
       FOREIGN KEY (to_organization_id) REFERENCES organizations(id),
       FOREIGN KEY (requester_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS batch_relations (
+      parent_batch_id INTEGER NOT NULL,
+      child_batch_id INTEGER NOT NULL,
+      relation_type TEXT NOT NULL CHECK(relation_type IN ('split', 'merge')),
+      quantity REAL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (parent_batch_id, child_batch_id),
+      FOREIGN KEY (parent_batch_id) REFERENCES batches(id),
+      FOREIGN KEY (child_batch_id) REFERENCES batches(id)
     );
 
     CREATE TABLE IF NOT EXISTS temperature_logs (
@@ -305,6 +317,13 @@ export function runMigrations() {
     .prepare("PRAGMA table_info(batches)")
     .all()
     .map((column) => column.name);
+  const transferColumns = db
+    .prepare("PRAGMA table_info(batch_transfers)")
+    .all()
+    .map((column) => column.name);
+  if (!transferColumns.includes("overdue_notified_at")) {
+    db.exec("ALTER TABLE batch_transfers ADD COLUMN overdue_notified_at TEXT");
+  }
   if (!refreshedBatchColumns.includes("cold_chain_alert")) {
     db.exec(
       "ALTER TABLE batches ADD COLUMN cold_chain_alert INTEGER NOT NULL DEFAULT 0",
@@ -337,6 +356,8 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_temperature_logs_batch_time ON temperature_logs(batch_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_recall_items_batch ON recall_items(batch_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read_at);
+    CREATE INDEX IF NOT EXISTS idx_batch_relations_parent ON batch_relations(parent_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_batch_relations_child ON batch_relations(child_batch_id);
 
     CREATE TRIGGER IF NOT EXISTS event_logs_prevent_update
     BEFORE UPDATE ON event_logs

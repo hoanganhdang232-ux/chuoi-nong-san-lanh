@@ -114,3 +114,58 @@ export function decideTransfer({
     .get(transfer.batch_id);
   return { batch, event, transferStatus: nextStatus };
 }
+
+/** Mark pending handovers older than 48 hours and notify both parties once. */
+export function processOverdueTransfers() {
+  const db = getDb();
+  const transfers = db
+    .prepare(
+      `SELECT bt.*, b.batch_code
+       FROM batch_transfers bt
+       INNER JOIN batches b ON b.id = bt.batch_id
+       WHERE bt.status = 'pending'
+         AND bt.overdue_notified_at IS NULL
+         AND bt.created_at <= datetime('now', '-48 hours')`,
+    )
+    .all();
+
+  const insertNotification = db.prepare(
+    `INSERT INTO notifications(user_id, organization_id, kind, title, message)
+     SELECT id, organization_id, ?, ?, ?
+     FROM users
+     WHERE organization_id = ? AND is_active = 1`,
+  );
+  const markOverdue = db.prepare(
+    "UPDATE batch_transfers SET overdue_notified_at = CURRENT_TIMESTAMP WHERE id = ?",
+  );
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    for (const transfer of transfers) {
+      const title = "Bàn giao quá hạn";
+      const message = `Bàn giao lô ${transfer.batch_code} đã chờ quá 48 giờ.`;
+      insertNotification.run(
+        "overdue_handover",
+        title,
+        message,
+        transfer.from_organization_id,
+      );
+      insertNotification.run(
+        "overdue_handover",
+        title,
+        message,
+        transfer.to_organization_id,
+      );
+      markOverdue.run(transfer.id);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  if (transfers.length > 0) {
+    console.info(`[overdue-transfers] processed=${transfers.length}`);
+  }
+  return { processed: transfers.length };
+}

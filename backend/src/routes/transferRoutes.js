@@ -4,16 +4,22 @@ import { authenticateToken, requireRole } from "../middleware/auth.js";
 import {
   createTransferRequest,
   decideTransfer,
+  processOverdueTransfers,
 } from "../services/transferService.js";
 
 const router = Router();
 router.use(authenticateToken);
 
+router.post("/overdue/process", requireRole("farm_admin", "processor_admin", "distributor_admin", "auditor"), (req, res) => {
+  res.json(processOverdueTransfers());
+});
+
 router.get("/requests", (req, res) => {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT bt.*, b.batch_code, o_from.name AS from_organization_name, o_to.name AS to_organization_name
+      `SELECT bt.*, b.batch_code, o_from.name AS from_organization_name, o_to.name AS to_organization_name,
+         CASE WHEN bt.status = 'pending' AND bt.created_at <= datetime('now', '-48 hours') THEN 1 ELSE 0 END AS is_overdue
        FROM batch_transfers bt
        INNER JOIN batches b ON b.id = bt.batch_id
        INNER JOIN organizations o_from ON o_from.id = bt.from_organization_id

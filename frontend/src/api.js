@@ -31,6 +31,7 @@ export const api = {
   getDashboard: () => request("/auth/dashboard"),
   getBatches: () => request("/batches"),
   getBatch: (batchId) => request(`/batches/${batchId}`),
+  getBatchSummary: (batchId) => request(`/batches/${batchId}/summary`),
   getProducts: () => request("/batches/products"),
   getLandPlots: () => request("/batches/land-plots"),
   createLandPlot: (payload) =>

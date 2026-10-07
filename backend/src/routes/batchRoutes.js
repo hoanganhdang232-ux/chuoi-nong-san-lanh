@@ -21,23 +21,44 @@ router.use(authenticateToken);
 
 router.get("/", (req, res) => {
   const db = getDb();
+  const cursor = Number.isSafeInteger(Number(req.query.cursor))
+    ? Number(req.query.cursor)
+    : null;
+  const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
+  const hasPagination = cursor !== null || req.query.limit || req.query.search || req.query.productId;
+  const search = String(req.query.search || "").trim().toLowerCase();
+  const productId = Number(req.query.productId);
   const query =
     req.user.role === "auditor"
       ? `SELECT b.*, p.name AS product_name, o.name AS organization_name
        FROM batches b
        INNER JOIN products p ON p.id = b.product_id
-       INNER JOIN organizations o ON o.id = b.organization_id`
+       INNER JOIN organizations o ON o.id = b.organization_id
+       WHERE 1 = 1`
       : `SELECT b.*, p.name AS product_name, o.name AS organization_name
        FROM batches b
        INNER JOIN products p ON p.id = b.product_id
        INNER JOIN organizations o ON o.id = b.organization_id
        WHERE b.organization_id = ?`;
-
-  const rows =
-    req.user.role === "auditor"
-      ? db.prepare(query).all()
-      : db.prepare(query).all(req.user.organization_id);
-  res.json(rows);
+  const params = req.user.role === "auditor" ? [] : [req.user.organization_id];
+  let filteredQuery = `${query} AND (? = '' OR lower(b.batch_code) LIKE '%' || ? || '%')`;
+  params.push(search, search);
+  if (Number.isSafeInteger(productId) && productId > 0) {
+    filteredQuery += " AND b.product_id = ?";
+    params.push(productId);
+  }
+  if (cursor !== null && cursor > 0) {
+    filteredQuery += " AND b.id < ?";
+    params.push(cursor);
+  }
+  filteredQuery += " ORDER BY b.id DESC";
+  if (hasPagination) {
+    const rows = db.prepare(`${filteredQuery} LIMIT ?`).all(...params, limit + 1);
+    const hasMore = rows.length > limit;
+    const items = rows.slice(0, limit);
+    return res.json({ items, nextCursor: hasMore ? items[items.length - 1].id : null, hasMore });
+  }
+  res.json(db.prepare(filteredQuery).all(...params));
 });
 
 router.post("/harvest", requireRole("farm_admin"), (req, res) => {
@@ -210,7 +231,8 @@ router.get("/transfer-requests", (req, res) => {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT bt.*, b.batch_code, o_from.name AS from_organization_name, o_to.name AS to_organization_name
+      `SELECT bt.*, b.batch_code, o_from.name AS from_organization_name, o_to.name AS to_organization_name,
+         CASE WHEN bt.status = 'pending' AND bt.created_at <= datetime('now', '-48 hours') THEN 1 ELSE 0 END AS is_overdue
        FROM batch_transfers bt
        INNER JOIN batches b ON b.id = bt.batch_id
        INNER JOIN organizations o_from ON o_from.id = bt.from_organization_id
@@ -299,6 +321,11 @@ router.post(
         const childBatch = db
           .prepare("SELECT * FROM batches WHERE id = ?")
           .get(insertResult.lastInsertRowid);
+
+        db.prepare(
+          `INSERT OR IGNORE INTO batch_relations(parent_batch_id, child_batch_id, relation_type, quantity)
+           VALUES (?, ?, 'split', ?)`,
+        ).run(batch.id, childBatch.id, quantity);
 
         createEventLog({
           batchId: batch.id,
@@ -460,6 +487,13 @@ router.post(
 
       for (const batch of sourceBatches) {
         db.prepare(
+          `INSERT OR IGNORE INTO batch_relations(parent_batch_id, child_batch_id, relation_type, quantity)
+           VALUES (?, ?, 'merge', ?)`,
+        ).run(batch.id, newBatchId, Number(batch.remaining_quantity || 0));
+      }
+
+      for (const batch of sourceBatches) {
+        db.prepare(
           "UPDATE batches SET remaining_quantity = 0, status = 'processed', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         ).run(batch.id);
 
@@ -532,6 +566,32 @@ router.get("/:id/genealogy", authenticateToken, (req, res) => {
     req.user.role === "auditor",
   );
   return res.json(genealogy);
+});
+
+router.get("/:id/summary", (req, res) => {
+  const db = getDb();
+  const batchId = Number(req.params.id);
+  const batch = db.prepare(
+    `SELECT b.*, p.name AS product_name, o.name AS organization_name,
+       f.name AS farm_name, (SELECT COUNT(*) FROM event_logs e WHERE e.batch_id = b.id) AS events_count
+     FROM batches b
+     INNER JOIN products p ON p.id = b.product_id
+     INNER JOIN organizations o ON o.id = b.organization_id
+     LEFT JOIN farms f ON f.id = b.source_farm_id
+     WHERE b.id = ?`,
+  ).get(batchId);
+  if (!batch || (req.user.role !== "auditor" && batch.organization_id !== req.user.organization_id)) {
+    return res.status(404).json({ message: "Không tìm thấy lô hàng." });
+  }
+  const relations = db.prepare(
+    `SELECT r.relation_type, r.quantity, r.parent_batch_id, r.child_batch_id,
+       p.batch_code AS parent_batch_code, c.batch_code AS child_batch_code
+     FROM batch_relations r
+     INNER JOIN batches p ON p.id = r.parent_batch_id
+     INNER JOIN batches c ON c.id = r.child_batch_id
+     WHERE r.parent_batch_id = ? OR r.child_batch_id = ?`,
+  ).all(batchId, batchId);
+  return res.json({ ...batch, parentRelations: relations.filter((r) => r.child_batch_id === batchId), childRelations: relations.filter((r) => r.parent_batch_id === batchId) });
 });
 
 router.get("/:id/integrity", authenticateToken, (req, res) => {
