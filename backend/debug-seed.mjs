@@ -2,6 +2,10 @@ import { getDb } from "./src/db/database.js";
 import { runMigrations } from "./src/db/migrations.js";
 const db = getDb();
 
+db.exec(`
+  DROP TRIGGER IF EXISTS event_logs_prevent_update;
+  DROP TRIGGER IF EXISTS event_logs_prevent_delete;
+`);
 db.exec("DELETE FROM event_logs");
 db.exec("DELETE FROM batches");
 db.exec("DELETE FROM products");

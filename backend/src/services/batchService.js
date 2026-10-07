@@ -58,6 +58,33 @@ export function createEventLog({
   return { eventId: result.lastInsertRowid, previousHash, currentHash };
 }
 
+export function verifyEventChain(events) {
+  const invalidEventIds = [];
+  let previousHash = GENESIS_HASH;
+
+  for (const event of events) {
+    const expectedHash = generateEventHash({
+      previousHash: event.previous_hash,
+      batchId: event.batch_id,
+      eventType: event.event_type,
+      dataJson: event.data_json,
+      timestamp: event.timestamp,
+    });
+    if (
+      event.previous_hash !== previousHash ||
+      event.current_hash !== expectedHash
+    ) {
+      invalidEventIds.push(event.id);
+    }
+    previousHash = event.current_hash;
+  }
+
+  return {
+    valid: invalidEventIds.length === 0,
+    invalidEventIds,
+  };
+}
+
 export function getBatchWithEvents(batchId, organizationId, isAuditor) {
   const db = getDb();
   const batch = db
@@ -104,7 +131,13 @@ export function getBatchGenealogy(batchId, organizationId, isAuditor) {
 
   if (!rootBatch) return null;
 
-  const allBatches = db.prepare("SELECT * FROM batches ORDER BY id ASC").all();
+  const allBatches = isAuditor
+    ? db.prepare("SELECT * FROM batches ORDER BY id ASC").all()
+    : db
+        .prepare(
+          "SELECT * FROM batches WHERE organization_id = ? ORDER BY id ASC",
+        )
+        .all(organizationId);
   const ancestors = [];
   const seenAncestors = new Set();
   const visitedForward = new Set();

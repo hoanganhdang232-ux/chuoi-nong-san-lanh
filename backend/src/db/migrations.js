@@ -337,6 +337,18 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_temperature_logs_batch_time ON temperature_logs(batch_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_recall_items_batch ON recall_items(batch_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read_at);
+
+    CREATE TRIGGER IF NOT EXISTS event_logs_prevent_update
+    BEFORE UPDATE ON event_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'event_logs are immutable');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS event_logs_prevent_delete
+    BEFORE DELETE ON event_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'event_logs are immutable');
+    END;
   `);
 
   for (const index of batchIndexes) {

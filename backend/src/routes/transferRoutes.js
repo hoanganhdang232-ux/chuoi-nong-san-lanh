@@ -63,13 +63,12 @@ router.post(
         .status(404)
         .json({ message: "Yêu cầu bàn giao không tồn tại." });
     }
-    if (
-      transfer.to_organization_id !== req.user.organization_id &&
-      transfer.from_organization_id !== req.user.organization_id
-    ) {
+    if (transfer.to_organization_id !== req.user.organization_id) {
       return res
         .status(403)
-        .json({ message: "Bạn không có quyền xử lý yêu cầu này." });
+        .json({
+          message: "Chỉ tổ chức nhận lô hàng mới được xử lý yêu cầu này.",
+        });
     }
 
     try {
@@ -77,7 +76,7 @@ router.post(
         transferId,
         actorOrganizationId: req.user.organization_id,
         decision,
-        reason: String(reason || ""),
+        reason,
         actorId: req.user.id,
       });
       res.json({ message: "Đã xử lý yêu cầu bàn giao.", ...result });

@@ -16,6 +16,10 @@ const db = getDb();
 function resetDatabase() {
   runMigrations();
   db.exec("PRAGMA foreign_keys = OFF;");
+  db.exec(`
+    DROP TRIGGER IF EXISTS event_logs_prevent_update;
+    DROP TRIGGER IF EXISTS event_logs_prevent_delete;
+  `);
   for (const table of [
     "notifications",
     "recall_items",
@@ -180,10 +184,21 @@ test("recall traces all split and merge descendants once and notifies affected p
 
   assert.equal(response.status, 201);
   const report = await response.json();
-  assert.equal(report.items.length, 12);
-  assert.equal(new Set(report.items.map((item) => item.batch_id)).size, 12);
+  assert.ok(report.items.length > 0);
+  assert.ok(report.items.length < 12);
+  assert.ok(
+    report.items.every(
+      (item) => item.organization_id === farm.organization_id,
+    ),
+  );
   assert.ok(report.items.every((item) => item.status === "recalled"));
-  assert.equal(report.totals.consumedQuantity, 80);
+  assert.equal(
+    report.totals.consumedQuantity,
+    report.items.reduce(
+      (total, item) => total + Number(item.consumed_quantity),
+      0,
+    ),
+  );
   const scopedReportsResponse = await fetch(`${baseUrl}/recalls`, {
     headers: authHeaders(farm),
   });
@@ -194,6 +209,13 @@ test("recall traces all split and merge descendants once and notifies affected p
       (item) => item.organization_id === farm.organization_id,
     ),
   );
+  const auditor = findUserByEmail("auditor@agritrace.demo");
+  const auditorReportsResponse = await fetch(`${baseUrl}/recalls`, {
+    headers: authHeaders(auditor),
+  });
+  assert.equal(auditorReportsResponse.status, 200);
+  const auditorReports = await auditorReportsResponse.json();
+  assert.equal(auditorReports[0].items.length, 12);
   assert.ok(
     db
       .prepare(
@@ -245,10 +267,12 @@ test("audit report exports hash verification and enforces organization scope", a
   assert.ok(report.integrity.checkedAt);
   assert.equal(report.integrity.checkedEvents, report.events.length);
 
+  db.exec("DROP TRIGGER IF EXISTS event_logs_prevent_update;");
   db.prepare("UPDATE event_logs SET data_json = ? WHERE batch_id = ?").run(
     '{"tampered":true}',
     batch.id,
   );
+  runMigrations();
   const tampered = await fetch(`${baseUrl}/auditor/reports/${batch.id}`, {
     headers: authHeaders(auditor),
   });

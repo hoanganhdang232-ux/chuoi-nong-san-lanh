@@ -69,11 +69,15 @@ export function decideTransfer({
   if (!["confirmed", "rejected"].includes(decision)) {
     throw new Error("Quyết định không hợp lệ.");
   }
+  if (typeof reason !== "string" || !reason.trim()) {
+    throw new Error("Vui lòng nhập lý do xác nhận hoặc từ chối bàn giao.");
+  }
+  const decisionReason = reason.trim();
 
   const nextStatus = decision === "confirmed" ? "confirmed" : "rejected";
   db.prepare(
     `UPDATE batch_transfers SET status = ?, reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-  ).run(nextStatus, reason || null, transferId);
+  ).run(nextStatus, decisionReason, transferId);
 
   if (decision === "confirmed") {
     db.prepare(
@@ -96,7 +100,7 @@ export function decideTransfer({
       from_organization_id: transfer.from_organization_id,
       to_organization_id: transfer.to_organization_id,
       decision,
-      reason: reason || null,
+      reason: decisionReason,
       previous_owner_id: transfer.current_owner_id,
       new_owner_id:
         decision === "confirmed"

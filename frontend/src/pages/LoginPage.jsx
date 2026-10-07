@@ -10,20 +10,27 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 export default function LoginPage() {
   const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleDemoLogin = async (email, password) => {
+  const handleLogin = async (loginEmail, loginPassword) => {
     setError("");
     setIsSubmitting(true);
 
     try {
-      await login(email, password);
+      await login(loginEmail, loginPassword);
     } catch (loginError) {
       setError(loginError.message);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    void handleLogin(email, password);
   };
 
   return (
@@ -78,20 +85,59 @@ export default function LoginPage() {
                 Đăng nhập
               </p>
               <h2 className="mt-2 text-3xl font-bold text-slate-900">
-                Chọn vai trò để tiếp tục
+                Đăng nhập tài khoản
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                Chọn Quản trị viên hoặc Farmer.
+                Nhập email và mật khẩu để tiếp tục.
               </p>
             </div>
 
             <div className="space-y-4">
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                <label className="block text-sm font-medium text-slate-700">
+                  Email
+                  <input
+                    autoComplete="username"
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    disabled={isSubmitting}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                    type="email"
+                    value={email}
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Mật khẩu
+                  <input
+                    autoComplete="current-password"
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    disabled={isSubmitting}
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    type="password"
+                    value={password}
+                  />
+                </label>
+                <button
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isSubmitting}
+                  type="submit"
+                >
+                  {isSubmitting ? "Đang đăng nhập..." : "Đăng nhập"}
+                  {!isSubmitting && <ArrowRight size={18} />}
+                </button>
+              </form>
+
+              <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" />
+                Hoặc dùng tài khoản demo
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+
               <button
                 type="button"
                 disabled={isSubmitting}
-                onClick={() =>
-                  handleDemoLogin("farm@agritrace.demo", "Farm@123")
-                }
+                onClick={() => handleLogin("farm@agritrace.demo", "Farm@123")}
                 className="flex w-full items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-emerald-500 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white">
@@ -115,9 +161,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 disabled={isSubmitting}
-                onClick={() =>
-                  handleDemoLogin("user@agritrace.demo", "User@123")
-                }
+                onClick={() => handleLogin("user@agritrace.demo", "User@123")}
                 className="flex w-full items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-emerald-500 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800">

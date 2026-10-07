@@ -1,11 +1,18 @@
 import express from "express";
 import cors from "cors";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import authRoutes from "./routes/authRoutes.js";
 import batchRoutes from "./routes/batchRoutes.js";
 import transferRoutes from "./routes/transferRoutes.js";
 import featureRoutes from "./routes/featureRoutes.js";
 import { runMigrations } from "./db/migrations.js";
 import { ensureDemoFarmerAccount } from "./db/seed.js";
+
+const frontendDistPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../frontend/dist",
+);
 
 export function createApp() {
   const app = express();
@@ -22,7 +29,17 @@ export function createApp() {
   app.use("/api/transfers", transferRoutes);
   app.use("/api/features", featureRoutes);
 
-  app.use((err, req, res, next) => {
+  app.use("/api", (req, res) => {
+    res.status(404).json({ message: "Không tìm thấy API." });
+  });
+  app.use(express.static(frontendDistPath));
+  app.get("/{*splat}", (req, res, next) => {
+    res.sendFile(resolve(frontendDistPath, "index.html"), (error) => {
+      if (error) next(error);
+    });
+  });
+
+  app.use((err, req, res, _next) => {
     console.error(err);
     res.status(500).json({ message: "Đã xảy ra lỗi máy chủ." });
   });

@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Siren,
   Thermometer,
-  Warehouse,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import { api } from "../api.js";
@@ -147,7 +146,12 @@ export default function DashboardPage() {
   const handleSelectBatch = async (batchId) => {
     const batch = filteredBatches.find((item) => item.id === batchId);
     if (!batch) return;
-    setSelectedBatch(batch);
+    try {
+      setSelectedBatch(await api.getBatch(batchId));
+    } catch (loadError) {
+      setSelectedBatch(batch);
+      setSubmission({ message: loadError.message, tone: "error" });
+    }
   };
 
   const handleLandPlotSubmit = async (event) => {
@@ -203,10 +207,29 @@ export default function DashboardPage() {
   };
 
   const handleTransferDecision = async (transferId, decision) => {
+    const defaultReason =
+      decision === "confirmed"
+        ? "Đã kiểm tra và nhận đủ lô hàng."
+        : "Lô hàng không đạt tiêu chuẩn.";
+    const reason = window.prompt(
+      decision === "confirmed"
+        ? "Nhập lý do xác nhận bàn giao:"
+        : "Nhập lý do từ chối bàn giao:",
+      defaultReason,
+    );
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setSubmission({
+        message: "Vui lòng nhập lý do trước khi xử lý bàn giao.",
+        tone: "error",
+      });
+      return;
+    }
+
     try {
       await api.decideTransfer(transferId, {
         decision,
-        reason: decision === "rejected" ? "Không đạt tiêu chuẩn." : "",
+        reason: reason.trim(),
       });
       await loadData();
       setSubmission({

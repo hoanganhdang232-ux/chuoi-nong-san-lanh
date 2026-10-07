@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? "http://localhost:3001/api" : "/api");
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("agritrace_token");
@@ -28,6 +30,7 @@ export const api = {
   getMe: () => request("/auth/me"),
   getDashboard: () => request("/auth/dashboard"),
   getBatches: () => request("/batches"),
+  getBatch: (batchId) => request(`/batches/${batchId}`),
   getProducts: () => request("/batches/products"),
   getLandPlots: () => request("/batches/land-plots"),
   createLandPlot: (payload) =>

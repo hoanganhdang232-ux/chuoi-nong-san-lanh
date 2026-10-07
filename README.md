@@ -22,6 +22,12 @@ Mặc định:
 - Backend: http://localhost:3001
 - API health: http://localhost:3001/api/health
 
+## Staging trên Render
+
+Staging dùng một Render Web Service để phục vụ frontend và API cùng domain, với persistent disk cho SQLite. Tạo service từ `render.yaml` trên Render và kết nối repo này. Trong Settings của service, tạo Deploy Hook rồi lưu URL đó trong GitHub repository secret `RENDER_DEPLOY_HOOK_URL`.
+
+Workflow CI chạy lint, test và build trên pull request cũng như khi push lên `main`. Khi CI của một commit trên `main` thành công, GitHub Actions gọi Deploy Hook để cập nhật staging. Hãy đặt check `Lint, test, and build` thành required status check trong branch protection của `main` nếu muốn chặn merge khi CI đỏ.
+
 ## Tài khoản demo
 
 - Auditor: auditor@agritrace.demo / Auditor@123

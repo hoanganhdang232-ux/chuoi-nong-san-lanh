@@ -15,6 +15,10 @@ const db = getDb();
 
 function resetDatabase() {
   runMigrations();
+  db.exec(`
+    DROP TRIGGER IF EXISTS event_logs_prevent_update;
+    DROP TRIGGER IF EXISTS event_logs_prevent_delete;
+  `);
   db.exec("PRAGMA foreign_keys = OFF;");
   db.exec("DELETE FROM event_logs");
   db.exec("DELETE FROM batch_transfers");
@@ -52,6 +56,18 @@ test("creates a harvest batch with auto-generated unique code and validates inpu
       "SELECT id FROM land_plots WHERE farm_id = (SELECT id FROM farms WHERE organization_id = ?) LIMIT 1",
     )
     .get(farm.organization_id);
+  const farmProduct = db
+    .prepare("SELECT id FROM products WHERE organization_id = ? LIMIT 1")
+    .get(farm.organization_id);
+  const processor = findUserByEmail("processor@agritrace.demo");
+  const processorProductId = db
+    .prepare(
+      "INSERT INTO products(organization_id, name, unit) VALUES (?, ?, ?)",
+    )
+    .run(processor.organization_id, "Không thuộc tổ chức", "kg").lastInsertRowid;
+  const initialBatchCount = db
+    .prepare("SELECT COUNT(*) AS count FROM batches")
+    .get().count;
   const response = await fetch(`${baseUrl}/api/batches/harvest`, {
     method: "POST",
     headers: {
@@ -60,7 +76,7 @@ test("creates a harvest batch with auto-generated unique code and validates inpu
     },
     body: JSON.stringify({
       landPlotId: plot.id,
-      productId: 1,
+      productId: farmProduct.id,
       quantityKg: 125,
       harvestedAt: new Date().toISOString(),
     }),
@@ -74,21 +90,68 @@ test("creates a harvest batch with auto-generated unique code and validates inpu
   assert.match(result.batch.events[0].previous_hash, /^GENESIS_/);
   assert.equal(result.batch.events[0].event_type, "batch_harvested");
 
-  const invalidResponse = await fetch(`${baseUrl}/api/batches/harvest`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  const eventCountAfterValidHarvest = db
+    .prepare("SELECT COUNT(*) AS count FROM event_logs")
+    .get().count;
+  const invalidPayloads = [
+    {
       landPlotId: plot.id,
-      productId: 1,
+      productId: farmProduct.id,
       quantityKg: 0,
+      harvestedAt: new Date().toISOString(),
+    },
+    {
+      landPlotId: true,
+      productId: farmProduct.id,
+      quantityKg: 10,
+      harvestedAt: new Date().toISOString(),
+    },
+    {
+      landPlotId: plot.id,
+      productId: farmProduct.id,
+      quantityKg: "Infinity",
+      harvestedAt: new Date().toISOString(),
+    },
+    {
+      landPlotId: plot.id,
+      productId: processorProductId,
+      quantityKg: 10,
+      harvestedAt: new Date().toISOString(),
+    },
+    {
+      landPlotId: plot.id,
+      productId: farmProduct.id,
+      quantityKg: 10,
+      harvestedAt: "not-a-date",
+    },
+    {
+      landPlotId: plot.id,
+      productId: farmProduct.id,
+      quantityKg: 10,
       harvestedAt: new Date(Date.now() + 86400000).toISOString(),
-    }),
-  });
+    },
+  ];
 
-  assert.equal(invalidResponse.status, 400);
+  for (const payload of invalidPayloads) {
+    const invalidResponse = await fetch(`${baseUrl}/api/batches/harvest`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    assert.equal(invalidResponse.status, 400);
+  }
+
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM batches").get().count,
+    initialBatchCount + 1,
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM event_logs").get().count,
+    eventCountAfterValidHarvest,
+  );
 });
 
 test("lists transfer requests without conflicting with the batch id route", async () => {
@@ -163,6 +226,51 @@ test("creates transfer request, confirms it, and records a new chain event", asy
     .get(batch.id);
   assert.equal(pendingBatch.status, "pending_confirmation");
 
+  const senderDecision = await fetch(
+    `${baseUrl}/api/batches/transfer-requests/${request.id}/decision`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${farmToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        decision: "confirmed",
+        reason: "Bên gửi không được quyết định",
+      }),
+    },
+  );
+  assert.equal(senderDecision.status, 403);
+
+  const alternateSenderDecision = await fetch(
+    `${baseUrl}/api/transfers/transfer-requests/${request.id}/decision`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${farmToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        decision: "confirmed",
+        reason: "Bên gửi không được quyết định",
+      }),
+    },
+  );
+  assert.equal(alternateSenderDecision.status, 403);
+
+  const decisionWithoutReason = await fetch(
+    `${baseUrl}/api/transfers/transfer-requests/${request.id}/decision`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${processorToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ decision: "confirmed" }),
+    },
+  );
+  assert.equal(decisionWithoutReason.status, 400);
+
   const confirmResponse = await fetch(
     `${baseUrl}/api/batches/transfer-requests/${request.id}/decision`,
     {
@@ -171,7 +279,10 @@ test("creates transfer request, confirms it, and records a new chain event", asy
         Authorization: `Bearer ${processorToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ decision: "confirmed", reason: "" }),
+      body: JSON.stringify({
+        decision: "confirmed",
+        reason: "Đã kiểm tra và nhận đủ lô hàng.",
+      }),
     },
   );
 
@@ -181,15 +292,36 @@ test("creates transfer request, confirms it, and records a new chain event", asy
 
   const confirmedEvent = db
     .prepare(
-      "SELECT event_type FROM event_logs WHERE batch_id = ? ORDER BY id DESC LIMIT 1",
+      "SELECT event_type, data_json FROM event_logs WHERE batch_id = ? ORDER BY id DESC LIMIT 1",
     )
     .get(batch.id);
   assert.equal(confirmedEvent.event_type, "batch_transferred");
+  assert.equal(
+    JSON.parse(confirmedEvent.data_json).reason,
+    "Đã kiểm tra và nhận đủ lô hàng.",
+  );
+  assert.equal(
+    db
+      .prepare("SELECT reason FROM batch_transfers WHERE id = ?")
+      .get(request.id).reason,
+    "Đã kiểm tra và nhận đủ lô hàng.",
+  );
 
   const eventCount = db
     .prepare("SELECT COUNT(*) AS total FROM event_logs WHERE batch_id = ?")
     .get(batch.id).total;
   assert.ok(eventCount >= 2);
+
+  const integrityResponse = await fetch(
+    `${baseUrl}/api/batches/${batch.id}/integrity`,
+    {
+      headers: { Authorization: `Bearer ${processorToken}` },
+    },
+  );
+  assert.equal(integrityResponse.status, 200);
+  const integrity = await integrityResponse.json();
+  assert.equal(integrity.valid, true);
+  assert.equal(integrity.broken, false);
 });
 
 test("rejects transfer with a reason and exposes an integrity violation when an event hash is tampered with", async () => {
@@ -245,6 +377,7 @@ test("rejects transfer with a reason and exposes an integrity violation when an 
   const tamperedHash = sha256(
     `${event.previous_hash}|${event.event_type}|${JSON.stringify({ tampered: true })}|${event.actor_id}|${tamperedTimestamp}`,
   );
+  db.exec("DROP TRIGGER IF EXISTS event_logs_prevent_update;");
   db.prepare(
     "UPDATE event_logs SET data_json = ?, timestamp = ?, current_hash = ? WHERE id = ?",
   ).run(
@@ -253,6 +386,7 @@ test("rejects transfer with a reason and exposes an integrity violation when an 
     tamperedHash,
     event.id,
   );
+  runMigrations();
 
   const integrityResponse = await fetch(
     `${baseUrl}/api/batches/${batch.id}/integrity`,
@@ -265,6 +399,23 @@ test("rejects transfer with a reason and exposes an integrity violation when an 
   assert.equal(integrity.valid, false);
   assert.ok(integrity.invalidEventIds.includes(event.id));
   assert.equal(integrity.broken, true);
+});
+
+test("recorded events cannot be updated or deleted", () => {
+  const event = db.prepare("SELECT id FROM event_logs LIMIT 1").get();
+  assert.ok(event);
+
+  assert.throws(
+    () =>
+      db
+        .prepare("UPDATE event_logs SET event_type = 'edited' WHERE id = ?")
+        .run(event.id),
+    /event_logs are immutable/,
+  );
+  assert.throws(
+    () => db.prepare("DELETE FROM event_logs WHERE id = ?").run(event.id),
+    /event_logs are immutable/,
+  );
 });
 
 test("splits one batch into children and exposes genealogy ancestry", async () => {
@@ -348,6 +499,27 @@ test("merges multiple batches into a new batch and records lineage", async () =>
     9,
     "registered",
   );
+  const processor = findUserByEmail("processor@agritrace.demo");
+  const processorProductId = db
+    .prepare(
+      "INSERT INTO products(organization_id, name, unit) VALUES (?, ?, ?)",
+    )
+    .run(processor.organization_id, "Sản phẩm tổ chức khác", "kg").lastInsertRowid;
+  const crossOrganizationProductResponse = await fetch(
+    `${baseUrl}/api/batches/merge`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        batchIds: [batchA.id, batchB.lastInsertRowid],
+        productId: processorProductId,
+      }),
+    },
+  );
+  assert.equal(crossOrganizationProductResponse.status, 400);
 
   const mergeResponse = await fetch(`${baseUrl}/api/batches/merge`, {
     method: "POST",

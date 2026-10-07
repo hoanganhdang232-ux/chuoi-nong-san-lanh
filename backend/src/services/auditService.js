@@ -1,8 +1,15 @@
 import { getDb } from "../db/database.js";
-import { GENESIS_HASH, generateEventHash } from "../utils/hash.js";
-import { getBatchGenealogy, parseBatchIds } from "./batchService.js";
+import {
+  getBatchGenealogy,
+  parseBatchIds,
+  verifyEventChain,
+} from "./batchService.js";
 
-export function buildAuditReport(batchId) {
+export function buildAuditReport(
+  batchId,
+  organizationId,
+  isAuditor = false,
+) {
   const db = getDb();
   const batch = db
     .prepare(
@@ -12,9 +19,9 @@ export function buildAuditReport(batchId) {
      INNER JOIN products p ON p.id = b.product_id
      INNER JOIN organizations o ON o.id = b.organization_id
      LEFT JOIN farms f ON f.id = b.source_farm_id
-     WHERE b.id = ?`,
+     WHERE b.id = ? ${isAuditor ? "" : "AND b.organization_id = ?"}`,
     )
-    .get(batchId);
+    .get(batchId, ...(isAuditor ? [] : [organizationId]));
   if (!batch) return null;
 
   const events = db
@@ -24,31 +31,18 @@ export function buildAuditReport(batchId) {
      WHERE e.batch_id = ? ORDER BY e.id`,
     )
     .all(batchId);
-  const invalidEventIds = [];
-  let previousHash = GENESIS_HASH;
-  for (const event of events) {
-    const expectedHash = generateEventHash({
-      previousHash: event.previous_hash,
-      batchId: event.batch_id,
-      eventType: event.event_type,
-      dataJson: event.data_json,
-      timestamp: event.timestamp,
-    });
-    if (
-      event.previous_hash !== previousHash ||
-      event.current_hash !== expectedHash
-    ) {
-      invalidEventIds.push(event.id);
-    }
-    previousHash = event.current_hash;
-  }
+  const integrity = verifyEventChain(events);
 
   const temperatureLogs = db
     .prepare(
       "SELECT temperature, source, timestamp FROM temperature_logs WHERE batch_id = ? ORDER BY timestamp, id",
     )
     .all(batchId);
-  const genealogy = getBatchGenealogy(batchId, batch.organization_id, true);
+  const genealogy = getBatchGenealogy(
+    batchId,
+    organizationId,
+    isAuditor,
+  );
 
   return {
     reportType: "Agritrace traceability audit",
@@ -58,10 +52,10 @@ export function buildAuditReport(batchId) {
       source_batch_ids: parseBatchIds(batch.source_batch_ids),
     },
     integrity: {
-      valid: invalidEventIds.length === 0,
+      valid: integrity.valid,
       checkedAt: new Date().toISOString(),
       checkedEvents: events.length,
-      invalidEventIds,
+      invalidEventIds: integrity.invalidEventIds,
     },
     events,
     temperatureLogs,

@@ -42,14 +42,25 @@ router.post("/login", async (req, res) => {
 
   const isPasswordValid = await verifyPassword(password, user.password_hash);
   if (!isPasswordValid) {
-    const failedCount = Number(user.failed_login_count || 0) + 1;
-    updateLoginFailure(user.id, failedCount);
+    const failure = updateLoginFailure(user.id);
     const info = getLoginFailureInfo({
       ...user,
-      failed_login_count: failedCount,
+      failed_login_count: failure.failed_login_count,
+      locked_until: failure.locked_until,
     });
+    if (info.lockedUntil) {
+      return res.status(423).json({
+        message: "Tài khoản đã bị khóa do đăng nhập sai nhiều lần.",
+        retryAfterMinutes: Math.max(
+          1,
+          Math.ceil(
+            (new Date(info.lockedUntil).getTime() - Date.now()) / 60000,
+          ),
+        ),
+      });
+    }
     return res.status(401).json({
-      message: "Email hoặc mật khẩu không đúng.",
+      message: `Email hoặc mật khẩu không đúng. Còn lại ${info.remainingAttempts} lần thử.`,
       remainingAttempts: info.remainingAttempts,
     });
   }

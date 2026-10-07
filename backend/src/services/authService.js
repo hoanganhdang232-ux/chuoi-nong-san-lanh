@@ -25,22 +25,24 @@ export function findUserByEmail(email) {
     .get(email);
 }
 
-export function updateLoginFailure(userId, failedCount) {
+export function updateLoginFailure(userId) {
   const db = getDb();
-  const lockedUntil =
-    failedCount >= config.loginLockAttempts
-      ? new Date(Date.now() + config.loginLockMinutes * 60 * 1000).toISOString()
-      : null;
 
-  db.prepare(
-    `
-    UPDATE users
-    SET failed_login_count = ?, locked_until = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `,
-  ).run(failedCount, lockedUntil, userId);
-
-  return { lockedUntil };
+  const nextLockDeadline = new Date(
+    Date.now() + config.loginLockMinutes * 60 * 1000,
+  ).toISOString();
+  return db
+    .prepare(
+      `
+      UPDATE users
+      SET failed_login_count = failed_login_count + 1,
+          locked_until = CASE WHEN failed_login_count + 1 >= ? THEN ? ELSE NULL END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      RETURNING failed_login_count, locked_until
+      `,
+    )
+    .get(config.loginLockAttempts, nextLockDeadline, userId);
 }
 
 export function resetLoginFailure(userId) {

@@ -15,6 +15,25 @@ import { getPublicTrace } from "../services/publicTraceService.js";
 const router = Router();
 const adminRoles = ["farm_admin", "processor_admin", "distributor_admin"];
 
+function scopeRecallReport(report, organizationId) {
+  const items = report.items.filter(
+    (item) => item.organization_id === organizationId,
+  );
+  return {
+    ...report,
+    items,
+    totals: items.reduce(
+      (totals, item) => ({
+        remainingQuantity:
+          totals.remainingQuantity + Number(item.remaining_quantity),
+        consumedQuantity:
+          totals.consumedQuantity + Number(item.consumed_quantity),
+      }),
+      { remainingQuantity: 0, consumedQuantity: 0 },
+    ),
+  };
+}
+
 router.get("/public/trace/:batchCode", (req, res) => {
   const trace = getPublicTrace(req.params.batchCode);
   if (!trace)
@@ -122,7 +141,13 @@ router.post(
         reason: req.body?.reason,
         actorId: req.user.id,
       });
-      return res.status(201).json(report);
+      return res
+        .status(201)
+        .json(
+          req.user.role === "auditor"
+            ? report
+            : scopeRecallReport(report, req.user.organization_id),
+        );
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -137,24 +162,7 @@ router.get(
     const reports = listRecallReports();
     if (req.user.role === "auditor") return res.json(reports);
     const scopedReports = reports
-      .map((report) => {
-        const items = report.items.filter(
-          (item) => item.organization_id === req.user.organization_id,
-        );
-        return {
-          ...report,
-          items,
-          totals: items.reduce(
-            (totals, item) => ({
-              remainingQuantity:
-                totals.remainingQuantity + Number(item.remaining_quantity),
-              consumedQuantity:
-                totals.consumedQuantity + Number(item.consumed_quantity),
-            }),
-            { remainingQuantity: 0, consumedQuantity: 0 },
-          ),
-        };
-      })
+      .map((report) => scopeRecallReport(report, req.user.organization_id))
       .filter((report) => report.items.length > 0);
     return res.json(scopedReports);
   },
@@ -183,7 +191,11 @@ router.get(
         return res.status(404).json({ message: "Không tìm thấy lô hàng." });
       }
     }
-    const report = buildAuditReport(batchId);
+    const report = buildAuditReport(
+      batchId,
+      req.user.organization_id,
+      req.user.role === "auditor",
+    );
     if (!report)
       return res.status(404).json({ message: "Không tìm thấy lô hàng." });
     return res.json(report);
