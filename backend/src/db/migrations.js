@@ -27,6 +27,16 @@ export function runMigrations() {
       FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
 
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
     CREATE TABLE IF NOT EXISTS farms (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       organization_id INTEGER NOT NULL,

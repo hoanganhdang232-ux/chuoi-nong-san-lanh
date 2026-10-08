@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const [recallReports, setRecallReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState(null);
+  const [genealogy, setGenealogy] = useState(null);
   const [selectedView, setSelectedView] = useState("Tổng quan");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -53,6 +54,12 @@ export default function DashboardPage() {
     latitude: "",
     longitude: "",
   });
+  const [editingLandPlotId, setEditingLandPlotId] = useState(null);
+  const [productForm, setProductForm] = useState({ name: "", unit: "kg" });
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [splitBatchId, setSplitBatchId] = useState("");
+  const [splitQuantity, setSplitQuantity] = useState("");
+  const [mergeBatchIds, setMergeBatchIds] = useState([]);
   const [transferForm, setTransferForm] = useState({
     batchId: "",
     toOrganizationId: "",
@@ -147,9 +154,15 @@ export default function DashboardPage() {
     const batch = filteredBatches.find((item) => item.id === batchId);
     if (!batch) return;
     try {
-      setSelectedBatch(await api.getBatch(batchId));
+      const [batch, batchGenealogy] = await Promise.all([
+        api.getBatch(batchId),
+        api.getBatchGenealogy(batchId),
+      ]);
+      setSelectedBatch(batch);
+      setGenealogy(batchGenealogy);
     } catch (loadError) {
       setSelectedBatch(batch);
+      setGenealogy(null);
       setSubmission({ message: loadError.message, tone: "error" });
     }
   };
@@ -158,11 +171,69 @@ export default function DashboardPage() {
     event.preventDefault();
     setSubmission({ message: "", tone: "" });
     try {
-      await api.createLandPlot(landPlotForm);
+      if (editingLandPlotId) {
+        await api.updateLandPlot(editingLandPlotId, landPlotForm);
+      } else {
+        await api.createLandPlot(landPlotForm);
+      }
       setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "" });
+      setEditingLandPlotId(null);
       const nextPlots = await api.getLandPlots();
       setLandPlots(nextPlots);
       setSubmission({ message: "Đã khai báo thửa đất mới.", tone: "success" });
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const handleProductSubmit = async (event) => {
+    event.preventDefault();
+    try {
+      if (editingProductId) {
+        await api.updateProduct(editingProductId, productForm);
+      } else {
+        await api.createProduct(productForm);
+      }
+      setProductForm({ name: "", unit: "kg" });
+      setEditingProductId(null);
+      setProducts(await api.getProducts());
+      setSubmission({
+        message: editingProductId ? "Đã cập nhật sản phẩm." : "Đã thêm sản phẩm.",
+        tone: "success",
+      });
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const handleSplitSubmit = async (event) => {
+    event.preventDefault();
+    try {
+      const result = await api.splitBatch(Number(splitBatchId), [
+        { quantity: Number(splitQuantity) },
+      ]);
+      setSplitBatchId("");
+      setSplitQuantity("");
+      await loadData();
+      setSubmission({
+        message: `Đã tách lô thành ${result.children.length} lô con.`,
+        tone: "success",
+      });
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const handleMergeSubmit = async (event) => {
+    event.preventDefault();
+    try {
+      const result = await api.mergeBatches(
+        mergeBatchIds.map(Number),
+        filteredBatches.find((batch) => batch.id === Number(mergeBatchIds[0]))?.product_id,
+      );
+      setMergeBatchIds([]);
+      await loadData();
+      setSubmission({ message: `Đã tạo lô gộp ${result.newBatch.batch_code}.`, tone: "success" });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
     }
@@ -630,8 +701,165 @@ export default function DashboardPage() {
                 Tạo lô cho thu hoạch
               </button>
             </form>
+            <form
+              className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+              onSubmit={handleProductSubmit}
+            >
+              <h2 className="text-lg font-bold text-slate-900">
+                {editingProductId ? "Sửa sản phẩm" : "Thêm sản phẩm"}
+              </h2>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <input
+                  className="rounded-xl border px-3 py-2"
+                  placeholder="Tên sản phẩm"
+                  value={productForm.name}
+                  onChange={(event) =>
+                    setProductForm({ ...productForm, name: event.target.value })
+                  }
+                />
+                <input
+                  className="rounded-xl border px-3 py-2"
+                  placeholder="Đơn vị tính"
+                  value={productForm.unit}
+                  onChange={(event) =>
+                    setProductForm({ ...productForm, unit: event.target.value })
+                  }
+                />
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white"
+                  type="submit"
+                >
+                  {editingProductId ? "Cập nhật" : "Thêm sản phẩm"}
+                </button>
+                {editingProductId && (
+                  <button
+                    className="rounded-xl border px-4 py-2"
+                    type="button"
+                    onClick={() => {
+                      setEditingProductId(null);
+                      setProductForm({ name: "", unit: "kg" });
+                    }}
+                  >
+                    Hủy
+                  </button>
+                )}
+              </div>
+              <div className="mt-5 space-y-2">
+                {products.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left hover:border-emerald-300"
+                    onClick={() => {
+                      setEditingProductId(product.id);
+                      setProductForm({ name: product.name, unit: product.unit });
+                    }}
+                  >
+                    <span className="font-medium">{product.name}</span>
+                    <span className="text-sm text-slate-500">{product.unit}</span>
+                  </button>
+                ))}
+              </div>
+            </form>
           </section>
         )}
+
+        {selectedView === "L\u00f4 n\u00f4ng s\u1ea3n" && user?.role === "farm_admin" && (
+          <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-lg font-bold text-slate-900">Danh sách thửa đất</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {landPlots.map((plot) => (
+                <button
+                  key={plot.id}
+                  type="button"
+                  className="rounded-xl border p-4 text-left hover:border-emerald-300"
+                  onClick={() => {
+                    setEditingLandPlotId(plot.id);
+                    setLandPlotForm({
+                      name: plot.name,
+                      areaHa: String(plot.area_ha),
+                      latitude: plot.latitude ? String(plot.latitude) : "",
+                      longitude: plot.longitude ? String(plot.longitude) : "",
+                    });
+                  }}
+                >
+                  <div className="font-semibold text-slate-800">{plot.name}</div>
+                  <div className="text-sm text-slate-500">{plot.area_ha} ha · Nhấn để sửa</div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {(selectedView === "L\u00f4 n\u00f4ng s\u1ea3n" || selectedView === "T\u00f2ng quan") &&
+          ["farm_admin", "processor_admin", "distributor_admin"].includes(user?.role) && (
+            <section className="mt-6 grid gap-6 lg:grid-cols-2">
+              <form
+                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+                onSubmit={handleSplitSubmit}
+              >
+                <h2 className="text-lg font-bold text-slate-900">Tách lô hàng</h2>
+                <p className="mt-2 text-sm text-slate-500">Chọn lô và khối lượng lô con.</p>
+                <div className="mt-4 grid gap-3">
+                  <select
+                    className="rounded-xl border px-3 py-2"
+                    value={splitBatchId}
+                    onChange={(event) => setSplitBatchId(event.target.value)}
+                  >
+                    <option value="">Chọn lô cần tách</option>
+                    {filteredBatches.map((batch) => (
+                      <option key={batch.id} value={batch.id}>
+                        {batch.batch_code} · còn {batch.remaining_quantity}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="rounded-xl border px-3 py-2"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="Khối lượng lô con"
+                    value={splitQuantity}
+                    onChange={(event) => setSplitQuantity(event.target.value)}
+                  />
+                </div>
+                <button className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white" type="submit">
+                  Tách lô
+                </button>
+              </form>
+
+              <form
+                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+                onSubmit={handleMergeSubmit}
+              >
+                <h2 className="text-lg font-bold text-slate-900">Gộp lô hàng</h2>
+                <p className="mt-2 text-sm text-slate-500">Chọn ít nhất hai lô cùng sản phẩm.</p>
+                <div className="mt-4 max-h-48 space-y-2 overflow-auto">
+                  {filteredBatches.map((batch) => (
+                    <label key={batch.id} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={mergeBatchIds.includes(String(batch.id))}
+                        onChange={(event) =>
+                          setMergeBatchIds((current) =>
+                            event.target.checked
+                              ? [...current, String(batch.id)]
+                              : current.filter((id) => id !== String(batch.id)),
+                          )
+                        }
+                      />
+                      {batch.batch_code} · {batch.product_name}
+                    </label>
+                  ))}
+                </div>
+                <button className="mt-4 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white" type="submit" disabled={mergeBatchIds.length < 2}>
+                  Gộp lô
+                </button>
+              </form>
+            </section>
+          )}
 
         {selectedView === "Integrity" && (
           <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
@@ -1139,6 +1367,41 @@ export default function DashboardPage() {
                 >
                   <ExternalLink size={16} /> Mở trang truy xuất công khai
                 </a>
+              </div>
+
+              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+                <h3 className="font-bold text-slate-900">Nguồn gốc phả hệ</h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Lô gốc và các lô liên quan được truy nguyên qua quan hệ tách/gộp.
+                </p>
+                {genealogy ? (
+                  <div className="mt-4 space-y-3 text-sm">
+                    <div>
+                      <span className="font-semibold text-slate-700">Tổ tiên:</span>{" "}
+                      {genealogy.ancestors?.length || 0} lô
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-700">Hậu duệ:</span>{" "}
+                      {genealogy.descendants?.length || 0} lô
+                    </div>
+                    {genealogy.roots?.length > 0 && (
+                      <div>
+                        <span className="font-semibold text-slate-700">Lô gốc:</span>
+                        <div className="mt-2 space-y-1">
+                          {genealogy.roots.map((root) => (
+                            <div key={root.id} className="rounded-lg bg-slate-50 px-3 py-2">
+                              {root.batch_code}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-500">
+                    Chọn một lô để xem phả hệ.
+                  </p>
+                )}
               </div>
             </div>
           </section>

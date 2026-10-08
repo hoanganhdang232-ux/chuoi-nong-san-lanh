@@ -16,6 +16,11 @@ import {
 } from "../services/transferService.js";
 
 const router = Router();
+const organizationAdminRoles = [
+  "farm_admin",
+  "processor_admin",
+  "distributor_admin",
+];
 
 router.use(authenticateToken);
 
@@ -176,6 +181,46 @@ router.get("/products", (req, res) => {
     )
     .all(req.user.organization_id);
   res.json(rows);
+});
+
+router.post("/products", requireRole(...organizationAdminRoles), (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  const unit = String(req.body?.unit || "").trim();
+  if (!name || !unit) {
+    return res.status(400).json({ message: "Tên sản phẩm và đơn vị tính là bắt buộc." });
+  }
+
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT id FROM products WHERE organization_id = ? AND LOWER(name) = LOWER(?)")
+    .get(req.user.organization_id, name);
+  if (existing) {
+    return res.status(409).json({ message: "Sản phẩm này đã tồn tại trong tổ chức." });
+  }
+  const result = db
+    .prepare("INSERT INTO products(organization_id, name, unit) VALUES (?, ?, ?)")
+    .run(req.user.organization_id, name, unit);
+  return res.status(201).json({ id: result.lastInsertRowid, organization_id: req.user.organization_id, name, unit });
+});
+
+router.put("/products/:id", requireRole(...organizationAdminRoles), (req, res) => {
+  const productId = Number(req.params.id);
+  const name = String(req.body?.name || "").trim();
+  const unit = String(req.body?.unit || "").trim();
+  if (!Number.isInteger(productId) || productId <= 0 || !name || !unit) {
+    return res.status(400).json({ message: "Sản phẩm và đơn vị tính hợp lệ là bắt buộc." });
+  }
+  const db = getDb();
+  const product = db
+    .prepare("SELECT id FROM products WHERE id = ? AND organization_id = ?")
+    .get(productId, req.user.organization_id);
+  if (!product) return res.status(404).json({ message: "Không tìm thấy sản phẩm." });
+  const duplicate = db
+    .prepare("SELECT id FROM products WHERE organization_id = ? AND LOWER(name) = LOWER(?) AND id <> ?")
+    .get(req.user.organization_id, name, productId);
+  if (duplicate) return res.status(409).json({ message: "Sản phẩm này đã tồn tại trong tổ chức." });
+  db.prepare("UPDATE products SET name = ?, unit = ? WHERE id = ?").run(name, unit, productId);
+  return res.json({ id: productId, organization_id: req.user.organization_id, name, unit });
 });
 
 router.get("/land-plots", requireRole("farm_admin"), (req, res) => {
@@ -566,6 +611,32 @@ router.get("/:id/genealogy", authenticateToken, (req, res) => {
     req.user.role === "auditor",
   );
   return res.json(genealogy);
+});
+
+router.put("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
+  const plotId = Number(req.params.id);
+  const name = String(req.body?.name || "").trim();
+  const area = Number(req.body?.areaHa);
+  if (!Number.isInteger(plotId) || plotId <= 0 || !name || !Number.isFinite(area) || area <= 0) {
+    return res.status(400).json({ message: "Tên thửa và diện tích hợp lệ là bắt buộc." });
+  }
+  const db = getDb();
+  const plot = db
+    .prepare(
+      `SELECT lp.id FROM land_plots lp
+       INNER JOIN farms f ON f.id = lp.farm_id
+       WHERE lp.id = ? AND f.organization_id = ?`,
+    )
+    .get(plotId, req.user.organization_id);
+  if (!plot) return res.status(404).json({ message: "Không tìm thấy thửa đất." });
+  db.prepare("UPDATE land_plots SET name = ?, area_ha = ?, latitude = ?, longitude = ? WHERE id = ?").run(
+    name,
+    area,
+    Number(req.body?.latitude) || null,
+    Number(req.body?.longitude) || null,
+    plotId,
+  );
+  return res.json({ id: plotId, name, area_ha: area });
 });
 
 router.get("/:id/summary", (req, res) => {

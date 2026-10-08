@@ -42,6 +42,14 @@ test.after(async () => {
 });
 
 test("serves the frontend in production and returns JSON for unknown API routes", async () => {
+  const healthResponse = await fetch(`${baseUrl}/api/health`);
+  assert.equal(healthResponse.status, 200);
+  assert.deepEqual(await healthResponse.json(), {
+    status: "ok",
+    service: "agritrace-backend",
+    database: "ok",
+  });
+
   const frontendResponse = await fetch(baseUrl);
   const frontendHtml = await frontendResponse.text();
   assert.equal(frontendResponse.status, 200);
@@ -72,6 +80,24 @@ test("login returns token and user for valid credentials", async () => {
   const body = await response.json();
   assert.ok(body.token);
   assert.equal(body.user.role, "farm_admin");
+  assert.match(
+    db.prepare("SELECT password_hash FROM users WHERE id = ?").get(user.id).password_hash,
+    /^\$argon2id\$/,
+  );
+
+  const sessionResponse = await fetch(`${baseUrl}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${body.token}` },
+  });
+  assert.equal(sessionResponse.status, 200);
+  const logoutResponse = await fetch(`${baseUrl}/api/auth/logout`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${body.token}` },
+  });
+  assert.equal(logoutResponse.status, 204);
+  const revokedResponse = await fetch(`${baseUrl}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${body.token}` },
+  });
+  assert.equal(revokedResponse.status, 401);
   assert.equal(
     db
       .prepare("SELECT failed_login_count FROM users WHERE id = ?")

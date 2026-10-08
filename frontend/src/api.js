@@ -27,16 +27,40 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+  logout: () => request("/auth/logout", { method: "POST" }),
   getMe: () => request("/auth/me"),
   getDashboard: () => request("/auth/dashboard"),
   getBatches: () => request("/batches"),
   getBatch: (batchId) => request(`/batches/${batchId}`),
+  getBatchGenealogy: (batchId) => request(`/batches/${batchId}/genealogy`),
+  splitBatch: (batchId, allocations) =>
+    request(`/batches/${batchId}/split`, {
+      method: "POST",
+      body: JSON.stringify({ allocations }),
+    }),
+  mergeBatches: (batchIds, productId) =>
+    request("/batches/merge", {
+      method: "POST",
+      body: JSON.stringify({ batchIds, productId }),
+    }),
   getBatchSummary: (batchId) => request(`/batches/${batchId}/summary`),
   getProducts: () => request("/batches/products"),
+  createProduct: (payload) =>
+    request("/batches/products", { method: "POST", body: JSON.stringify(payload) }),
+  updateProduct: (productId, payload) =>
+    request(`/batches/products/${productId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   getLandPlots: () => request("/batches/land-plots"),
   createLandPlot: (payload) =>
     request("/batches/land-plots", {
       method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateLandPlot: (plotId, payload) =>
+    request(`/batches/land-plots/${plotId}`, {
+      method: "PUT",
       body: JSON.stringify(payload),
     }),
   createHarvest: (payload) =>

@@ -48,6 +48,41 @@ test.after(async () => {
   }
 });
 
+test("farm admins can create and update products and land plots within their organization", async () => {
+  const farm = findUserByEmail("farm@agritrace.demo");
+  const token = createToken(farm);
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+
+  const productResponse = await fetch(`${baseUrl}/api/batches/products`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ name: "Xoài kiểm thử", unit: "kg" }),
+  });
+  assert.equal(productResponse.status, 201);
+  const product = await productResponse.json();
+
+  const updatedProductResponse = await fetch(
+    `${baseUrl}/api/batches/products/${product.id}`,
+    { method: "PUT", headers, body: JSON.stringify({ name: "Xoài cập nhật", unit: "thùng" }) },
+  );
+  assert.equal(updatedProductResponse.status, 200);
+  assert.equal((await updatedProductResponse.json()).unit, "thùng");
+
+  const plot = db
+    .prepare("SELECT id FROM land_plots WHERE farm_id = (SELECT id FROM farms WHERE organization_id = ?) LIMIT 1")
+    .get(farm.organization_id);
+  const plotResponse = await fetch(`${baseUrl}/api/batches/land-plots/${plot.id}`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ name: "Thửa cập nhật", areaHa: 9.5 }),
+  });
+  assert.equal(plotResponse.status, 200);
+  assert.equal((await plotResponse.json()).area_ha, 9.5);
+});
+
 test("creates a harvest batch with auto-generated unique code and validates input", async () => {
   const farm = findUserByEmail("farm@agritrace.demo");
   const token = createToken(farm);

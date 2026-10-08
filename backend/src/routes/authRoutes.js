@@ -2,12 +2,15 @@ import { Router } from "express";
 import { getDb } from "../db/database.js";
 import { authenticateToken } from "../middleware/auth.js";
 import {
-  createToken,
+  createSessionToken,
   findUserByEmail,
   getLoginFailureInfo,
+  hashPassword,
+  needsPasswordRehash,
   resetLoginFailure,
   updateLoginFailure,
   verifyPassword,
+  revokeSession,
 } from "../services/authService.js";
 
 const router = Router();
@@ -67,6 +70,13 @@ router.post("/login", async (req, res) => {
 
   resetLoginFailure(user.id);
 
+  if (needsPasswordRehash(user.password_hash)) {
+    const upgradedHash = await hashPassword(password);
+    getDb()
+      .prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .run(upgradedHash, user.id);
+  }
+
   const safeUser = {
     id: user.id,
     name: user.name,
@@ -77,12 +87,18 @@ router.post("/login", async (req, res) => {
     organizationType: user.organization_type,
   };
 
-  const token = createToken(user);
+  const token = createSessionToken(user);
   return res.json({
     token,
     user: safeUser,
     message: "Đăng nhập thành công.",
   });
+});
+
+router.post("/logout", authenticateToken, (req, res) => {
+  const token = req.headers.authorization?.slice("Bearer ".length);
+  if (token) revokeSession(token);
+  return res.status(204).end();
 });
 
 router.get("/me", authenticateToken, (req, res) => {
