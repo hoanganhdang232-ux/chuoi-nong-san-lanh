@@ -60,6 +60,13 @@ export default function DashboardPage() {
   });
   const [submission, setSubmission] = useState({ message: "", tone: "" });
   const [recallForm, setRecallForm] = useState({ batchId: "", reason: "" });
+  const [transferDecision, setTransferDecision] = useState({
+    open: false,
+    transferId: null,
+    decision: "confirmed",
+    reason: "",
+    error: "",
+  });
 
   const loadData = async () => {
     const [dashboardData, batchData, transferData] = await Promise.all([
@@ -206,42 +213,59 @@ export default function DashboardPage() {
     }
   };
 
-  const handleTransferDecision = async (transferId, decision) => {
-    const defaultReason =
-      decision === "confirmed"
-        ? "Đã kiểm tra và nhận đủ lô hàng."
-        : "Lô hàng không đạt tiêu chuẩn.";
-    const reason = window.prompt(
-      decision === "confirmed"
-        ? "Nhập lý do xác nhận bàn giao:"
-        : "Nhập lý do từ chối bàn giao:",
-      defaultReason,
-    );
-    if (reason === null) return;
-    if (!reason.trim()) {
-      setSubmission({
-        message: "Vui lòng nhập lý do trước khi xử lý bàn giao.",
-        tone: "error",
-      });
-      return;
+  const openTransferDecisionModal = (transferId, decision) => {
+    setTransferDecision({
+      open: true,
+      transferId,
+      decision,
+      reason: decision === "confirmed" ? "Đã kiểm tra và nhận đủ lô hàng." : "",
+      error: "",
+    });
+  };
+
+  const submitTransferDecision = async () => {
+    const { transferId, decision, reason } = transferDecision;
+    const trimmedReason = reason.trim();
+
+    if (decision === "rejected") {
+      if (!trimmedReason) {
+        setTransferDecision((current) => ({
+          ...current,
+          error: "Vui lòng nhập lý do từ chối bàn giao.",
+        }));
+        return;
+      }
+      if (trimmedReason.length < 10) {
+        setTransferDecision((current) => ({
+          ...current,
+          error: "Lý do từ chối phải tối thiểu 10 ký tự.",
+        }));
+        return;
+      }
     }
 
     try {
       await api.decideTransfer(transferId, {
         decision,
-        reason: reason.trim(),
+        reason: decision === "confirmed" ? trimmedReason || "Đã kiểm tra và nhận đủ lô hàng." : trimmedReason,
       });
+      setTransferDecision({ open: false, transferId: null, decision: "confirmed", reason: "", error: "" });
       await loadData();
       setSubmission({
-        message:
-          decision === "confirmed"
-            ? "Đã xác nhận bàn giao."
-            : "Đã từ chối bàn giao.",
+        message: decision === "confirmed" ? "Đã xác nhận bàn giao." : "Đã từ chối bàn giao.",
         tone: "success",
       });
     } catch (submitError) {
+      setTransferDecision((current) => ({
+        ...current,
+        error: submitError.message || "Không thể xử lý bàn giao.",
+      }));
       setSubmission({ message: submitError.message, tone: "error" });
     }
+  };
+
+  const handleTransferDecision = async (transferId, decision) => {
+    openTransferDecisionModal(transferId, decision);
   };
 
   const handleVerifyIntegrity = async (batchId) => {
@@ -1142,6 +1166,134 @@ export default function DashboardPage() {
               </div>
             </div>
           </section>
+        )}
+
+        {transferDecision.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-emerald-600">
+                    Xử lý bàn giao
+                  </p>
+                  <h3 className="mt-1 text-xl font-bold text-slate-900">
+                    {transferDecision.decision === "confirmed"
+                      ? "Xác nhận bàn giao"
+                      : "Từ chối bàn giao"}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-50"
+                  onClick={() =>
+                    setTransferDecision({
+                      open: false,
+                      transferId: null,
+                      decision: "confirmed",
+                      reason: "",
+                      error: "",
+                    })
+                  }
+                >
+                  Đóng
+                </button>
+              </div>
+
+              <div className="mt-6 flex gap-2">
+                <button
+                  type="button"
+                  className={`flex-1 rounded-xl px-4 py-2 font-semibold ${
+                    transferDecision.decision === "confirmed"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                  onClick={() =>
+                    setTransferDecision((current) => ({
+                      ...current,
+                      decision: "confirmed",
+                      reason: current.decision === "confirmed" ? current.reason : "Đã kiểm tra và nhận đủ lô hàng.",
+                      error: "",
+                    }))
+                  }
+                >
+                  Xác nhận
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 rounded-xl px-4 py-2 font-semibold ${
+                    transferDecision.decision === "rejected"
+                      ? "bg-rose-600 text-white"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                  onClick={() =>
+                    setTransferDecision((current) => ({
+                      ...current,
+                      decision: "rejected",
+                      reason: current.reason || "",
+                      error: "",
+                    }))
+                  }
+                >
+                  Từ chối
+                </button>
+              </div>
+
+              {transferDecision.decision === "rejected" && (
+                <div className="mt-5">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Lý do từ chối
+                  </label>
+                  <textarea
+                    rows={4}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                    placeholder="Ví dụ: Hàng giao không đúng mẫu, cần kiểm tra lại trước khi bàn giao tiếp."
+                    value={transferDecision.reason}
+                    onChange={(event) =>
+                      setTransferDecision((current) => ({
+                        ...current,
+                        reason: event.target.value,
+                        error: "",
+                      }))
+                    }
+                  />
+                  <p className="mt-2 text-xs text-slate-500">
+                    Tối thiểu 10 ký tự và không được để trống.
+                  </p>
+                </div>
+              )}
+
+              {transferDecision.error && (
+                <div className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">
+                  {transferDecision.error}
+                </div>
+              )}
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+                  onClick={() =>
+                    setTransferDecision({
+                      open: false,
+                      transferId: null,
+                      decision: "confirmed",
+                      reason: "",
+                      error: "",
+                    })
+                  }
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-700"
+                  onClick={submitTransferDecision}
+                >
+                  Xác nhận
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>

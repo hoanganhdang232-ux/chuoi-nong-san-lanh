@@ -42,6 +42,26 @@ export function createTransferRequest({
   };
 }
 
+function validateTransferDecision({ decision, reason }) {
+  if (!["confirmed", "rejected"].includes(decision)) {
+    throw new Error("Quyết định không hợp lệ.");
+  }
+
+  const cleanedReason = typeof reason === "string" ? reason.trim() : "";
+
+  if (decision === "rejected") {
+    if (!cleanedReason) {
+      throw new Error("Vui lòng nhập lý do từ chối bàn giao.");
+    }
+    if (cleanedReason.length < 10) {
+      throw new Error("Lý do từ chối phải tối thiểu 10 ký tự.");
+    }
+    return cleanedReason;
+  }
+
+  return cleanedReason || null;
+}
+
 export function decideTransfer({
   transferId,
   actorOrganizationId,
@@ -66,15 +86,10 @@ export function decideTransfer({
   if (transfer.to_organization_id !== actorOrganizationId) {
     throw new Error("Chỉ tổ chức nhận lô hàng mới được xác nhận hoặc từ chối.");
   }
-  if (!["confirmed", "rejected"].includes(decision)) {
-    throw new Error("Quyết định không hợp lệ.");
-  }
-  if (typeof reason !== "string" || !reason.trim()) {
-    throw new Error("Vui lòng nhập lý do xác nhận hoặc từ chối bàn giao.");
-  }
-  const decisionReason = reason.trim();
 
+  const decisionReason = validateTransferDecision({ decision, reason });
   const nextStatus = decision === "confirmed" ? "confirmed" : "rejected";
+
   db.prepare(
     `UPDATE batch_transfers SET status = ?, reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
   ).run(nextStatus, decisionReason, transferId);
@@ -108,6 +123,34 @@ export function decideTransfer({
           : transfer.current_owner_id,
     },
   });
+
+  const senderNotificationTitle =
+    decision === "confirmed"
+      ? "Bàn giao đã được xác nhận"
+      : "Bàn giao bị từ chối";
+  const senderNotificationMessage =
+    decision === "confirmed"
+      ? "Tổ chức nhận đã xác nhận bàn giao lô hàng của bạn."
+      : `Tổ chức nhận đã từ chối bàn giao. Lý do: ${decisionReason}`;
+
+  const senderUsers = db
+    .prepare(
+      "SELECT id, organization_id FROM users WHERE organization_id = ? AND is_active = 1",
+    )
+    .all(transfer.from_organization_id);
+
+  for (const user of senderUsers) {
+    db.prepare(
+      `INSERT INTO notifications(user_id, organization_id, kind, title, message)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(
+      user.id,
+      user.organization_id,
+      decision === "confirmed" ? "handover_accepted" : "handover_rejected",
+      senderNotificationTitle,
+      senderNotificationMessage,
+    );
+  }
 
   const batch = db
     .prepare("SELECT * FROM batches WHERE id = ?")
