@@ -1,0 +1,32 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        COMMIT_SHA: ${COMMIT_SHA:-local}
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      DATABASE_URL: ${DATABASE_URL:-postgres://agritrace:agritrace@postgres:5432/agritrace}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agritrace
+      POSTGRES_USER: agritrace
+      POSTGRES_PASSWORD: agritrace
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agritrace -d agritrace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
