@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 node_modules
 .env
 *.db
@@ -9,3 +10,7 @@ frontend/dist
 coverage
 npm-debug.log*
 .DS_Store
+=======
+node_modules/ 
+.env 
+>>>>>>> 4b7d2ac75ac00982264bf31e851d311005f1b0a1

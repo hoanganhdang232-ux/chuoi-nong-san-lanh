@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Agritrace Demo
 
 Demo truy xuất nguồn gốc và giám sát chuỗi lạnh nông sản.
@@ -69,3 +70,6 @@ Lệnh seed bổ sung có tính idempotent và chỉ tạo một lần.
 - Ghi sự kiện vào event log với chuỗi hash
 - Dashboard tổng quan theo quyền truy cập
 - Theo dõi nhiệt độ, phát hiện vi phạm liên tục, quản lý thu hồi và báo cáo auditor
+=======
+"# D? �n Git d?u ti�n c?a hoanganhdang232-ux" 
+>>>>>>> 4b7d2ac75ac00982264bf31e851d311005f1b0a1
