@@ -276,10 +276,15 @@ router.get("/transfer-requests", (req, res) => {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT bt.*, b.batch_code, o_from.name AS from_organization_name, o_to.name AS to_organization_name,
+      `SELECT bt.*, b.batch_code, b.remaining_quantity, b.initial_quantity,
+         p.name AS product_name, p.unit AS product_unit,
+         o_from.name AS from_organization_name, o_to.name AS to_organization_name,
+         u.name AS requester_name,
          CASE WHEN bt.status = 'pending' AND bt.created_at <= datetime('now', '-48 hours') THEN 1 ELSE 0 END AS is_overdue
        FROM batch_transfers bt
        INNER JOIN batches b ON b.id = bt.batch_id
+       LEFT JOIN products p ON p.id = b.product_id
+       LEFT JOIN users u ON u.id = bt.requester_id
        INNER JOIN organizations o_from ON o_from.id = bt.from_organization_id
        INNER JOIN organizations o_to ON o_to.id = bt.to_organization_id
        WHERE bt.from_organization_id = ? OR bt.to_organization_id = ?
@@ -782,10 +787,15 @@ router.post(
   requireRole("farm_admin", "processor_admin", "distributor_admin", "user"),
   (req, res) => {
     try {
+      const recipientOrgId = Number(
+        req.body?.toOrganizationId ??
+        req.body?.recipientOrgId ??
+        req.body?.recipient_org_id
+      );
       const request = createTransferRequest({
         batchId: Number(req.params.id),
         fromOrganizationId: req.user.organization_id,
-        toOrganizationId: Number(req.body?.toOrganizationId),
+        toOrganizationId: recipientOrgId,
         requesterId: req.user.id,
         note: req.body?.note,
       });

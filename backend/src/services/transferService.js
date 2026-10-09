@@ -9,37 +9,72 @@ export function createTransferRequest({
   note,
 }) {
   const db = getDb();
-  const batch = db.prepare("SELECT * FROM batches WHERE id = ?").get(batchId);
-  if (!batch) throw new Error("Lô hàng không tồn tại.");
-  if (batch.organization_id !== fromOrganizationId) {
-    throw new Error("Tổ chức gửi yêu cầu không sở hữu lô hàng.");
-  }
+  if (!batchId) throw new Error("Vui lòng cung cấp mã định danh lô hàng.");
+  if (!toOrganizationId) throw new Error("Vui lòng chọn tổ chức nhận bàn giao.");
+
   if (fromOrganizationId === toOrganizationId) {
-    throw new Error("Tổ chức nguồn và đích phải khác nhau.");
+    throw new Error("Không thể bàn giao lô hàng cho chính tổ chức của bạn.");
   }
 
-  db.prepare(
-    `UPDATE batches SET status = 'pending_confirmation', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-  ).run(batchId);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const batch = db.prepare("SELECT * FROM batches WHERE id = ?").get(batchId);
+    if (!batch) throw new Error("Lô hàng không tồn tại.");
+    if (batch.organization_id !== fromOrganizationId) {
+      throw new Error("Bạn không có quyền bàn giao lô hàng này hoặc lô không tồn tại.");
+    }
 
-  const result = db
-    .prepare(
-      `INSERT INTO batch_transfers(batch_id, from_organization_id, to_organization_id, requester_id, status, note)
-       VALUES (?, ?, ?, ?, 'pending', ?)`,
-    )
-    .run(
+    const pendingTransfer = db
+      .prepare("SELECT id FROM batch_transfers WHERE batch_id = ? AND status = 'pending'")
+      .get(batchId);
+    if (pendingTransfer || batch.status === "pending_confirmation") {
+      throw new Error("Lô hàng này đang có một lệnh bàn giao chờ xác nhận.");
+    }
+
+    db.prepare(
+      `UPDATE batches SET status = 'pending_confirmation', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    ).run(batchId);
+
+    const result = db
+      .prepare(
+        `INSERT INTO batch_transfers(batch_id, from_organization_id, to_organization_id, requester_id, status, note)
+         VALUES (?, ?, ?, ?, 'pending', ?)`,
+      )
+      .run(
+        batchId,
+        fromOrganizationId,
+        toOrganizationId,
+        requesterId,
+        note || null,
+      );
+
+    const event = createEventLog({
       batchId,
-      fromOrganizationId,
-      toOrganizationId,
-      requesterId,
-      note || null,
-    );
+      eventType: "batch_transfer_requested",
+      actorId: requesterId,
+      data: {
+        transfer_id: result.lastInsertRowid,
+        from_organization_id: fromOrganizationId,
+        to_organization_id: toOrganizationId,
+        note: note || null,
+        previous_status: batch.status,
+        new_status: "pending_confirmation",
+      },
+    });
 
-  return {
-    id: result.lastInsertRowid,
-    batch_id: batchId,
-    status: "pending",
-  };
+    db.exec("COMMIT");
+
+    return {
+      id: result.lastInsertRowid,
+      batch_id: batchId,
+      status: "pending",
+      event,
+      currentHash: event.current_hash,
+    };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function decideTransfer({
@@ -50,69 +85,77 @@ export function decideTransfer({
   actorId,
 }) {
   const db = getDb();
-  const transfer = db
-    .prepare(
-      `SELECT bt.*, b.organization_id AS current_owner_id
-       FROM batch_transfers bt
-       INNER JOIN batches b ON b.id = bt.batch_id
-       WHERE bt.id = ?`,
-    )
-    .get(transferId);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const transfer = db
+      .prepare(
+        `SELECT bt.*, b.organization_id AS current_owner_id
+         FROM batch_transfers bt
+         INNER JOIN batches b ON b.id = bt.batch_id
+         WHERE bt.id = ?`,
+      )
+      .get(transferId);
 
-  if (!transfer) throw new Error("Yêu cầu bàn giao không tồn tại.");
-  if (transfer.status !== "pending") {
-    throw new Error("Yêu cầu bàn giao đã được xử lý.");
-  }
-  if (transfer.to_organization_id !== actorOrganizationId) {
-    throw new Error("Chỉ tổ chức nhận lô hàng mới được xác nhận hoặc từ chối.");
-  }
-  if (!["confirmed", "rejected"].includes(decision)) {
-    throw new Error("Quyết định không hợp lệ.");
-  }
-  if (typeof reason !== "string" || !reason.trim()) {
-    throw new Error("Vui lòng nhập lý do xác nhận hoặc từ chối bàn giao.");
-  }
-  const decisionReason = reason.trim();
+    if (!transfer) throw new Error("Yêu cầu bàn giao không tồn tại.");
+    if (transfer.status !== "pending") {
+      throw new Error("Yêu cầu bàn giao đã được xử lý.");
+    }
+    if (transfer.to_organization_id !== actorOrganizationId) {
+      throw new Error("Chỉ tổ chức nhận lô hàng mới được xác nhận hoặc từ chối.");
+    }
+    if (!["confirmed", "rejected"].includes(decision)) {
+      throw new Error("Quyết định không hợp lệ.");
+    }
+    if (typeof reason !== "string" || !reason.trim()) {
+      throw new Error("Vui lòng nhập lý do xác nhận hoặc từ chối bàn giao.");
+    }
+    const decisionReason = reason.trim();
 
-  const nextStatus = decision === "confirmed" ? "confirmed" : "rejected";
-  db.prepare(
-    `UPDATE batch_transfers SET status = ?, reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-  ).run(nextStatus, decisionReason, transferId);
-
-  if (decision === "confirmed") {
+    const nextStatus = decision === "confirmed" ? "confirmed" : "rejected";
     db.prepare(
-      `UPDATE batches SET organization_id = ?, status = 'in_transit', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    ).run(actorOrganizationId, transfer.batch_id);
-  } else {
-    db.prepare(
-      `UPDATE batches SET status = 'registered', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    ).run(transfer.batch_id);
+      `UPDATE batch_transfers SET status = ?, reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    ).run(nextStatus, decisionReason, transferId);
+
+    if (decision === "confirmed") {
+      db.prepare(
+        `UPDATE batches SET organization_id = ?, status = 'in_transit', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      ).run(actorOrganizationId, transfer.batch_id);
+    } else {
+      db.prepare(
+        `UPDATE batches SET status = 'registered', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      ).run(transfer.batch_id);
+    }
+
+    const eventType =
+      decision === "confirmed" ? "batch_transferred" : "batch_transfer_rejected";
+    const event = createEventLog({
+      batchId: transfer.batch_id,
+      eventType,
+      actorId,
+      data: {
+        transfer_id: transfer.id,
+        from_organization_id: transfer.from_organization_id,
+        to_organization_id: transfer.to_organization_id,
+        decision,
+        reason: decisionReason,
+        previous_owner_id: transfer.current_owner_id,
+        new_owner_id:
+          decision === "confirmed"
+            ? actorOrganizationId
+            : transfer.current_owner_id,
+      },
+    });
+
+    db.exec("COMMIT");
+
+    const batch = db
+      .prepare("SELECT * FROM batches WHERE id = ?")
+      .get(transfer.batch_id);
+    return { batch, event, transferStatus: nextStatus };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
-
-  const eventType =
-    decision === "confirmed" ? "batch_transferred" : "batch_transfer_rejected";
-  const event = createEventLog({
-    batchId: transfer.batch_id,
-    eventType,
-    actorId,
-    data: {
-      transfer_id: transfer.id,
-      from_organization_id: transfer.from_organization_id,
-      to_organization_id: transfer.to_organization_id,
-      decision,
-      reason: decisionReason,
-      previous_owner_id: transfer.current_owner_id,
-      new_owner_id:
-        decision === "confirmed"
-          ? actorOrganizationId
-          : transfer.current_owner_id,
-    },
-  });
-
-  const batch = db
-    .prepare("SELECT * FROM batches WHERE id = ?")
-    .get(transfer.batch_id);
-  return { batch, event, transferStatus: nextStatus };
 }
 
 /** Mark pending handovers older than 48 hours and notify both parties once. */
