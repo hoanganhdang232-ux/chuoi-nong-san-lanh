@@ -342,6 +342,13 @@ export default function DashboardPage() {
       });
       return;
     }
+    if (decision === "rejected" && reason.trim().length < 10) {
+      setSubmission({
+        message: "Lý do từ chối bắt buộc và phải có tối thiểu 10 ký tự.",
+        tone: "error",
+      });
+      return;
+    }
     setDecisionModal((prev) => ({ ...prev, submitting: true }));
     try {
       await api.decideTransfer(transfer.id, {

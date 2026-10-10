@@ -218,6 +218,12 @@ export function updateBatchStatus({
   if (!isAuditor && batch.organization_id !== organizationId)
     throw new Error("Không có quyền cập nhật lô hàng này.");
 
+  if (batch.status === "pending_confirmation") {
+    throw new Error(
+      "Lô hàng đang trong trạng thái chờ xác nhận bàn giao (bị khóa), không thể cập nhật trạng thái.",
+    );
+  }
+
   db.prepare(
     `
     UPDATE batches

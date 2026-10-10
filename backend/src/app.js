@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import authRoutes from "./routes/authRoutes.js";
 import batchRoutes from "./routes/batchRoutes.js";
 import transferRoutes from "./routes/transferRoutes.js";
+import v1TransferRoutes from "./routes/v1TransferRoutes.js";
 import featureRoutes from "./routes/featureRoutes.js";
 import { runMigrations } from "./db/migrations.js";
 import { ensureDemoFarmerAccount } from "./db/seed.js";
@@ -38,6 +39,7 @@ export function createApp() {
 
   app.use("/api/auth", authRoutes);
   app.use("/api/batches", batchRoutes);
+  app.use("/api/v1/transfers", v1TransferRoutes);
   app.use("/api/transfers", transferRoutes);
   app.use("/api/features", featureRoutes);
 

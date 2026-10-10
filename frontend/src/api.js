@@ -79,6 +79,27 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  v1CreateTransfer: (payload) =>
+    request("/v1/transfers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  v1GetPendingTransfers: () => request("/v1/transfers/pending"),
+  v1ApproveTransfer: (id, payload = {}) =>
+    request(`/v1/transfers/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  v1RejectTransfer: (id, payload) =>
+    request(`/v1/transfers/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  v1CancelTransfer: (id, payload = {}) =>
+    request(`/v1/transfers/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   verifyBatchIntegrity: (batchId) => request(`/batches/${batchId}/integrity`),
   simulateSensor: (batchId, payload = {}) =>
     request(`/features/batches/${batchId}/sensor-simulation`, {

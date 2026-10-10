@@ -106,8 +106,14 @@ export function decideTransfer({
     if (!["confirmed", "rejected"].includes(decision)) {
       throw new Error("Quyết định không hợp lệ.");
     }
-    if (typeof reason !== "string" || !reason.trim()) {
-      throw new Error("Vui lòng nhập lý do xác nhận hoặc từ chối bàn giao.");
+    if (decision === "rejected") {
+      if (typeof reason !== "string" || reason.trim().length < 10) {
+        throw new Error("Lý do từ chối bắt buộc và phải có tối thiểu 10 ký tự.");
+      }
+    } else {
+      if (typeof reason !== "string" || !reason.trim()) {
+        throw new Error("Vui lòng nhập lý do xác nhận hoặc từ chối bàn giao.");
+      }
     }
     const decisionReason = reason.trim();
 
@@ -156,6 +162,105 @@ export function decideTransfer({
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+export function cancelTransfer({
+  transferId,
+  actorOrganizationId,
+  actorId,
+  reason,
+}) {
+  const db = getDb();
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const transfer = db
+      .prepare(
+        `SELECT bt.*, b.organization_id AS current_owner_id
+         FROM batch_transfers bt
+         INNER JOIN batches b ON b.id = bt.batch_id
+         WHERE bt.id = ?`,
+      )
+      .get(transferId);
+
+    if (!transfer) throw new Error("Yêu cầu bàn giao không tồn tại.");
+    if (transfer.status !== "pending") {
+      throw new Error("Yêu cầu bàn giao không ở trạng thái chờ xác nhận.");
+    }
+    if (transfer.from_organization_id !== actorOrganizationId) {
+      throw new Error("Chỉ tổ chức gửi mới có quyền hủy lệnh bàn giao.");
+    }
+
+    const cancelReason =
+      typeof reason === "string" && reason.trim()
+        ? reason.trim()
+        : "Bên gửi đã hủy lệnh bàn giao.";
+
+    db.prepare(
+      `UPDATE batch_transfers SET status = 'cancelled', reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    ).run(cancelReason, transferId);
+
+    db.prepare(
+      `UPDATE batches SET status = 'registered', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    ).run(transfer.batch_id);
+
+    const event = createEventLog({
+      batchId: transfer.batch_id,
+      eventType: "batch_transfer_cancelled",
+      actorId,
+      data: {
+        transfer_id: transfer.id,
+        from_organization_id: transfer.from_organization_id,
+        to_organization_id: transfer.to_organization_id,
+        reason: cancelReason,
+        previous_status: "pending_confirmation",
+        new_status: "registered",
+      },
+    });
+
+    db.exec("COMMIT");
+
+    const batch = db
+      .prepare("SELECT * FROM batches WHERE id = ?")
+      .get(transfer.batch_id);
+    return { batch, event, transferStatus: "cancelled" };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function getPendingTransfersForOrganization(organizationId) {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT bt.id, bt.batch_id AS lot_id, bt.batch_id,
+         b.batch_code, b.remaining_quantity, b.initial_quantity,
+         p.name AS product_name, p.unit AS product_unit,
+         bt.from_organization_id AS sender_org_id,
+         o_from.name AS sender_org_name,
+         bt.to_organization_id AS receiver_org_id,
+         o_to.name AS receiver_org_name,
+         u.name AS requester_name,
+         bt.note,
+         CASE
+           WHEN bt.status = 'pending' THEN 'PENDING'
+           WHEN bt.status = 'confirmed' THEN 'APPROVED'
+           WHEN bt.status = 'rejected' THEN 'REJECTED'
+           WHEN bt.status = 'cancelled' THEN 'CANCELLED'
+           ELSE UPPER(bt.status)
+         END AS status,
+         bt.created_at,
+         bt.updated_at
+       FROM batch_transfers bt
+       INNER JOIN batches b ON b.id = bt.batch_id
+       LEFT JOIN products p ON p.id = b.product_id
+       LEFT JOIN users u ON u.id = bt.requester_id
+       INNER JOIN organizations o_from ON o_from.id = bt.from_organization_id
+       INNER JOIN organizations o_to ON o_to.id = bt.to_organization_id
+       WHERE bt.to_organization_id = ? AND bt.status = 'pending'
+       ORDER BY bt.created_at DESC`,
+    )
+    .all(organizationId);
 }
 
 /** Mark pending handovers older than 48 hours and notify both parties once. */

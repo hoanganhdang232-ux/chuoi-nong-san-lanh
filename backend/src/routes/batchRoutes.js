@@ -312,6 +312,13 @@ router.post(
         .json({ message: "Bạn không có quyền tách lô này." });
     }
 
+    if (batch.status === "pending_confirmation") {
+      return res.status(400).json({
+        message:
+          "Lô hàng đang trong trạng thái chờ xác nhận bàn giao (bị khóa), không thể chia tách.",
+      });
+    }
+
     const allocations = Array.isArray(req.body?.allocations)
       ? req.body.allocations
       : [];
@@ -479,6 +486,15 @@ router.post(
       return res
         .status(403)
         .json({ message: "Bạn không có quyền gộp các lô hàng này." });
+    }
+
+    const lockedBatch = sourceBatches.find(
+      (batch) => batch.status === "pending_confirmation",
+    );
+    if (lockedBatch) {
+      return res.status(400).json({
+        message: `Lô hàng ${lockedBatch.batch_code} đang trong trạng thái chờ xác nhận bàn giao (bị khóa), không thể gộp.`,
+      });
     }
 
     const productId = Number(
