@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { getDb } from "../db/database.js";
 import { authenticateToken, requireRole } from "../middleware/auth.js";
-import { buildAuditReport } from "../services/auditService.js";
+import { buildAuditReport, anonymizeOldData } from "../services/auditService.js";
 import {
   getTemperatureHistory,
   recordTemperatureSeries,
+  cleanupTemperatureLogs,
 } from "../services/coldChainService.js";
 import {
   activateRecall,
@@ -115,6 +116,21 @@ router.get("/batches/:id/cold-chain-alerts", authenticateToken, (req, res) => {
 });
 
 router.post(
+  "/cold-chain/cleanup",
+  authenticateToken,
+  requireRole("auditor"), // Chỉ auditor (hệ thống) mới được quyền dọn dẹp data
+  (req, res) => {
+    try {
+      const days = Number(req.body?.daysToKeep) || 30;
+      const result = cleanupTemperatureLogs(days);
+      return res.json(result);
+    } catch (error) {
+      return res.status(500).json({ message: error.message });
+    }
+  }
+);
+
+router.post(
   "/recalls",
   authenticateToken,
   requireRole(...adminRoles, "auditor"),
@@ -201,5 +217,32 @@ router.get(
     return res.json(report);
   },
 );
+
+router.post(
+  "/auditor/anonymize",
+  authenticateToken,
+  requireRole("auditor"),
+  (req, res) => {
+    try {
+      const months = Number(req.body?.months) || 1;
+      const result = anonymizeOldData(months);
+      return res.json(result);
+    } catch (error) {
+      return res.status(500).json({ message: "Lỗi hệ thống khi ẩn danh dữ liệu." });
+    }
+  }
+);
+
+router.get("/public/trace/:batchCode", (req, res) => {
+  try {
+    const traceData = getPublicTrace(req.params.batchCode);
+    if (!traceData) {
+      return res.status(404).json({ message: "Không tìm thấy dữ liệu truy xuất." });
+    }
+    return res.json(traceData);
+  } catch (error) {
+    return res.status(500).json({ message: "Lỗi hệ thống khi tra cứu dữ liệu." });
+  }
+});
 
 export default router;

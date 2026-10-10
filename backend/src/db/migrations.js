@@ -27,16 +27,6 @@ export function runMigrations() {
       FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
 
-    CREATE TABLE IF NOT EXISTS sessions (
-      token_hash TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
-
     CREATE TABLE IF NOT EXISTS farms (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       organization_id INTEGER NOT NULL,
@@ -105,7 +95,7 @@ export function runMigrations() {
       from_organization_id INTEGER NOT NULL,
       to_organization_id INTEGER NOT NULL,
       requester_id INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','rejected','cancelled')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','rejected')),
       note TEXT,
       reason TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -334,76 +324,6 @@ export function runMigrations() {
   if (!transferColumns.includes("overdue_notified_at")) {
     db.exec("ALTER TABLE batch_transfers ADD COLUMN overdue_notified_at TEXT");
   }
-
-  const transferTableSql =
-    db
-      .prepare(
-        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'batch_transfers'",
-      )
-      .get()?.sql || "";
-
-  if (transferTableSql && !transferTableSql.includes("'cancelled'")) {
-    db.exec("PRAGMA foreign_keys = OFF;");
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      db.exec(`
-        CREATE TABLE batch_transfers_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          batch_id INTEGER NOT NULL,
-          from_organization_id INTEGER NOT NULL,
-          to_organization_id INTEGER NOT NULL,
-          requester_id INTEGER NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','rejected','cancelled')),
-          note TEXT,
-          reason TEXT,
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          overdue_notified_at TEXT,
-          FOREIGN KEY (batch_id) REFERENCES batches(id),
-          FOREIGN KEY (from_organization_id) REFERENCES organizations(id),
-          FOREIGN KEY (to_organization_id) REFERENCES organizations(id),
-          FOREIGN KEY (requester_id) REFERENCES users(id)
-        );
-        INSERT INTO batch_transfers_new (
-          id, batch_id, from_organization_id, to_organization_id, requester_id,
-          status, note, reason, created_at, updated_at, overdue_notified_at
-        )
-        SELECT
-          id, batch_id, from_organization_id, to_organization_id, requester_id,
-          status, note, reason, created_at, updated_at, overdue_notified_at
-        FROM batch_transfers;
-        DROP TABLE batch_transfers;
-        ALTER TABLE batch_transfers_new RENAME TO batch_transfers;
-      `);
-      db.exec("COMMIT");
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    } finally {
-      db.exec("PRAGMA foreign_keys = ON;");
-    }
-  }
-
-  db.exec(`
-    CREATE VIEW IF NOT EXISTS lots AS SELECT * FROM batches;
-    CREATE VIEW IF NOT EXISTS lot_transfers AS
-    SELECT
-      id,
-      batch_id AS lot_id,
-      from_organization_id AS sender_org_id,
-      to_organization_id AS receiver_org_id,
-      CASE
-        WHEN status = 'pending' THEN 'PENDING'
-        WHEN status = 'confirmed' THEN 'APPROVED'
-        WHEN status = 'rejected' THEN 'REJECTED'
-        WHEN status = 'cancelled' THEN 'CANCELLED'
-        ELSE UPPER(status)
-      END AS status,
-      reason AS reject_reason,
-      created_at,
-      updated_at
-    FROM batch_transfers;
-  `);
   if (!refreshedBatchColumns.includes("cold_chain_alert")) {
     db.exec(
       "ALTER TABLE batches ADD COLUMN cold_chain_alert INTEGER NOT NULL DEFAULT 0",

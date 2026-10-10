@@ -10,9 +10,23 @@ services:
       NODE_ENV: production
       PORT: 3001
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      DATABASE_PATH: data/agritrace.db
+      DATABASE_URL: ${DATABASE_URL:-postgres://agritrace:agritrace@postgres:5432/agritrace}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agritrace
+      POSTGRES_USER: agritrace
+      POSTGRES_PASSWORD: agritrace
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agritrace -d agritrace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
-      - agritrace_data:/app/backend/data
+      - postgres_data:/var/lib/postgresql/data
 
 volumes:
-  agritrace_data:
+  postgres_data:

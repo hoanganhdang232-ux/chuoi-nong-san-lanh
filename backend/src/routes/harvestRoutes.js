@@ -67,6 +67,70 @@ router.post("/land-plots", requireRole("farm_admin"), (req, res) => {
     });
 });
 
+router.put("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
+  const { name, areaHa, latitude, longitude } = req.body || {};
+  const area = Number(areaHa);
+  const plotId = Number(req.params.id);
+
+  if (!name || !Number.isFinite(area) || area <= 0) {
+    return res
+      .status(400)
+      .json({ message: "Tên thửa và diện tích hợp lệ là bắt buộc." });
+  }
+
+  const db = getDb();
+  // Check if plot belongs to user's org
+  const plot = db
+    .prepare(
+      "SELECT lp.id FROM land_plots lp INNER JOIN farms f ON f.id = lp.farm_id WHERE lp.id = ? AND f.organization_id = ?"
+    )
+    .get(plotId, req.user.organization_id);
+
+  if (!plot) {
+    return res.status(404).json({ message: "Không tìm thấy thửa đất hoặc không có quyền truy cập." });
+  }
+
+  db.prepare(
+    "UPDATE land_plots SET name = ?, area_ha = ?, latitude = ?, longitude = ? WHERE id = ?"
+  ).run(
+    String(name).trim(),
+    area,
+    Number(latitude) || null,
+    Number(longitude) || null,
+    plotId
+  );
+
+  res.json({ message: "Cập nhật thửa đất thành công." });
+});
+
+router.delete("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
+  const plotId = Number(req.params.id);
+  const db = getDb();
+  
+  const plot = db
+    .prepare(
+      "SELECT lp.id FROM land_plots lp INNER JOIN farms f ON f.id = lp.farm_id WHERE lp.id = ? AND f.organization_id = ?"
+    )
+    .get(plotId, req.user.organization_id);
+
+  if (!plot) {
+    return res.status(404).json({ message: "Không tìm thấy thửa đất hoặc không có quyền truy cập." });
+  }
+
+  // Optional: check if plot is used in batches
+  const inUse = db.prepare("SELECT id FROM batches WHERE current_location LIKE ? LIMIT 1").get(`%${plot.name}%`);
+  // Note: normally there would be a foreign key or better check, but we'll do a simple check.
+  // Actually batches don't explicitly store land_plot_id, they store source_farm_id. 
+  // Let's just delete it directly since event_logs has the stringified name anyway.
+  
+  try {
+    db.prepare("DELETE FROM land_plots WHERE id = ?").run(plotId);
+    res.json({ message: "Xóa thửa đất thành công." });
+  } catch (error) {
+    res.status(400).json({ message: "Không thể xóa thửa đất này vì đã có dữ liệu ràng buộc." });
+  }
+});
+
 router.post("/harvest", requireRole("farm_admin"), (req, res) => {
   const { landPlotId, productId, quantityKg, harvestedAt } = req.body || {};
   const quantity = Number(quantityKg);

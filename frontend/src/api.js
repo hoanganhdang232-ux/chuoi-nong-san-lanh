@@ -15,7 +15,10 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Yêu cầu không thành công.");
+    const err = new Error(errorData.message || "Yêu cầu không thành công.");
+    err.error_code = errorData.error_code;
+    err.field = errorData.field;
+    throw err;
   }
 
   return response.status === 204 ? null : response.json();
@@ -27,30 +30,40 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  logout: () => request("/auth/logout", { method: "POST" }),
   getMe: () => request("/auth/me"),
   getDashboard: () => request("/auth/dashboard"),
   getBatches: () => request("/batches"),
   getBatch: (batchId) => request(`/batches/${batchId}`),
-  getBatchGenealogy: (batchId) => request(`/batches/${batchId}/genealogy`),
-  splitBatch: (batchId, allocations) =>
-    request(`/batches/${batchId}/split`, {
-      method: "POST",
-      body: JSON.stringify({ allocations }),
-    }),
-  mergeBatches: (batchIds, productId) =>
-    request("/batches/merge", {
-      method: "POST",
-      body: JSON.stringify({ batchIds, productId }),
-    }),
   getBatchSummary: (batchId) => request(`/batches/${batchId}/summary`),
-  getProducts: () => request("/batches/products"),
+  getProducts: () => request("/products"),
   createProduct: (payload) =>
-    request("/batches/products", { method: "POST", body: JSON.stringify(payload) }),
-  updateProduct: (productId, payload) =>
-    request(`/batches/products/${productId}`, {
+    request("/products", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateProduct: (id, payload) =>
+    request(`/products/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
+    }),
+  deleteProduct: (id) =>
+    request(`/products/${id}`, {
+      method: "DELETE",
+    }),
+  getFarms: () => request("/farms"),
+  createFarm: (payload) =>
+    request("/farms", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateFarm: (id, payload) =>
+    request(`/farms/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteFarm: (id) =>
+    request(`/farms/${id}`, {
+      method: "DELETE",
     }),
   getLandPlots: () => request("/batches/land-plots"),
   createLandPlot: (payload) =>
@@ -58,8 +71,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  updateLandPlot: (plotId, payload) =>
-    request(`/batches/land-plots/${plotId}`, {
+  deleteLandPlot: (id) =>
+    request(`/batches/land-plots/${id}`, {
+      method: "DELETE",
+    }),
+  updateLandPlot: (id, payload) =>
+    request(`/batches/land-plots/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
@@ -79,24 +96,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  v1CreateTransfer: (payload) =>
-    request("/v1/transfers", {
+  splitBatch: (batchId, payload) =>
+    request(`/batches/${batchId}/split`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  v1GetPendingTransfers: () => request("/v1/transfers/pending"),
-  v1ApproveTransfer: (id, payload = {}) =>
-    request(`/v1/transfers/${id}/approve`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  v1RejectTransfer: (id, payload) =>
-    request(`/v1/transfers/${id}/reject`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  v1CancelTransfer: (id, payload = {}) =>
-    request(`/v1/transfers/${id}/cancel`, {
+  mergeBatches: (payload) =>
+    request(`/batches/merge`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

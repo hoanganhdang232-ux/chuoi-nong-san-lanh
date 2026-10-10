@@ -44,7 +44,6 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    api.logout().catch(() => undefined);
     localStorage.removeItem("agritrace_token");
     localStorage.removeItem("agritrace_user");
     setToken(null);

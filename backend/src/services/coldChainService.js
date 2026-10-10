@@ -176,3 +176,23 @@ export function getTemperatureHistory(batchId) {
     )
     .all(batchId);
 }
+
+export function cleanupTemperatureLogs(daysToKeep = 30) {
+  const db = getDb();
+  // Cơ chế dọn dẹp (Compression/Cleanup) cho Sprint 6:
+  // Xóa các bản ghi nhiệt độ cũ hơn `daysToKeep` của các lô đã hoàn tất (delivered, processed)
+  // Chỉ giữ lại logs của những lô đang in_transit hoặc đang xử lý để tránh phình to CSDL vô hạn.
+  
+  const result = db.prepare(`
+    DELETE FROM temperature_logs 
+    WHERE timestamp < datetime('now', '-' || ? || ' days')
+    AND batch_id IN (
+      SELECT id FROM batches WHERE status IN ('delivered', 'processed', 'recalled')
+    )
+  `).run(daysToKeep);
+  
+  return {
+    deleted_rows: result.changes,
+    message: `Đã dọn dẹp ${result.changes} bản ghi nhiệt độ cũ.`
+  };
+}

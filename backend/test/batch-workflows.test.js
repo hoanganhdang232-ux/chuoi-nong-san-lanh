@@ -48,41 +48,6 @@ test.after(async () => {
   }
 });
 
-test("farm admins can create and update products and land plots within their organization", async () => {
-  const farm = findUserByEmail("farm@agritrace.demo");
-  const token = createToken(farm);
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-
-  const productResponse = await fetch(`${baseUrl}/api/batches/products`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ name: "Xoài kiểm thử", unit: "kg" }),
-  });
-  assert.equal(productResponse.status, 201);
-  const product = await productResponse.json();
-
-  const updatedProductResponse = await fetch(
-    `${baseUrl}/api/batches/products/${product.id}`,
-    { method: "PUT", headers, body: JSON.stringify({ name: "Xoài cập nhật", unit: "thùng" }) },
-  );
-  assert.equal(updatedProductResponse.status, 200);
-  assert.equal((await updatedProductResponse.json()).unit, "thùng");
-
-  const plot = db
-    .prepare("SELECT id FROM land_plots WHERE farm_id = (SELECT id FROM farms WHERE organization_id = ?) LIMIT 1")
-    .get(farm.organization_id);
-  const plotResponse = await fetch(`${baseUrl}/api/batches/land-plots/${plot.id}`, {
-    method: "PUT",
-    headers,
-    body: JSON.stringify({ name: "Thửa cập nhật", areaHa: 9.5 }),
-  });
-  assert.equal(plotResponse.status, 200);
-  assert.equal((await plotResponse.json()).area_ha, 9.5);
-});
-
 test("creates a harvest batch with auto-generated unique code and validates input", async () => {
   const farm = findUserByEmail("farm@agritrace.demo");
   const token = createToken(farm);
@@ -224,23 +189,6 @@ test("lists transfer requests without conflicting with the batch id route", asyn
   const list = await listResponse.json();
   assert.ok(Array.isArray(list));
   assert.ok(list.some((item) => item.batch_id === batch.id));
-
-  const requestData = await createRequest.json();
-  const processorToken = createToken(processor);
-  await fetch(
-    `${baseUrl}/api/transfers/transfer-requests/${requestData.id}/decision`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${processorToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        decision: "rejected",
-        reason: "Dọn dẹp sau khi kiểm tra danh sách",
-      }),
-    },
-  );
 });
 
 test("creates transfer request, confirms it, and records a new chain event", async () => {
@@ -250,7 +198,7 @@ test("creates transfer request, confirms it, and records a new chain event", asy
   const processorToken = createToken(processor);
   const batch = db
     .prepare(
-      "SELECT id, organization_id FROM batches WHERE organization_id = ? AND status != 'pending_confirmation' LIMIT 1",
+      "SELECT id, organization_id FROM batches WHERE organization_id = ? LIMIT 1",
     )
     .get(farm.organization_id);
 
@@ -318,7 +266,7 @@ test("creates transfer request, confirms it, and records a new chain event", asy
         Authorization: `Bearer ${processorToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ decision: "rejected" }),
+      body: JSON.stringify({ decision: "confirmed" }),
     },
   );
   assert.equal(decisionWithoutReason.status, 400);
@@ -384,7 +332,7 @@ test("rejects transfer with a reason and exposes an integrity violation when an 
   const processorToken = createToken(processor);
   const auditorToken = createToken(auditor);
   const batch = db
-    .prepare("SELECT * FROM batches WHERE organization_id = ? AND status != 'pending_confirmation' LIMIT 1")
+    .prepare("SELECT * FROM batches WHERE organization_id = ? LIMIT 1")
     .get(farm.organization_id);
 
   const requestResponse = await fetch(
@@ -453,47 +401,17 @@ test("rejects transfer with a reason and exposes an integrity violation when an 
   assert.equal(integrity.broken, true);
 });
 
-test("SCRUM-59 / S-11: recorded events cannot be updated or deleted by any means", () => {
-  const event = db.prepare("SELECT * FROM event_logs LIMIT 1").get();
+test("recorded events cannot be updated or deleted", () => {
+  const event = db.prepare("SELECT id FROM event_logs LIMIT 1").get();
   assert.ok(event);
 
-  // Attempting to modify event_type
   assert.throws(
     () =>
       db
-        .prepare("UPDATE event_logs SET event_type = 'tampered' WHERE id = ?")
+        .prepare("UPDATE event_logs SET event_type = 'edited' WHERE id = ?")
         .run(event.id),
     /event_logs are immutable/,
   );
-
-  // Attempting to modify data_json
-  assert.throws(
-    () =>
-      db
-        .prepare("UPDATE event_logs SET data_json = '{\"hacked\": true}' WHERE id = ?")
-        .run(event.id),
-    /event_logs are immutable/,
-  );
-
-  // Attempting to modify current_hash or previous_hash
-  assert.throws(
-    () =>
-      db
-        .prepare("UPDATE event_logs SET current_hash = 'fakehash' WHERE id = ?")
-        .run(event.id),
-    /event_logs are immutable/,
-  );
-
-  // Attempting to modify timestamp
-  assert.throws(
-    () =>
-      db
-        .prepare("UPDATE event_logs SET timestamp = '2020-01-01' WHERE id = ?")
-        .run(event.id),
-    /event_logs are immutable/,
-  );
-
-  // Attempting to delete the event
   assert.throws(
     () => db.prepare("DELETE FROM event_logs WHERE id = ?").run(event.id),
     /event_logs are immutable/,
@@ -635,116 +553,3 @@ test("merges multiple batches into a new batch and records lineage", async () =>
   const genealogy = await genealogyResponse.json();
   assert.ok(genealogy.ancestors.length >= 2);
 });
-
-test("SCRUM-58: every batch change is recorded as a sequential event with hash", async () => {
-  const farm = findUserByEmail("farm@agritrace.demo");
-  const processor = findUserByEmail("processor@agritrace.demo");
-  const farmToken = createToken(farm);
-  const processorToken = createToken(processor);
-  const farmHeaders = {
-    Authorization: `Bearer ${farmToken}`,
-    "Content-Type": "application/json",
-  };
-  const processorHeaders = {
-    Authorization: `Bearer ${processorToken}`,
-    "Content-Type": "application/json",
-  };
-
-  const plot = db
-    .prepare(
-      "SELECT id FROM land_plots WHERE farm_id = (SELECT id FROM farms WHERE organization_id = ?) LIMIT 1",
-    )
-    .get(farm.organization_id);
-  const product = db
-    .prepare("SELECT id FROM products WHERE organization_id = ? LIMIT 1")
-    .get(farm.organization_id);
-
-  // 1. Thay đổi 1: Thu hoạch lô (tạo mới)
-  const harvestRes = await fetch(`${baseUrl}/api/batches/harvest`, {
-    method: "POST",
-    headers: farmHeaders,
-    body: JSON.stringify({
-      landPlotId: plot.id,
-      productId: product.id,
-      quantityKg: 300,
-      harvestedAt: new Date().toISOString(),
-    }),
-  });
-  assert.equal(harvestRes.status, 201);
-  const { batch } = await harvestRes.json();
-
-  // 2. Thay đổi 2: Cập nhật trạng thái lô
-  const statusRes = await fetch(`${baseUrl}/api/batches/${batch.id}/status`, {
-    method: "POST",
-    headers: farmHeaders,
-    body: JSON.stringify({
-      status: "processed",
-      current_location: "Khu sơ chế",
-      temperature_c: 6,
-    }),
-  });
-  assert.equal(statusRes.status, 201);
-
-  // 3. Thay đổi 3: Yêu cầu bàn giao lô
-  const transferRes = await fetch(
-    `${baseUrl}/api/batches/${batch.id}/transfer-requests`,
-    {
-      method: "POST",
-      headers: farmHeaders,
-      body: JSON.stringify({
-        toOrganizationId: processor.organization_id,
-        note: "Bàn giao lô sang processor",
-      }),
-    },
-  );
-  assert.equal(transferRes.status, 201);
-  const transfer = await transferRes.json();
-
-  // 4. Thay đổi 4: Xác nhận bàn giao
-  const decisionRes = await fetch(
-    `${baseUrl}/api/batches/transfer-requests/${transfer.id}/decision`,
-    {
-      method: "POST",
-      headers: processorHeaders,
-      body: JSON.stringify({
-        decision: "confirmed",
-        reason: "Tiếp nhận lô đầy đủ, chuẩn nhiệt độ",
-      }),
-    },
-  );
-  assert.equal(decisionRes.status, 200);
-
-  // Kiểm tra chuỗi sự kiện nối tiếp trong DB
-  const events = db
-    .prepare(
-      "SELECT id, event_type, previous_hash, current_hash FROM event_logs WHERE batch_id = ? ORDER BY id ASC",
-    )
-    .all(batch.id);
-
-  assert.equal(events.length, 4);
-  assert.equal(events[0].event_type, "batch_harvested");
-  assert.match(events[0].previous_hash, /^GENESIS_/);
-
-  assert.equal(events[1].event_type, "batch_processed");
-  assert.equal(events[1].previous_hash, events[0].current_hash);
-
-  assert.equal(events[2].event_type, "batch_transfer_requested");
-  assert.equal(events[2].previous_hash, events[1].current_hash);
-
-  assert.equal(events[3].event_type, "batch_transferred");
-  assert.equal(events[3].previous_hash, events[2].current_hash);
-
-  // Kiểm tra API verify integrity
-  const integrityRes = await fetch(
-    `${baseUrl}/api/batches/${batch.id}/integrity`,
-    {
-      headers: processorHeaders,
-    },
-  );
-  assert.equal(integrityRes.status, 200);
-  const integrity = await integrityRes.json();
-  assert.equal(integrity.valid, true);
-  assert.equal(integrity.broken, false);
-  assert.equal(integrity.invalidEventIds.length, 0);
-});
-

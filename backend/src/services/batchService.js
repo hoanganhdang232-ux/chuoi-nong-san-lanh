@@ -85,6 +85,99 @@ export function verifyEventChain(events) {
   };
 }
 
+export function verifyBatchChain(batchId) {
+  const db = getDb();
+
+  const batchExists = db.prepare("SELECT id FROM batches WHERE id = ?").get(batchId);
+  if (!batchExists) {
+    return {
+      batch_id: batchId,
+      is_valid: false,
+      total_events: 0,
+      first_broken_index: null,
+      first_broken_event_id: null,
+      error_type: "BATCH_NOT_FOUND",
+      events: []
+    };
+  }
+
+  const events = db
+    .prepare("SELECT * FROM event_logs WHERE batch_id = ? ORDER BY id ASC")
+    .all(batchId);
+
+  if (events.length === 0) {
+    return {
+      batch_id: batchId,
+      is_valid: true,
+      total_events: 0,
+      first_broken_index: null,
+      first_broken_event_id: null,
+      error_type: null,
+      events: []
+    };
+  }
+
+  let previousHash = GENESIS_HASH;
+  let firstBrokenIndex = null;
+  let firstBrokenEventId = null;
+  let errorType = null;
+  let isBroken = false;
+
+  const resultEvents = [];
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+
+    let status = "VALID";
+
+    if (isBroken) {
+      status = "SUSPECT";
+    } else {
+      if (event.previous_hash !== previousHash) {
+        status = "SUSPECT";
+        isBroken = true;
+        firstBrokenIndex = i;
+        firstBrokenEventId = event.id;
+        errorType = "CHAIN_BROKEN";
+      } else {
+        const expectedHash = generateEventHash({
+          previousHash: event.previous_hash,
+          batchId: event.batch_id,
+          eventType: event.event_type,
+          dataJson: event.data_json,
+          timestamp: event.timestamp,
+        });
+
+        if (event.current_hash !== expectedHash) {
+          status = "TAMPERED";
+          isBroken = true;
+          firstBrokenIndex = i;
+          firstBrokenEventId = event.id;
+          errorType = "CONTENT_TAMPERED";
+        }
+      }
+    }
+
+    resultEvents.push({
+      event_id: event.id,
+      index: i,
+      status
+    });
+
+    previousHash = event.current_hash;
+  }
+
+  return {
+    batch_id: batchId,
+    is_valid: !isBroken,
+    total_events: events.length,
+    first_broken_index: firstBrokenIndex,
+    first_broken_event_id: firstBrokenEventId,
+    error_type: errorType,
+    events: resultEvents
+  };
+}
+
 export function getBatchWithEvents(batchId, organizationId, isAuditor) {
   const db = getDb();
   const batch = db
@@ -134,10 +227,10 @@ export function getBatchGenealogy(batchId, organizationId, isAuditor) {
   const allBatches = isAuditor
     ? db.prepare("SELECT * FROM batches ORDER BY id ASC").all()
     : db
-        .prepare(
-          "SELECT * FROM batches WHERE organization_id = ? ORDER BY id ASC",
-        )
-        .all(organizationId);
+      .prepare(
+        "SELECT * FROM batches WHERE organization_id = ? ORDER BY id ASC",
+      )
+      .all(organizationId);
   const byId = new Map(allBatches.map((item) => [item.id, item]));
   const relationRows = db
     .prepare("SELECT parent_batch_id, child_batch_id FROM batch_relations")
@@ -217,12 +310,6 @@ export function updateBatchStatus({
   if (!batch) throw new Error("Lô hàng không tồn tại.");
   if (!isAuditor && batch.organization_id !== organizationId)
     throw new Error("Không có quyền cập nhật lô hàng này.");
-
-  if (batch.status === "pending_confirmation") {
-    throw new Error(
-      "Lô hàng đang trong trạng thái chờ xác nhận bàn giao (bị khóa), không thể cập nhật trạng thái.",
-    );
-  }
 
   db.prepare(
     `
