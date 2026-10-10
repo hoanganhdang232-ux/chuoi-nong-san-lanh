@@ -1,142 +1,66 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
-  ArrowRight,
   ArrowRightLeft,
   Box,
   CheckCircle2,
-  Clock,
-  Droplets,
   Download,
   ExternalLink,
   MapPin,
-  Pencil,
   Plus,
-  ShieldAlert,
   ShieldCheck,
   Siren,
   Thermometer,
-  Tractor,
+  Search,
+  Sprout,
   Truck,
-  ClipboardList,
-  X,
-  XCircle,
+  Building2,
+  Calendar,
+  LogOut,
+  ChevronDown,
+  ChevronUp,
+  FileCheck,
+  RefreshCw,
+  Eye,
+  Trash2,
+  Bell,
 } from "lucide-react";
-import Sidebar from "../components/Sidebar.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import { SkeletonCard, SkeletonRow } from "../components/ui/Skeleton.jsx";
+import { EmptyState } from "../components/ui/EmptyState.jsx";
 
-const EVENT_META = {
-  batch_harvested:           { label: "Thu hoạch",           color: "bg-emerald-100 text-emerald-700",  icon: Tractor },
-  batch_processed:           { label: "Đã sơ chế",           color: "bg-blue-100 text-blue-700",       icon: ClipboardList },
-  batch_in_transit:          { label: "Đang vận chuyển",     color: "bg-amber-100 text-amber-700",    icon: Truck },
-  batch_delivered:           { label: "Đã giao",             color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
-  batch_transfer_requested:  { label: "Yêu cầu bàn giao",  color: "bg-violet-100 text-violet-700",   icon: ArrowRightLeft },
-  batch_transferred:         { label: "Xác nhận bàn giao", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
-  batch_transfer_rejected:   { label: "Từ chối bàn giao",  color: "bg-rose-100 text-rose-700",      icon: ShieldAlert },
-  batch_recalled:            { label: "Thu hồi",             color: "bg-rose-100 text-rose-700",      icon: Siren },
-  cold_chain_violation:      { label: "Vi phạm chuỗi lạnh",color: "bg-orange-100 text-orange-700",  icon: AlertTriangle },
-  temperature_series_recorded:{ label: "Ghi cảm biến",      color: "bg-sky-100 text-sky-700",        icon: Thermometer },
-  temperature_check:         { label: "Kiểm tra nhiệt độ", color: "bg-sky-100 text-sky-700",        icon: Thermometer },
-  temperature_violation:     { label: "Vi phạm nhiệt độ",  color: "bg-orange-100 text-orange-700",  icon: AlertTriangle },
-  batch_split:               { label: "Tách lô",             color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
-  batch_split_child:         { label: "Lô con (tách)",       color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
-  batch_split_parent:        { label: "Lô cha (tách)",       color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
-  batch_merge:               { label: "Gộp lô",              color: "bg-teal-100 text-teal-700",      icon: ArrowRightLeft },
+const statusColors = {
+  registered: "bg-slate-100 text-slate-800 border-slate-200",
+  pending_confirmation: "bg-amber-50 text-amber-800 border-amber-200",
+  processed: "bg-blue-50 text-blue-800 border-blue-200",
+  in_transit: "bg-amber-50 text-amber-800 border-amber-200",
+  delivered: "bg-emerald-50 text-emerald-800 border-emerald-200",
+  recalled: "bg-rose-50 text-rose-800 border-rose-200",
 };
 
-function EventBadge({ eventType }) {
-  const meta = EVENT_META[eventType] || { label: eventType, color: "bg-slate-100 text-slate-600", icon: ClipboardList };
-  const Icon = meta.icon;
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${meta.color}`}>
-      <Icon size={12} />
-      {meta.label}
-    </span>
-  );
-}
-
-function DataField({ label, value }) {
-  if (value === null || value === undefined || value === "") return null;
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-      <span className="text-xs text-slate-400 min-w-fit">{label}:</span>
-      <span className="text-xs text-slate-700 font-medium break-all">{String(value)}</span>
-    </div>
-  );
-}
-
-function HashBadge({ label, hash }) {
-  const [copied, setCopied] = useState(false);
-  if (!hash) return null;
-  const short = hash.startsWith("GENESIS") ? hash : `${hash.slice(0, 8)}…${hash.slice(-6)}`;
-  const copy = () => {
-    navigator.clipboard.writeText(hash);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-  return (
-    <button
-      type="button"
-      onClick={copy}
-      title={hash}
-      className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-500 hover:bg-slate-200 transition-colors"
-    >
-      {label}: <span className="text-slate-700">{short}</span>
-      <span className="ml-1 text-[9px] text-slate-400">{copied ? "✓" : "⎘"}</span>
-    </button>
-  );
-}
-
-const STATUS_META = {
-  registered: {
-    label: "Đã đăng ký",
-    color: "bg-slate-100 text-slate-700 border-slate-200",
-    dot: "bg-slate-400",
-  },
-  pending_confirmation: {
-    label: "Chờ bàn giao",
-    color: "bg-amber-50 text-amber-800 border-amber-300 ring-1 ring-amber-200",
-    dot: "bg-amber-500",
-  },
-  processed: {
-    label: "Đã sơ chế",
-    color: "bg-blue-50 text-blue-700 border-blue-200",
-    dot: "bg-blue-500",
-  },
-  in_transit: {
-    label: "Đang vận chuyển",
-    color: "bg-orange-50 text-orange-800 border-orange-200",
-    dot: "bg-orange-500",
-  },
-  delivered: {
-    label: "Đã giao nhận",
-    color: "bg-emerald-50 text-emerald-800 border-emerald-300 ring-1 ring-emerald-200",
-    dot: "bg-emerald-500",
-  },
-  recalled: {
-    label: "Thu hồi",
-    color: "bg-rose-50 text-rose-800 border-rose-300 ring-1 ring-rose-200",
-    dot: "bg-rose-500",
-  },
+const statusLabels = {
+  registered: "Đã đăng ký",
+  pending_confirmation: "Chờ xác nhận",
+  processed: "Đã sơ chế",
+  in_transit: "Đang vận chuyển",
+  delivered: "Đã giao nhận",
+  recalled: "Đang thu hồi",
 };
 
-function BatchStatusBadge({ status }) {
-  const meta = STATUS_META[status] || {
-    label: status,
-    color: "bg-slate-100 text-slate-700 border-slate-200",
-    dot: "bg-slate-400",
-  };
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${meta.color}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-      {meta.label}
-    </span>
-  );
-}
+const eventLabels = {
+  batch_registered: "Đăng ký lô hàng mới",
+  batch_harvested: "Thu hoạch nông sản",
+  batch_transferred: "Yêu cầu bàn giao vận chuyển",
+  batch_in_transit: "Đang vận chuyển trên đường",
+  batch_delivered: "Đã giao nhận tại cơ sở",
+  batch_processed: "Sơ chế & Đóng gói hoàn tất",
+  batch_recalled: "Kích hoạt lệnh thu hồi",
+  cold_chain_violation: "Cảnh báo vi phạm chuỗi lạnh (> 8°C)",
+  temperature_series_recorded: "Ghi nhận chuỗi nhiệt độ IoT",
+};
 
 export default function DashboardPage() {
   const { user, logout } = useAuth();
@@ -145,47 +69,70 @@ export default function DashboardPage() {
   const [transferRequests, setTransferRequests] = useState([]);
   const [landPlots, setLandPlots] = useState([]);
   const [products, setProducts] = useState([]);
+  const [farms, setFarms] = useState([]);
   const [temperatureLogs, setTemperatureLogs] = useState([]);
   const [recallReports, setRecallReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState(null);
-  const [genealogy, setGenealogy] = useState(null);
-  const [selectedView, setSelectedView] = useState("Tổng quan");
+  const [activeTab, setActiveTab] = useState("overview"); // overview, batches, harvest, coldchain, transfer, integrity, recall
+  const [batchSearch, setBatchSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Forms
+  const todayDate = new Date().toISOString().split("T")[0];
   const [harvestForm, setHarvestForm] = useState({
     landPlotId: "",
     productId: "",
-    quantityKg: "",
-    harvestedAt: "",
+    quantityKg: "500",
+    harvestedAt: todayDate,
   });
   const [landPlotForm, setLandPlotForm] = useState({
     name: "",
-    areaHa: "",
-    latitude: "",
-    longitude: "",
+    areaHa: "1.5",
+    latitude: "12.71",
+    longitude: "108.12",
   });
-  const [editingLandPlotId, setEditingLandPlotId] = useState(null);
   const [productForm, setProductForm] = useState({ name: "", unit: "kg" });
-  const [editingProductId, setEditingProductId] = useState(null);
-  const [splitBatchId, setSplitBatchId] = useState("");
-  const [splitQuantity, setSplitQuantity] = useState("");
-  const [mergeBatchIds, setMergeBatchIds] = useState([]);
+  const [farmForm, setFarmForm] = useState({ name: "", address: "", latitude: "", longitude: "" });
   const [transferForm, setTransferForm] = useState({
     batchId: "",
     toOrganizationId: "",
     note: "",
   });
   const [submission, setSubmission] = useState({ message: "", tone: "" });
+  const [harvestError, setHarvestError] = useState(null);
+  const [isSubmittingHarvest, setIsSubmittingHarvest] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [recallForm, setRecallForm] = useState({ batchId: "", reason: "" });
-  const [transferFilter, setTransferFilter] = useState("all");
-  const [decisionModal, setDecisionModal] = useState({
-    open: false,
-    transfer: null,
-    decision: "confirmed",
-    reason: "",
-    submitting: false,
-  });
+  const [splitForm, setSplitForm] = useState({ batchId: "", parts: [{ quantity: "" }, { quantity: "" }] });
+  const [mergeForm, setMergeForm] = useState({ parentBatchIds: [], note: "" });
+
+  const handleSplitSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.splitBatch(splitForm.batchId, { allocations: splitForm.parts });
+      await loadData();
+      setSplitForm({ batchId: "", parts: [{ quantity: "" }, { quantity: "" }] });
+      setSubmission({ message: "Đã tách lô thành công.", tone: "success" });
+    } catch (err) {
+      setSubmission({ message: err.message, tone: "error" });
+    }
+  };
+
+  const handleMergeSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.mergeBatches({ batchIds: mergeForm.parentBatchIds, note: mergeForm.note });
+      await loadData();
+      setMergeForm({ parentBatchIds: [], note: "" });
+      setSubmission({ message: "Đã gộp lô thành công.", tone: "success" });
+    } catch (err) {
+      setSubmission({ message: err.message, tone: "error" });
+    }
+  };
 
   const loadData = async () => {
     const [dashboardData, batchData, transferData] = await Promise.all([
@@ -196,19 +143,19 @@ export default function DashboardPage() {
     setDashboard(dashboardData);
     setBatches(batchData);
     setTransferRequests(transferData);
-    if (batchData[0]) {
-      try {
-        const [fullBatch, batchGenealogy] = await Promise.all([
-          api.getBatch(batchData[0].id),
-          api.getBatchGenealogy(batchData[0].id),
-        ]);
-        setSelectedBatch(fullBatch);
-        setGenealogy(batchGenealogy);
-      } catch {
-        setSelectedBatch(batchData[0]);
-      }
-    } else {
-      setSelectedBatch(null);
+    if (!selectedBatch && batchData.length > 0) {
+      handleSelectBatch(batchData[0].id);
+    }
+  };
+
+  const handleSelectBatch = async (batchId) => {
+    try {
+      const detail = await api.getBatch(batchId);
+      setSelectedBatch(detail);
+    } catch {
+      // fallback
+      const found = batches.find((b) => b.id === batchId);
+      if (found) setSelectedBatch(found);
     }
   };
 
@@ -228,13 +175,24 @@ export default function DashboardPage() {
         ]);
         setNotifications(notificationData);
         setRecallReports(recallData);
-        if (user?.role === "farm_admin") {
-          const [plotData, productData] = await Promise.all([
-            api.getLandPlots(),
-            api.getProducts(),
-          ]);
-          setLandPlots(plotData);
+        if (["farm_admin", "processor_admin", "distributor_admin"].includes(user?.role)) {
+          const productData = await api.getProducts();
           setProducts(productData);
+
+          if (user?.role === "farm_admin") {
+            const [plotData, farmData] = await Promise.all([
+              api.getLandPlots(),
+              api.getFarms(),
+            ]);
+            setLandPlots(plotData);
+            setFarms(farmData);
+            if (plotData.length > 0 && !harvestForm.landPlotId) {
+              setHarvestForm((prev) => ({ ...prev, landPlotId: String(plotData[0].id) }));
+            }
+            if (productData.length > 0 && !harvestForm.productId) {
+              setHarvestForm((prev) => ({ ...prev, productId: String(productData[0].id) }));
+            }
+          }
         }
       } catch (loadError) {
         setError(loadError.message);
@@ -245,229 +203,125 @@ export default function DashboardPage() {
     loadInitialData();
   }, [user?.role]);
 
-  const stats = useMemo(
-    () => [
-      {
-        label: "Tổng lô",
-        value: dashboard?.totals?.total_batches ?? 0,
-        icon: Box,
-        tone: "bg-slate-100 text-slate-700",
-      },
-      {
-        label: "Đang hoạt động",
-        value: dashboard?.totals?.active_batches ?? 0,
-        icon: Activity,
-        tone: "bg-emerald-100 text-emerald-700",
-      },
-      {
-        label: "Khối lượng còn lại",
-        value: `${Number(dashboard?.totals?.remaining_quantity ?? 0).toLocaleString()} kg`,
-        icon: Droplets,
-        tone: "bg-blue-100 text-blue-700",
-      },
-      {
-        label: "Chuỗi lạnh",
-        value: "Ổn định",
-        icon: Thermometer,
-        tone: "bg-violet-100 text-violet-700",
-      },
-    ],
-    [dashboard],
-  );
-
-  const filteredBatches =
-    user?.role === "auditor"
-      ? batches
-      : batches.filter(
-          (batch) => batch.organization_id === user?.organizationId,
-        );
-
-  const pendingIncomingCount = useMemo(() => {
-    return transferRequests.filter(
-      (req) =>
-        req.status === "pending" &&
-        req.to_organization_id === user?.organizationId,
-    ).length;
-  }, [transferRequests, user?.organizationId]);
-
-  const filteredTransferRequests = useMemo(() => {
-    return transferRequests.filter((req) => {
-      if (transferFilter === "incoming") {
-        return (
-          req.status === "pending" &&
-          req.to_organization_id === user?.organizationId
-        );
-      }
-      if (transferFilter === "outgoing") {
-        return req.from_organization_id === user?.organizationId;
-      }
-      if (transferFilter === "completed") {
-        return req.status === "confirmed" || req.status === "rejected";
-      }
-      return true;
-    });
-  }, [transferRequests, transferFilter, user?.organizationId]);
-
-  const openDecisionModal = (transfer, decision) => {
-    setDecisionModal({
-      open: true,
-      transfer,
-      decision,
-      reason: decision === "confirmed" ? "" : "Lô hàng không đạt tiêu chuẩn chất lượng.",
-      submitting: false,
-    });
-  };
-
-  const closeDecisionModal = () => {
-    setDecisionModal({
-      open: false,
-      transfer: null,
-      decision: "confirmed",
-      reason: "",
-      submitting: false,
-    });
-  };
-
-  const handleSubmitDecisionModal = async (e) => {
-    if (e) e.preventDefault();
-    const { transfer, decision, reason } = decisionModal;
-    if (!transfer) return;
-    if (decision === "rejected") {
-      if (!reason || !reason.trim() || reason.trim().length < 10) {
-        setSubmission({
-          message: "Lý do từ chối bắt buộc và phải có tối thiểu 10 ký tự.",
-          tone: "error",
-        });
-        return;
-      }
-    }
-    setDecisionModal((prev) => ({ ...prev, submitting: true }));
-    try {
-      await api.decideTransfer(transfer.id, {
-        decision,
-        reason: reason?.trim() || null,
-      });
-      await loadData();
-      setSubmission({
-        message:
-          decision === "confirmed"
-            ? `Đã xác nhận bàn giao lô ${transfer.batch_code}. Lô hàng đã chuyển sang tổ chức của bạn.`
-            : `Đã từ chối bàn giao lô ${transfer.batch_code} kèm lý do.`,
-        tone: "success",
-      });
-      closeDecisionModal();
-    } catch (submitError) {
-      setSubmission({ message: submitError.message, tone: "error" });
-      setDecisionModal((prev) => ({ ...prev, submitting: false }));
-    }
-  };
-
-  const handleSelectBatch = async (batchId) => {
-    const batch = filteredBatches.find((item) => item.id === batchId);
-    if (!batch) return;
-    try {
-      const [batch, batchGenealogy] = await Promise.all([
-        api.getBatch(batchId),
-        api.getBatchGenealogy(batchId),
-      ]);
-      setSelectedBatch(batch);
-      setGenealogy(batchGenealogy);
-    } catch (loadError) {
-      setSelectedBatch(batch);
-      setGenealogy(null);
-      setSubmission({ message: loadError.message, tone: "error" });
-    }
-  };
-
   const handleLandPlotSubmit = async (event) => {
     event.preventDefault();
-    setSubmission({ message: "", tone: "" });
     try {
-      if (editingLandPlotId) {
-        await api.updateLandPlot(editingLandPlotId, landPlotForm);
-      } else {
-        await api.createLandPlot(landPlotForm);
-      }
-      setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "" });
-      setEditingLandPlotId(null);
-      const nextPlots = await api.getLandPlots();
-      setLandPlots(nextPlots);
-      setSubmission({ message: "Đã khai báo thửa đất mới.", tone: "success" });
+      await api.createLandPlot({
+        name: landPlotForm.name,
+        areaHa: Number(landPlotForm.areaHa),
+        latitude: Number(landPlotForm.latitude),
+        longitude: Number(landPlotForm.longitude),
+      });
+      const plotData = await api.getLandPlots();
+      setLandPlots(plotData);
+      setLandPlotForm({
+        name: "",
+        areaHa: "1.5",
+        latitude: "12.71",
+        longitude: "108.12",
+      });
+      setSubmission({
+        message: "Đã lưu thông tin thửa đất thành công.",
+        tone: "success",
+      });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
     }
   };
 
-  const handleProductSubmit = async (event) => {
-    event.preventDefault();
+  const handleDeleteLandPlot = async (plotId, plotName) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa thửa đất "${plotName}" không?`)) return;
     try {
-      if (editingProductId) {
-        await api.updateProduct(editingProductId, productForm);
-      } else {
-        await api.createProduct(productForm);
+      await api.deleteLandPlot(plotId);
+      const plotData = await api.getLandPlots();
+      setLandPlots(plotData);
+      setSubmission({
+        message: "Đã xóa thửa đất thành công.",
+        tone: "success",
+      });
+      // Optionally reset harvestForm landPlotId if it was the deleted one
+      if (harvestForm.landPlotId === String(plotId)) {
+        setHarvestForm((prev) => ({ ...prev, landPlotId: plotData.length > 0 ? String(plotData[0].id) : "" }));
       }
+    } catch (error) {
+      setSubmission({ message: error.message, tone: "error" });
+    }
+  };
+
+  const handleProductSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.createProduct(productForm);
+      const data = await api.getProducts();
+      setProducts(data);
       setProductForm({ name: "", unit: "kg" });
-      setEditingProductId(null);
-      setProducts(await api.getProducts());
-      setSubmission({
-        message: editingProductId ? "Đã cập nhật sản phẩm." : "Đã thêm sản phẩm.",
-        tone: "success",
-      });
-    } catch (submitError) {
-      setSubmission({ message: submitError.message, tone: "error" });
+      setSubmission({ message: "Thêm sản phẩm thành công.", tone: "success" });
+    } catch (err) {
+      setSubmission({ message: err.message, tone: "error" });
     }
   };
 
-  const handleSplitSubmit = async (event) => {
-    event.preventDefault();
+  const handleDeleteProduct = async (id, name) => {
+    if (!window.confirm(`Xóa sản phẩm "${name}"?`)) return;
     try {
-      const result = await api.splitBatch(Number(splitBatchId), [
-        { quantity: Number(splitQuantity) },
-      ]);
-      setSplitBatchId("");
-      setSplitQuantity("");
-      await loadData();
-      setSubmission({
-        message: `Đã tách lô thành ${result.children.length} lô con.`,
-        tone: "success",
-      });
-    } catch (submitError) {
-      setSubmission({ message: submitError.message, tone: "error" });
+      await api.deleteProduct(id);
+      const data = await api.getProducts();
+      setProducts(data);
+      setSubmission({ message: "Đã xóa sản phẩm.", tone: "success" });
+    } catch (err) {
+      setSubmission({ message: err.message, tone: "error" });
     }
   };
 
-  const handleMergeSubmit = async (event) => {
-    event.preventDefault();
+  const handleFarmSubmit = async (e) => {
+    e.preventDefault();
     try {
-      const result = await api.mergeBatches(
-        mergeBatchIds.map(Number),
-        filteredBatches.find((batch) => batch.id === Number(mergeBatchIds[0]))?.product_id,
-      );
-      setMergeBatchIds([]);
-      await loadData();
-      setSubmission({ message: `Đã tạo lô gộp ${result.newBatch.batch_code}.`, tone: "success" });
-    } catch (submitError) {
-      setSubmission({ message: submitError.message, tone: "error" });
+      await api.createFarm(farmForm);
+      const data = await api.getFarms();
+      setFarms(data);
+      setFarmForm({ name: "", address: "", latitude: "", longitude: "" });
+      setSubmission({ message: "Thêm trang trại thành công.", tone: "success" });
+    } catch (err) {
+      setSubmission({ message: err.message, tone: "error" });
+    }
+  };
+
+  const handleDeleteFarm = async (id, name) => {
+    if (!window.confirm(`Xóa trang trại "${name}"?`)) return;
+    try {
+      await api.deleteFarm(id);
+      const data = await api.getFarms();
+      setFarms(data);
+      setSubmission({ message: "Đã xóa trang trại.", tone: "success" });
+    } catch (err) {
+      setSubmission({ message: err.message, tone: "error" });
     }
   };
 
   const handleHarvestSubmit = async (event) => {
     event.preventDefault();
+    setHarvestError(null);
+    setIsSubmittingHarvest(true);
     try {
-      const result = await api.createHarvest(harvestForm);
-      setHarvestForm({
-        landPlotId: "",
-        productId: "",
-        quantityKg: "",
-        harvestedAt: "",
+      const result = await api.createHarvest({
+        landPlotId: Number(harvestForm.landPlotId),
+        productId: Number(harvestForm.productId),
+        quantityKg: Number(harvestForm.quantityKg),
+        harvestedAt: harvestForm.harvestedAt,
       });
       await loadData();
+      if (result.batch?.id) {
+        handleSelectBatch(result.batch.id);
+      }
       setSubmission({
-        message: `Đã tạo ${result.batch.batch_code}.`,
+        message: `Đã tạo thành công lô thu hoạch ${result.batch.batch_code}. Dữ liệu đã được ký số Blockchain.`,
         tone: "success",
       });
     } catch (submitError) {
+      setHarvestError({ field: submitError.field, message: submitError.message });
       setSubmission({ message: submitError.message, tone: "error" });
+    } finally {
+      setIsSubmittingHarvest(false);
     }
   };
 
@@ -481,7 +335,7 @@ export default function DashboardPage() {
       setTransferForm({ batchId: "", toOrganizationId: "", note: "" });
       await loadData();
       setSubmission({
-        message: "Đã gửi yêu cầu bàn giao cho tổ chức nhận.",
+        message: "Đã gửi yêu cầu bàn giao cho đơn vị tiếp nhận.",
         tone: "success",
       });
     } catch (submitError) {
@@ -489,15 +343,53 @@ export default function DashboardPage() {
     }
   };
 
-  const handleVerifyIntegrity = async (batchId) => {
-    try {
-      const result = await api.verifyBatchIntegrity(batchId);
-      setSelectedBatch({ ...selectedBatch, integrity: result });
+  const handleTransferDecision = async (transferId, decision) => {
+    const defaultReason =
+      decision === "confirmed"
+        ? "Đã kiểm tra và nhận đủ lô hàng đúng nhiệt độ chuỗi lạnh."
+        : "Lô hàng không đạt tiêu chuẩn nhiệt độ bảo quản.";
+    const reason = window.prompt(
+      decision === "confirmed"
+        ? "Nhập lý do xác nhận bàn giao:"
+        : "Nhập lý do từ chối bàn giao:",
+      defaultReason,
+    );
+    if (reason === null) return;
+    if (!reason.trim()) {
       setSubmission({
-        message: result.valid
-          ? "Chuỗi hash còn nguyên vẹn."
-          : `Chuỗi bị đứt tại event ${result.invalidEventIds.join(", ")}.`,
-        tone: result.valid ? "success" : "error",
+        message: "Vui lòng nhập lý do trước khi xử lý bàn giao.",
+        tone: "error",
+      });
+      return;
+    }
+
+    try {
+      await api.decideTransfer(transferId, {
+        decision,
+        reason: reason.trim(),
+      });
+      await loadData();
+      setSubmission({
+        message:
+          decision === "confirmed"
+            ? "Đã xác nhận tiếp nhận lô hàng thành công."
+            : "Đã từ chối tiếp nhận lô hàng.",
+        tone: "success",
+      });
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const handleVerifyIntegrity = async (batch) => {
+    try {
+      const result = await api.verifyBatchIntegrity(batch.id);
+      setSelectedBatch({ ...batch, integrity: result });
+      setSubmission({
+        message: result.is_valid
+          ? `Lô ${result.batch_id || batch.id}: Toàn vẹn 100% qua ${result.total_events} sự kiện mã hóa SHA-256.`
+          : `CẢNH BÁO: Phát hiện sai lệch tại sự kiện #${result.first_broken_event_id} (${result.error_type}).`,
+        tone: result.is_valid ? "success" : "error",
       });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
@@ -506,16 +398,19 @@ export default function DashboardPage() {
 
   const handleSensorSimulation = async (batchId) => {
     try {
-      const result = await api.simulateSensor(batchId);
-      setTemperatureLogs(result.readings);
+      const result = await api.simulateSensor(batchId, { count: 3 });
+      const logs = await api.getTemperatureLogs(batchId);
+      setTemperatureLogs(logs);
       await loadData();
+      if (selectedBatch?.id === batchId) {
+        handleSelectBatch(batchId);
+      }
       setSubmission({
-        message: result.alertActive
-          ? "Vi phạm chuỗi lạnh: nhiệt độ trên 8°C liên tục quá 30 phút."
-          : "Đã ghi nhận chuỗi dữ liệu cảm biến.",
-        tone: result.alertActive ? "error" : "success",
+        message: result.hasAlert
+          ? `CẢNH BÁO: Đã ghi nhận nhiệt độ vượt ngưỡng (${result.series.map((s) => s.temperature + "°C").join(", ")})! Lô hàng đã kích hoạt cờ vi phạm chuỗi lạnh.`
+          : `Cảm biến IoT cập nhật thành công: ${result.series.map((s) => s.temperature + "°C").join(", ")} (Nhiệt độ an toàn).`,
+        tone: result.hasAlert ? "error" : "success",
       });
-      setNotifications(await api.getNotifications());
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
     }
@@ -528,16 +423,34 @@ export default function DashboardPage() {
         rootBatchId: Number(recallForm.batchId),
         reason: recallForm.reason,
       });
-      setRecallReports([report, ...recallReports]);
       setRecallForm({ batchId: "", reason: "" });
+      const updatedReports = await api.getRecallReports();
+      setRecallReports(updatedReports);
       await loadData();
-      setNotifications(await api.getNotifications());
       setSubmission({
-        message: `Đã thu hồi ${report.items.length} lô liên quan.`,
+        message: `Đã kích hoạt lệnh thu hồi thành công đối với ${report.items.length} lô liên quan.`,
         tone: "success",
       });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const handleDownloadAuditReport = async (batchId, batchCode) => {
+    try {
+      const report = await api.getAuditReport(batchId);
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-report-${batchCode}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setSubmission({ message: "Đã tải xuống hồ sơ kiểm tra thành công.", tone: "success" });
+    } catch (err) {
+      setSubmission({ message: err.message || "Lỗi tải hồ sơ", tone: "error" });
     }
   };
 
@@ -550,1652 +463,1610 @@ export default function DashboardPage() {
       const downloadUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = downloadUrl;
-      link.download = `agritrace-audit-${report.batch.batch_code}.json`;
+      link.download = `kiem-toan-xac-thuc-${report.batch.batch_code}.json`;
       link.click();
       URL.revokeObjectURL(downloadUrl);
       setSubmission({
         message: report.integrity.valid
-          ? "Đã xuất hồ sơ; Hash Chain toàn vẹn tại thời điểm kiểm tra."
-          : `Đã xuất hồ sơ; phát hiện sai lệch tại event ${report.integrity.invalidEventIds.join(", ")}.`,
-        tone: report.integrity.valid ? "success" : "error",
+          ? "Đã xuất báo cáo kiểm toán điện tử JSON (Hash Chain hợp lệ)."
+          : "Đã xuất báo cáo kiểm toán điện tử JSON (Có cảnh báo).",
+        tone: "success",
       });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
     }
   };
 
-  if (loading)
+  // Filtered batches
+  const filteredBatches = useMemo(() => {
+    return batches.filter((b) => {
+      const matchSearch =
+        batchSearch === "" ||
+        b.batch_code?.toLowerCase().includes(batchSearch.toLowerCase()) ||
+        b.product_name?.toLowerCase().includes(batchSearch.toLowerCase());
+      const matchStatus =
+        statusFilter === "all" || b.status === statusFilter;
+      return matchSearch && matchStatus;
+    });
+  }, [batches, batchSearch, statusFilter]);
+
+  const roleTitleMap = {
+    farm_admin: "Quản trị Nông trại / HTX",
+    processor_admin: "Cơ sở Sơ chế & Đóng gói",
+    distributor_admin: "Đơn vị Vận chuyển & Phân phối",
+    auditor: "Cán bộ Kiểm tra / Thanh tra",
+    user: "Nông dân / Xã viên",
+  };
+
+  if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-slate-500 font-medium">
-        Đang tải dashboard...
+      <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+        <div className="bg-brand-900 text-white p-4">Đang tải bàn làm việc quản lý...</div>
+        <div className="p-8 max-w-6xl mx-auto w-full grid grid-cols-4 gap-4">
+          <SkeletonCard count={4} />
+        </div>
       </div>
     );
-  if (error)
+  }
+
+  if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center px-6 text-center text-rose-600 font-medium">
-        {error}
+      <div className="min-h-screen flex items-center justify-center p-6 text-center text-rose-700 bg-slate-50">
+        <div>
+          <p className="font-bold text-lg mb-2">Đã xảy ra lỗi khi tải dữ liệu</p>
+          <p className="text-sm">{error}</p>
+        </div>
       </div>
     );
+  }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-100 lg:flex-row">
-      <Sidebar
-        user={user}
-        currentView={selectedView}
-        onSelectView={setSelectedView}
-        onLogout={logout}
-      />
-
-      <main className="flex-1 p-5 sm:p-8">
-        {/* Header */}
-        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-              <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">
-                Agritrace Blockchain Cold Chain
-              </p>
-            </div>
-            <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              {user?.organizationName}
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-emerald-200/80 bg-white px-4 py-2.5 shadow-sm">
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                <ShieldCheck className="text-emerald-600" size={18} />
-                <span>Toàn vẹn sự kiện:</span>
-                <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-emerald-800 font-bold">
-                  Bất biến (Verified)
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
+      {/* Top Bar Quản Trị Chuẩn Cơ Quan */}
+      <header className="bg-brand-900 text-white border-b border-brand-800 sticky top-0 z-40 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-14">
+            {/* Left Brand */}
+            <div className="flex items-center gap-3">
+              <Link to="/" className="flex items-center gap-2 text-white hover:text-emerald-200 transition-colors">
+                <span className="flex h-7 w-7 items-center justify-center rounded bg-emerald-700 font-bold text-xs">
+                  VN
                 </span>
+                <span className="font-bold text-sm tracking-wide uppercase hidden sm:inline">
+                  Cổng Truy Xuất Quốc Gia
+                </span>
+              </Link>
+              <span className="text-brand-500">|</span>
+              <div className="text-xs text-brand-100 truncate max-w-[200px] sm:max-w-none">
+                {user?.organizationName} ({roleTitleMap[user?.role] || user?.role})
               </div>
             </div>
-          </div>
-        </header>
 
-        {selectedView === "Tổng quan" && (
-          <>
-            {/* Sprint Status & Integrity Overview Banner */}
-            <section className="mb-6 rounded-3xl bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-950 p-6 text-white shadow-lg relative overflow-hidden">
-              <div className="absolute -right-10 -bottom-10 opacity-10 pointer-events-none">
-                <ShieldCheck size={260} />
-              </div>
-              <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold backdrop-blur-sm text-emerald-200">
-                    <ShieldCheck size={14} /> Chuỗi Hash SHA-256 Bất biến
-                  </div>
-                  <h2 className="mt-2 text-xl sm:text-2xl font-bold text-white tracking-tight">
-                    Hệ thống Giám sát & Truy xuất Nguồn gốc Nông sản Lạnh
-                  </h2>
-                  <p className="mt-1 text-xs text-emerald-100/80 max-w-2xl leading-relaxed">
-                    Mọi sự kiện thu hoạch, sơ chế, bàn giao và vi phạm nhiệt độ đều được ký băm SHA-256 liên hoàn. Không thể sửa hay xóa lén dữ liệu đã ghi nhận.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="rounded-2xl bg-white/10 p-3.5 backdrop-blur-sm ring-1 ring-white/15 text-center min-w-[96px]">
-                    <p className="text-2xl font-black text-white">{filteredBatches.length}</p>
-                    <p className="text-[10px] text-emerald-200 uppercase font-semibold mt-0.5">Tổng lô hàng</p>
-                  </div>
-                  <div className="rounded-2xl bg-white/10 p-3.5 backdrop-blur-sm ring-1 ring-white/15 text-center min-w-[96px]">
-                    <p className="text-2xl font-black text-amber-300">{pendingIncomingCount}</p>
-                    <p className="text-[10px] text-amber-200 uppercase font-semibold mt-0.5">Chờ bàn giao</p>
-                  </div>
-                  <div className="rounded-2xl bg-white/10 p-3.5 backdrop-blur-sm ring-1 ring-white/15 text-center min-w-[96px]">
-                    <p className="text-2xl font-black text-emerald-300">100%</p>
-                    <p className="text-[10px] text-emerald-200 uppercase font-semibold mt-0.5">Toàn vẹn Hash</p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Quick Stats Grid */}
-            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {stats.map(({ label, value, icon: Icon, tone }) => (
-                <div
-                  key={label}
-                  className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80 transition hover:shadow-md"
+            {/* Right Actions */}
+            <div className="flex items-center gap-3">
+              <Link
+                to="/"
+                target="_blank"
+                rel="noreferrer"
+                className="hidden md:inline-flex items-center gap-1 px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-xs text-emerald-200 font-medium transition-colors"
+              >
+                <ExternalLink size={13} />
+                <span>Xem Cổng Tra Cứu</span>
+              </Link>
+              <div className="relative">
+                <button
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className="relative p-1.5 rounded-full hover:bg-brand-800 transition-colors text-brand-100 hover:text-white"
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-medium text-slate-500">{label}</p>
-                      <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
-                        {value}
-                      </p>
+                  <Bell size={18} />
+                  {notifications.filter(n => !n.read_at).length > 0 && (
+                    <span className="absolute top-0 right-0 h-3 w-3 rounded-full bg-rose-500 border border-brand-900"></span>
+                  )}
+                </button>
+                {showNotifications && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden z-50">
+                    <div className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                      <h4 className="font-bold text-slate-800 text-sm">Thông báo ({notifications.length})</h4>
                     </div>
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-2xl ${tone}`}
-                    >
-                      <Icon size={22} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </section>
-
-            {/* Main Section: Excel/AntD Styled Batch Table & Quick Cold Chain Monitor */}
-            <section className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_0.9fr]">
-              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900">
-                      Danh sách lô nông sản
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Bảng định dạng chuẩn Excel với mã nguồn Monospace và trạng thái có điều kiện
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
-                    {filteredBatches.length} lô
-                  </span>
-                </div>
-
-                {filteredBatches.length === 0 ? (
-                  <div className="py-12 text-center text-slate-400">
-                    <Box size={36} className="mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">Chưa có lô hàng nào.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-hidden rounded-xl border border-slate-200">
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full text-left text-sm">
-                        {/* Excel / AntD style dark green header */}
-                        <thead className="bg-emerald-900 text-slate-100 font-semibold text-xs tracking-wider uppercase">
-                          <tr>
-                            <th className="px-4 py-3.5">Mã lô (Batch Code)</th>
-                            <th className="px-4 py-3.5">Sản phẩm</th>
-                            <th className="px-4 py-3.5">Trạng thái</th>
-                            <th className="px-4 py-3.5 text-right">Khối lượng</th>
-                            <th className="px-4 py-3.5 text-center">Thao tác</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {filteredBatches.map((batch, idx) => {
-                            const isSelected = selectedBatch?.id === batch.id;
-                            return (
-                              <tr
-                                key={batch.id}
-                                onClick={() => handleSelectBatch(batch.id)}
-                                className={`transition-colors cursor-pointer ${
-                                  isSelected
-                                    ? "bg-emerald-50/90 font-medium ring-1 ring-inset ring-emerald-400"
-                                    : idx % 2 === 0
-                                    ? "bg-white hover:bg-emerald-50/40"
-                                    : "bg-slate-50/60 hover:bg-emerald-50/40"
-                                }`}
-                              >
-                                <td className="px-4 py-3.5">
-                                  <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-1 rounded-md border border-slate-200">
-                                    {batch.batch_code}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3.5 font-medium text-slate-800">
-                                  {batch.product_name}
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  <BatchStatusBadge status={batch.status} />
-                                </td>
-                                <td className="px-4 py-3.5 text-right font-mono font-semibold text-slate-900">
-                                  {Number(batch.remaining_quantity).toLocaleString()}{" "}
-                                  <span className="text-xs text-slate-400 font-normal">kg</span>
-                                </td>
-                                <td className="px-4 py-3.5 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleSelectBatch(batch.id);
-                                    }}
-                                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                                      isSelected
-                                        ? "bg-emerald-700 text-white shadow-sm"
-                                        : "bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-700"
-                                    }`}
-                                  >
-                                    {isSelected ? "Đang chọn" : "Xem sự kiện"}
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                    <div className="max-h-64 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-500">Không có thông báo mới</div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div key={n.id} className={`p-3 border-b border-slate-50 text-xs ${n.read_at ? "bg-white" : "bg-brand-50/30"}`}>
+                            <div className="font-bold text-slate-800 mb-0.5">{n.title}</div>
+                            <div className="text-slate-600 line-clamp-2">{n.message}</div>
+                            <div className="text-[10px] text-slate-400 mt-1">{new Date(n.created_at).toLocaleString("vi-VN")}</div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Quick Cold Chain Monitor */}
-              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-bold text-slate-900">
-                      Giám sát chuỗi lạnh
-                    </h2>
-                    {selectedBatch && (
-                      <span className="font-mono text-xs text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-md">
-                        {selectedBatch.batch_code}
-                      </span>
+              <div className="text-xs font-semibold text-white px-2 py-1 bg-brand-800 rounded">
+                {user?.name}
+              </div>
+              <button
+                onClick={logout}
+                title="Đăng xuất"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-rose-900/60 hover:bg-rose-800 text-xs text-rose-100 font-medium transition-colors"
+              >
+                <LogOut size={13} />
+                <span className="hidden sm:inline">Thoát</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Sub Navigation Tabs */}
+          <nav className="flex space-x-1 overflow-x-auto pb-2 scrollbar-none text-xs sm:text-sm font-medium">
+            <button
+              onClick={() => setActiveTab("overview")}
+              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition-colors ${
+                activeTab === "overview"
+                  ? "bg-white text-brand-900 font-bold shadow-sm"
+                  : "text-brand-100 hover:bg-brand-800 hover:text-white"
+              }`}
+            >
+              Tổng quan
+            </button>
+
+            {["farm_admin", "processor_admin", "distributor_admin"].includes(user?.role) && (
+              <button
+                onClick={() => setActiveTab("catalog")}
+                className={`px-3 py-1.5 rounded-md whitespace-nowrap transition-colors ${
+                  activeTab === "catalog"
+                    ? "bg-white text-brand-900 font-bold shadow-sm"
+                    : "text-brand-100 hover:bg-brand-800 hover:text-white"
+                }`}
+              >
+                📚 Danh mục
+              </button>
+            )}
+
+            <button
+              onClick={() => setActiveTab("batches")}
+              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition-colors ${
+                activeTab === "batches"
+                  ? "bg-white text-brand-900 font-bold shadow-sm"
+                  : "text-brand-100 hover:bg-brand-800 hover:text-white"
+              }`}
+            >
+              Quản lý Lô nông sản ({batches.length})
+            </button>
+
+            {user?.role === "farm_admin" && (
+              <button
+                onClick={() => setActiveTab("harvest")}
+                className={`px-3 py-1.5 rounded-md whitespace-nowrap transition-colors ${
+                  activeTab === "harvest"
+                    ? "bg-white text-brand-900 font-bold shadow-sm"
+                    : "text-brand-100 hover:bg-brand-800 hover:text-white"
+                }`}
+              >
+                🌾 Thu hoạch & Thửa đất
+              </button>
+            )}
+
+            {["processor_admin", "farm_admin"].includes(user?.role) && (
+              <button
+                onClick={() => setActiveTab("split_merge")}
+                className={`px-3 py-1.5 rounded-md whitespace-nowrap transition-colors ${
+                  activeTab === "split_merge"
+                    ? "bg-white text-brand-900 font-bold shadow-sm"
+                    : "text-brand-100 hover:bg-brand-800 hover:text-white"
+                }`}
+              >
+                ✂️ Tách / Gộp lô
+              </button>
+            )}
+
+            <button
+              onClick={() => setActiveTab("coldchain")}
+              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition-colors ${
+                activeTab === "coldchain"
+                  ? "bg-white text-brand-900 font-bold shadow-sm"
+                  : "text-brand-100 hover:bg-brand-800 hover:text-white"
+              }`}
+            >
+              ❄️ Giám sát Chuỗi lạnh
+            </button>
+
+            <button
+              onClick={() => setActiveTab("transfer")}
+              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition-colors ${
+                activeTab === "transfer"
+                  ? "bg-white text-brand-900 font-bold shadow-sm"
+                  : "text-brand-100 hover:bg-brand-800 hover:text-white"
+              }`}
+            >
+              🚚 Bàn giao vận chuyển ({transferRequests.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab("integrity")}
+              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition-colors ${
+                activeTab === "integrity"
+                  ? "bg-white text-brand-900 font-bold shadow-sm"
+                  : "text-brand-100 hover:bg-brand-800 hover:text-white"
+              }`}
+            >
+              🔒 Kiểm toán Blockchain SHA-256
+            </button>
+
+            {[
+              "farm_admin",
+              "processor_admin",
+              "distributor_admin",
+              "auditor",
+            ].includes(user?.role) && (
+              <button
+                onClick={() => setActiveTab("recall")}
+                className={`px-3 py-1.5 rounded-md whitespace-nowrap transition-colors ${
+                  activeTab === "recall"
+                    ? "bg-white text-brand-900 font-bold shadow-sm"
+                    : "text-brand-100 hover:bg-brand-800 hover:text-white"
+                }`}
+              >
+                🚨 Lệnh Thu hồi ({recallReports.length})
+              </button>
+            )}
+          </nav>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 flex-1">
+        {/* Global Alert Notification */}
+        {!!submission.message && (
+          <div
+            className={`mb-6 p-4 rounded-lg text-sm font-semibold flex items-center justify-between gap-2 shadow-sm ${
+              submission.tone === "error"
+                ? "bg-rose-50 border border-rose-200 text-rose-800"
+                : "bg-emerald-50 border border-emerald-200 text-emerald-900"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {submission.tone === "error" ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+              <span>{submission.message}</span>
+            </div>
+            <button
+              onClick={() => setSubmission({ message: "", tone: "" })}
+              className="text-xs opacity-70 hover:opacity-100 px-2 py-0.5 rounded border"
+            >
+              Đóng
+            </button>
+          </div>
+        )}
+
+        {/* ----------------- TAB: CATALOG ----------------- */}
+        {activeTab === "catalog" && ["farm_admin", "processor_admin", "distributor_admin"].includes(user?.role) && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <Building2 className="text-brand-600" /> Quản lý Danh mục cốt lõi
+            </h2>
+
+            <div className={`grid grid-cols-1 ${user?.role === "farm_admin" ? "md:grid-cols-2" : ""} gap-6`}>
+              {/* Product Form & List */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Box className="text-brand-600" size={20} /> Sản phẩm ({products.length})
+                  </h3>
+                </div>
+                
+                {/* Form Section */}
+                <div className="p-5 bg-slate-50/30 border-b border-slate-100">
+                  <form onSubmit={handleProductSubmit} className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Tên sản phẩm <span className="text-rose-500">*</span></label>
+                      <input
+                        type="text"
+                        placeholder="VD: Dưa hấu đỏ..."
+                        className="w-full text-sm border-slate-300 rounded-lg focus:border-brand-500 focus:ring-brand-500 shadow-sm"
+                        value={productForm.name}
+                        onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="w-full sm:w-32">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Đơn vị <span className="text-rose-500">*</span></label>
+                      <input
+                        type="text"
+                        placeholder="kg, hộp, tấn..."
+                        className="w-full text-sm border-slate-300 rounded-lg focus:border-brand-500 focus:ring-brand-500 shadow-sm"
+                        value={productForm.unit}
+                        onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button type="submit" className="w-full sm:w-auto bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors h-[38px]">
+                        <Plus size={16} /> Thêm
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* List Section */}
+                <div className="flex-1 overflow-y-auto max-h-96 p-5">
+                  {products.length === 0 ? (
+                    <EmptyState icon={<Box />} message="Chưa có sản phẩm nào. Hãy thêm sản phẩm đầu tiên của bạn." />
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {products.map((p) => (
+                        <div key={p.id} className="group flex justify-between items-center p-3 sm:p-4 border border-slate-200 rounded-xl hover:border-brand-300 hover:shadow-md transition-all bg-white">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center font-bold">
+                              {p.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-800">{p.name}</div>
+                              <div className="text-xs text-slate-500 mt-0.5">Đơn vị tính: <span className="font-medium text-slate-700">{p.unit}</span></div>
+                            </div>
+                          </div>
+                          <button onClick={() => handleDeleteProduct(p.id, p.name)} className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-2 rounded-lg transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100" title="Xóa">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Farm Form & List */}
+              {user?.role === "farm_admin" && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                  <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                      <MapPin className="text-brand-600" size={20} /> Trang trại ({farms.length})
+                    </h3>
+                  </div>
+                  
+                  {/* Form Section */}
+                  <div className="p-5 bg-slate-50/30 border-b border-slate-100">
+                    <form onSubmit={handleFarmSubmit} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Tên trang trại <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="VD: Nông trại Hạnh Phúc..."
+                          className="w-full text-sm border-slate-300 rounded-lg focus:border-brand-500 focus:ring-brand-500 shadow-sm"
+                          value={farmForm.name}
+                          onChange={(e) => setFarmForm({ ...farmForm, name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Địa chỉ chi tiết</label>
+                        <input
+                          type="text"
+                          placeholder="Số nhà, đường, xã/phường..."
+                          className="w-full text-sm border-slate-300 rounded-lg focus:border-brand-500 focus:ring-brand-500 shadow-sm"
+                          value={farmForm.address}
+                          onChange={(e) => setFarmForm({ ...farmForm, address: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Vĩ độ (Latitude)</label>
+                          <input
+                            type="number" step="any"
+                            placeholder="VD: 12.710"
+                            className="w-full text-sm border-slate-300 rounded-lg focus:border-brand-500 focus:ring-brand-500 shadow-sm"
+                            value={farmForm.latitude}
+                            onChange={(e) => setFarmForm({ ...farmForm, latitude: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Kinh độ (Longitude)</label>
+                          <input
+                            type="number" step="any"
+                            placeholder="VD: 108.120"
+                            className="w-full text-sm border-slate-300 rounded-lg focus:border-brand-500 focus:ring-brand-500 shadow-sm"
+                            value={farmForm.longitude}
+                            onChange={(e) => setFarmForm({ ...farmForm, longitude: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors mt-2">
+                        <Plus size={16} /> Đăng ký Trang trại
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* List Section */}
+                  <div className="flex-1 overflow-y-auto max-h-96 p-5">
+                    {farms.length === 0 ? (
+                      <EmptyState icon={<MapPin />} message="Bạn chưa đăng ký trang trại nào." />
+                    ) : (
+                      <div className="grid grid-cols-1 gap-3">
+                        {farms.map((f) => (
+                          <div key={f.id} className="group flex justify-between items-start p-4 border border-slate-200 rounded-xl hover:border-brand-300 hover:shadow-md transition-all bg-white relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-brand-500"></div>
+                            <div className="pl-2">
+                              <div className="font-bold text-slate-800">{f.name}</div>
+                              <div className="text-xs text-slate-500 mt-1 flex items-start gap-1">
+                                <MapPin size={12} className="mt-0.5 shrink-0" />
+                                <span>{f.address || "Chưa cập nhật địa chỉ"}</span>
+                              </div>
+                              {(f.latitude || f.longitude) && (
+                                <div className="text-[10px] text-brand-600 mt-2 font-mono bg-brand-50 inline-block px-2 py-0.5 rounded border border-brand-100">
+                                  {f.latitude}, {f.longitude}
+                                </div>
+                              )}
+                            </div>
+                            <button onClick={() => handleDeleteFarm(f.id, f.name)} className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-2 rounded-lg transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100" title="Xóa">
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between rounded-xl bg-emerald-50/80 p-4 border border-emerald-100">
-                      <div className="flex items-center gap-3">
-                        <Thermometer className="text-emerald-600" size={20} />
-                        <div>
-                          <p className="text-xs text-slate-500">Nhiệt độ hiện tại</p>
-                          <p className="font-bold text-slate-800">Cảm biến thời gian thực</p>
-                        </div>
-                      </div>
-                      <span className="font-mono text-2xl font-black text-emerald-700">
-                        {selectedBatch?.temperature_c ?? 9}°C
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-xl bg-amber-50/80 p-4 border border-amber-100">
-                      <div className="flex items-center gap-3">
-                        <AlertTriangle className="text-amber-600" size={20} />
-                        <div>
-                          <p className="text-xs text-slate-500">Ngưỡng chuẩn quy định</p>
-                          <p className="font-bold text-slate-800">Tiêu chuẩn bảo quản lạnh</p>
-                        </div>
-                      </div>
-                      <span className="font-mono text-xl font-bold text-amber-700">≤ 8°C</span>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-                        <MapPin size={15} /> Vị trí lưu kho / hiện tại
-                      </div>
-                      <p className="mt-1.5 font-bold text-slate-800">
-                        {selectedBatch?.current_location || "Chưa cập nhật"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {selectedBatch?.cold_chain_alert ? (
-                  <div className="mt-4 rounded-xl bg-rose-50 p-3 border border-rose-200 flex items-center gap-2 text-xs text-rose-800 font-semibold">
-                    <AlertTriangle size={16} className="text-rose-600 flex-shrink-0" />
-                    <span>Lô hàng này có vi phạm chuỗi lạnh trong lịch sử!</span>
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-xl bg-emerald-50/60 p-3 border border-emerald-100 flex items-center gap-2 text-xs text-emerald-800 font-medium">
-                    <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
-                    <span>Chuỗi lạnh duy trì đạt chuẩn an toàn.</span>
-                  </div>
-                )}
-              </div>
-            </section>
-          </>
-        )}
-
-        {selectedView === "Lô nông sản" && user?.role === "farm_admin" && (
-          <section className="grid gap-6 lg:grid-cols-2">
-            <form
-              className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
-              onSubmit={handleLandPlotSubmit}
-            >
-              <div className="mb-4 flex items-center gap-3">
-                <Plus className="text-emerald-600" size={20} />
-                <h2 className="text-lg font-bold text-slate-900">
-                  Khai báo thửa đất
-                </h2>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  placeholder="Tên thửa"
-                  value={landPlotForm.name}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      name: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  placeholder="Diện tích (ha)"
-                  value={landPlotForm.areaHa}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      areaHa: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  step="0.000001"
-                  placeholder="Vĩ độ"
-                  value={landPlotForm.latitude}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      latitude: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  step="0.000001"
-                  placeholder="Kinh độ"
-                  value={landPlotForm.longitude}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      longitude: event.target.value,
-                    })
-                  }
-                />
-              </div>
-              <button
-                className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white"
-                type="submit"
-              >
-                Lưu thửa đất
-              </button>
-            </form>
-
-            <form
-              className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
-              onSubmit={handleHarvestSubmit}
-            >
-              <div className="mb-4 flex items-center gap-3">
-                <Box className="text-emerald-600" size={20} />
-                <h2 className="text-lg font-bold text-slate-900">
-                  Thu hoạch lô hàng
-                </h2>
-              </div>
-              <div className="grid gap-3">
-                <select
-                  className="rounded-xl border px-3 py-2"
-                  value={harvestForm.landPlotId}
-                  onChange={(event) =>
-                    setHarvestForm({
-                      ...harvestForm,
-                      landPlotId: event.target.value,
-                    })
-                  }
-                >
-                  <option value="">Chọn thửa đất</option>
-                  {landPlots.map((plot) => (
-                    <option key={plot.id} value={plot.id}>
-                      {plot.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="rounded-xl border px-3 py-2"
-                  value={harvestForm.productId}
-                  onChange={(event) =>
-                    setHarvestForm({
-                      ...harvestForm,
-                      productId: event.target.value,
-                    })
-                  }
-                >
-                  <option value="">Chọn sản phẩm</option>
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  placeholder="Khối lượng (kg)"
-                  value={harvestForm.quantityKg}
-                  onChange={(event) =>
-                    setHarvestForm({
-                      ...harvestForm,
-                      quantityKg: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="date"
-                  value={harvestForm.harvestedAt}
-                  onChange={(event) =>
-                    setHarvestForm({
-                      ...harvestForm,
-                      harvestedAt: event.target.value,
-                    })
-                  }
-                />
-              </div>
-              <button
-                className="mt-4 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white"
-                type="submit"
-              >
-                Tạo lô cho thu hoạch
-              </button>
-            </form>
-            <form
-              className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
-              onSubmit={handleProductSubmit}
-            >
-              <h2 className="text-lg font-bold text-slate-900">
-                {editingProductId ? "Sửa sản phẩm" : "Thêm sản phẩm"}
-              </h2>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  placeholder="Tên sản phẩm"
-                  value={productForm.name}
-                  onChange={(event) =>
-                    setProductForm({ ...productForm, name: event.target.value })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  placeholder="Đơn vị tính"
-                  value={productForm.unit}
-                  onChange={(event) =>
-                    setProductForm({ ...productForm, unit: event.target.value })
-                  }
-                />
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button
-                  className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white"
-                  type="submit"
-                >
-                  {editingProductId ? "Cập nhật" : "Thêm sản phẩm"}
-                </button>
-                {editingProductId && (
-                  <button
-                    className="rounded-xl border px-4 py-2"
-                    type="button"
-                    onClick={() => {
-                      setEditingProductId(null);
-                      setProductForm({ name: "", unit: "kg" });
-                    }}
-                  >
-                    Hủy
-                  </button>
-                )}
-              </div>
-              <div className="mt-5 space-y-2">
-                {products.map((product) => (
-                  <button
-                    key={product.id}
-                    type="button"
-                    className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left hover:border-emerald-300"
-                    onClick={() => {
-                      setEditingProductId(product.id);
-                      setProductForm({ name: product.name, unit: product.unit });
-                    }}
-                  >
-                    <span className="font-medium">{product.name}</span>
-                    <span className="text-sm text-slate-500">{product.unit}</span>
-                  </button>
-                ))}
-              </div>
-            </form>
-          </section>
-        )}
-
-        {selectedView === "L\u00f4 n\u00f4ng s\u1ea3n" && user?.role === "farm_admin" && (
-          <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">Danh sách thửa đất</h2>
-                <p className="text-xs text-slate-400 mt-0.5">{landPlots.length} thửa đang quản lý</p>
-              </div>
-            </div>
-            {landPlots.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-10 text-slate-400">
-                <MapPin size={32} className="opacity-30" />
-                <p className="text-sm">Chưa có thửa đất nào. Hãy khai báo thửa đất ở trên.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {landPlots.map((plot) => {
-                  const batchCount = batches.filter(
-                    (b) => b.organization_id === user?.organizationId
-                  ).length;
-                  const hasCoords = plot.latitude && plot.longitude;
-                  return (
-                    <article
-                      key={plot.id}
-                      className="group relative flex flex-col gap-3 rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-emerald-50/40 p-5 shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
-                    >
-                      {/* Header */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-600">
-                            {plot.farm_name}
-                          </p>
-                          <h3 className="mt-0.5 text-base font-bold text-slate-900">{plot.name}</h3>
-                        </div>
-                        <button
-                          type="button"
-                          title="Chỉnh sửa thửa đất"
-                          className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
-                          onClick={() => {
-                            setEditingLandPlotId(plot.id);
-                            setLandPlotForm({
-                              name: plot.name,
-                              areaHa: String(plot.area_ha),
-                              latitude: plot.latitude ? String(plot.latitude) : "",
-                              longitude: plot.longitude ? String(plot.longitude) : "",
-                            });
-                            window.scrollTo({ top: 0, behavior: "smooth" });
-                          }}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                      </div>
-
-                      {/* Stats row */}
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-xl bg-white/80 px-3 py-2 text-center ring-1 ring-slate-100">
-                          <p className="text-lg font-bold text-slate-900">{plot.area_ha}</p>
-                          <p className="text-[10px] text-slate-400">ha</p>
-                        </div>
-                        <div className="rounded-xl bg-white/80 px-3 py-2 text-center ring-1 ring-slate-100">
-                          <p className="text-lg font-bold text-slate-900">{batchCount}</p>
-                          <p className="text-[10px] text-slate-400">Lô hàng</p>
-                        </div>
-                        <div className="rounded-xl bg-white/80 px-3 py-2 text-center ring-1 ring-slate-100">
-                          <p className="text-lg font-bold text-emerald-600">#</p>
-                          <p className="text-[10px] text-slate-400">ID: {plot.id}</p>
-                        </div>
-                      </div>
-
-                      {/* Coordinates */}
-                      <div className="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 ring-1 ring-slate-100">
-                        <MapPin size={14} className={hasCoords ? "text-emerald-500" : "text-slate-300"} />
-                        {hasCoords ? (
-                          <span className="font-mono text-[11px] text-slate-600">
-                            {Number(plot.latitude).toFixed(4)}°N, {Number(plot.longitude).toFixed(4)}°E
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-slate-400 italic">Chưa có tọa độ GPS</span>
-                        )}
-                        {hasCoords && (
-                          <a
-                            href={`https://www.google.com/maps?q=${plot.latitude},${plot.longitude}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="ml-auto text-[10px] text-emerald-600 hover:underline"
-                          >
-                            Xem Maps ↗
-                          </a>
-                        )}
-                      </div>
-
-                      {/* Created date */}
-                      <p className="text-[10px] text-slate-400">
-                        Khai báo: {new Date(plot.created_at).toLocaleDateString("vi-VN", {
-                          day: "2-digit", month: "2-digit", year: "numeric"
-                        })}
-                      </p>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        )}
-
-        {(selectedView === "L\u00f4 n\u00f4ng s\u1ea3n" || selectedView === "T\u00f2ng quan") &&
-          ["farm_admin", "processor_admin", "distributor_admin"].includes(user?.role) && (
-            <section className="mt-6 grid gap-6 lg:grid-cols-2">
-              <form
-                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
-                onSubmit={handleSplitSubmit}
-              >
-                <h2 className="text-lg font-bold text-slate-900">Tách lô hàng</h2>
-                <p className="mt-2 text-sm text-slate-500">Chọn lô và khối lượng lô con.</p>
-                <div className="mt-4 grid gap-3">
-                  <select
-                    className="rounded-xl border px-3 py-2"
-                    value={splitBatchId}
-                    onChange={(event) => setSplitBatchId(event.target.value)}
-                  >
-                    <option value="">Chọn lô cần tách</option>
-                    {filteredBatches.map((batch) => (
-                      <option key={batch.id} value={batch.id}>
-                        {batch.batch_code} · còn {batch.remaining_quantity}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    className="rounded-xl border px-3 py-2"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    placeholder="Khối lượng lô con"
-                    value={splitQuantity}
-                    onChange={(event) => setSplitQuantity(event.target.value)}
-                  />
-                </div>
-                <button className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white" type="submit">
-                  Tách lô
-                </button>
-              </form>
-
-              <form
-                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
-                onSubmit={handleMergeSubmit}
-              >
-                <h2 className="text-lg font-bold text-slate-900">Gộp lô hàng</h2>
-                <p className="mt-2 text-sm text-slate-500">Chọn ít nhất hai lô cùng sản phẩm.</p>
-                <div className="mt-4 max-h-48 space-y-2 overflow-auto">
-                  {filteredBatches.map((batch) => (
-                    <label key={batch.id} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={mergeBatchIds.includes(String(batch.id))}
-                        onChange={(event) =>
-                          setMergeBatchIds((current) =>
-                            event.target.checked
-                              ? [...current, String(batch.id)]
-                              : current.filter((id) => id !== String(batch.id)),
-                          )
-                        }
-                      />
-                      {batch.batch_code} · {batch.product_name}
-                    </label>
-                  ))}
-                </div>
-                <button className="mt-4 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white" type="submit" disabled={mergeBatchIds.length < 2}>
-                  Gộp lô
-                </button>
-              </form>
-            </section>
-          )}
-
-        {selectedView === "Integrity" && (
-          <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="text-emerald-600" size={22} />
-              <h2 className="text-lg font-bold text-slate-900">
-                Kiểm tra tính toàn vẹn
-              </h2>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {filteredBatches.map((batch) => (
-                <button
-                  key={batch.id}
-                  className="rounded-xl border p-4 text-left hover:border-emerald-300"
-                  onClick={() => handleVerifyIntegrity(batch.id)}
-                >
-                  <div className="font-semibold text-slate-800">
-                    {batch.batch_code}
-                  </div>
-                  <div className="text-sm text-slate-500">
-                    {batch.product_name}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {(selectedView === "Chuỗi lạnh" || selectedView === "Kiểm soát") &&
-          [
-            "farm_admin",
-            "processor_admin",
-            "distributor_admin",
-            "auditor",
-          ].includes(user?.role) && (
-            <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Giám sát chuỗi lạnh
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Cảnh báo khi nhiệt độ vượt 8°C liên tục quá 30 phút.
-                  </p>
-                </div>
-                <span className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
-                  Ngưỡng cảnh báo: &gt; 8°C
-                </span>
-              </div>
-              <div className="mt-4 divide-y divide-slate-100">
-                {filteredBatches.map((batch) => (
-                  <div
-                    key={batch.id}
-                    className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedBatch(batch)}
-                        className="font-semibold text-slate-900 hover:text-emerald-700"
-                      >
-                        {batch.batch_code}
-                      </button>
-                      <p className="text-sm text-slate-500">
-                        {batch.product_name} ·{" "}
-                        {batch.current_location || "Chưa cập nhật vị trí"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`text-sm font-semibold ${batch.cold_chain_alert ? "text-rose-700" : "text-emerald-700"}`}
-                      >
-                        {batch.cold_chain_alert
-                          ? "Vi phạm chuỗi lạnh"
-                          : `${batch.temperature_c ?? "--"}°C`}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleSensorSimulation(batch.id)}
-                        className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700"
-                      >
-                        Giả lập cảm biến
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {temperatureLogs.length > 0 && (
-                <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-                  Đã ghi {temperatureLogs.length} mẫu mới; mẫu gần nhất:{" "}
-                  {temperatureLogs.at(-1).temperature}°C lúc{" "}
-                  {new Date(temperatureLogs.at(-1).timestamp).toLocaleString(
-                    "vi-VN",
-                  )}
-                  .
                 </div>
               )}
-            </section>
-          )}
+            </div>
+          </div>
+        )}
 
-        {selectedView === "Thu hồi" && (
-          <section className="space-y-6">
-            {user?.role !== "auditor" && (
-              <form
-                onSubmit={handleRecallSubmit}
-                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
-              >
-                <div className="mb-4 flex items-center gap-3">
-                  <Siren className="text-rose-700" size={21} />
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Kích hoạt lệnh thu hồi
-                  </h2>
+        {/* ----------------- TAB 1: OVERVIEW ----------------- */}
+        {activeTab === "overview" && (
+          <div className="space-y-6">
+            {/* Quick Stat Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                <div className="text-xs font-semibold uppercase text-slate-500">Tổng số lô hàng</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-2">
+                  {dashboard?.totals?.total_batches ?? batches.length}
                 </div>
-                <div className="grid gap-3 sm:grid-cols-[1fr_2fr_auto]">
-                  <select
-                    required
-                    className="rounded-xl border px-3 py-2"
-                    value={recallForm.batchId}
-                    onChange={(event) =>
-                      setRecallForm({
-                        ...recallForm,
-                        batchId: event.target.value,
-                      })
-                    }
-                  >
-                    <option value="">Chọn lô gốc</option>
-                    {filteredBatches.map((batch) => (
-                      <option key={batch.id} value={batch.id}>
-                        {batch.batch_code}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    required
-                    minLength={5}
-                    className="rounded-xl border px-3 py-2"
-                    placeholder="Lý do thu hồi nghiêm trọng"
-                    value={recallForm.reason}
-                    onChange={(event) =>
-                      setRecallForm({
-                        ...recallForm,
-                        reason: event.target.value,
-                      })
-                    }
-                  />
+                <div className="text-xs text-slate-500 mt-1">Đã cấp mã TCVN/GS1</div>
+              </div>
+
+              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                <div className="text-xs font-semibold uppercase text-slate-500">Chuỗi lạnh đạt chuẩn</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-emerald-700 mt-2">
+                  {batches.filter((b) => !b.cold_chain_alert).length}
+                </div>
+                <div className="text-xs text-emerald-700 mt-1">Nhiệt độ an toàn ≤ 8°C</div>
+              </div>
+
+              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                <div className="text-xs font-semibold uppercase text-slate-500">Cảnh báo nhiệt độ</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-rose-700 mt-2">
+                  {batches.filter((b) => b.cold_chain_alert).length}
+                </div>
+                <div className="text-xs text-rose-700 mt-1">Vi phạm ngưỡng chuỗi lạnh</div>
+              </div>
+
+              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                <div className="text-xs font-semibold uppercase text-slate-500">Yêu cầu bàn giao</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-blue-700 mt-2">
+                  {transferRequests.length}
+                </div>
+                <div className="text-xs text-blue-700 mt-1">Phiếu vận chuyển liên kết</div>
+              </div>
+            </div>
+
+            {/* Recent Batches & Quick Status Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* 5 Recent Batches Table */}
+              <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                  <h2 className="font-bold text-slate-900 text-sm sm:text-base">Lô nông sản mới cập nhật</h2>
                   <button
-                    className="rounded-xl bg-rose-700 px-4 py-2 font-semibold text-white hover:bg-rose-800"
-                    type="submit"
+                    onClick={() => setActiveTab("batches")}
+                    className="text-xs font-semibold text-brand-800 hover:underline"
                   >
-                    Thu hồi toàn bộ
+                    Xem tất cả ({batches.length}) →
                   </button>
                 </div>
-              </form>
-            )}
 
-            {recallReports.map((report) => (
-              <article
-                key={report.id}
-                className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200"
-              >
-                <div className="flex flex-col gap-2 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="font-bold text-slate-900">
-                      Thu hồi #{report.id} · {report.root_batch_code}
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {report.reason}
-                    </p>
-                  </div>
-                  <div className="text-sm text-slate-600">
-                    Còn tại điểm bán:{" "}
-                    <strong>
-                      {Number(report.totals.remainingQuantity).toLocaleString()}{" "}
-                      kg
-                    </strong>{" "}
-                    · Đã tiêu thụ:{" "}
-                    <strong>
-                      {Number(report.totals.consumedQuantity).toLocaleString()}{" "}
-                      kg
-                    </strong>
-                  </div>
-                </div>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-500">
+                  <table className="w-full text-left text-xs sm:text-sm">
+                    <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                       <tr>
-                        <th className="px-5 py-3">Mã lô</th>
-                        <th className="px-5 py-3">Đơn vị đang giữ</th>
-                        <th className="px-5 py-3">Kho / cửa hàng</th>
-                        <th className="px-5 py-3">Còn lại</th>
-                        <th className="px-5 py-3">Đã tiêu thụ</th>
+                        <th className="p-3 font-semibold">Mã lô</th>
+                        <th className="p-3 font-semibold">Sản phẩm</th>
+                        <th className="p-3 font-semibold">Khối lượng</th>
+                        <th className="p-3 font-semibold">Trạng thái</th>
+                        <th className="p-3 font-semibold">Chuỗi lạnh</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {report.items.map((item) => (
+                    <tbody className="divide-y divide-slate-100">
+                      {batches.slice(0, 5).map((batch) => (
                         <tr
-                          key={item.batch_id}
-                          className="border-t border-slate-100"
+                          key={batch.id}
+                          onClick={() => handleSelectBatch(batch.id)}
+                          className={`cursor-pointer hover:bg-slate-50 transition-colors ${
+                            selectedBatch?.id === batch.id ? "bg-emerald-50/50" : ""
+                          }`}
                         >
-                          <td className="px-5 py-3 font-semibold">
-                            {item.batch_code}
+                          <td className="p-3 font-bold text-brand-800">{batch.batch_code}</td>
+                          <td className="p-3 text-slate-800 font-medium">{batch.product_name}</td>
+                          <td className="p-3 text-slate-600">
+                            {Number(batch.remaining_quantity).toLocaleString()} kg
                           </td>
-                          <td className="px-5 py-3">
-                            {item.organization_name}
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                                statusColors[batch.status] || "bg-slate-100 text-slate-700"
+                              }`}
+                            >
+                              {statusLabels[batch.status] || batch.status}
+                            </span>
                           </td>
-                          <td className="px-5 py-3">
-                            {item.current_location || "Chưa cập nhật"}
-                          </td>
-                          <td className="px-5 py-3">
-                            {Number(item.remaining_quantity).toLocaleString()}{" "}
-                            kg
-                          </td>
-                          <td className="px-5 py-3">
-                            {Number(item.consumed_quantity).toLocaleString()} kg
+                          <td className="p-3">
+                            {batch.cold_chain_alert ? (
+                              <span className="text-rose-700 font-bold text-xs flex items-center gap-1">
+                                <AlertTriangle size={14} /> Vi phạm
+                              </span>
+                            ) : (
+                              <span className="text-emerald-700 font-bold text-xs flex items-center gap-1">
+                                <Thermometer size={14} /> {batch.temperature_c ?? 5}°C
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </article>
-            ))}
-          </section>
-        )}
-
-        {(selectedView === "Báo cáo kiểm tra" ||
-          selectedView === "Toàn bộ lô") &&
-          [
-            "farm_admin",
-            "processor_admin",
-            "distributor_admin",
-            "auditor",
-          ].includes(user?.role) && (
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-              <div className="flex items-center gap-3">
-                <Download className="text-emerald-700" size={21} />
-                <h2 className="text-lg font-bold text-slate-900">
-                  Xuất hồ sơ truy xuất
-                </h2>
               </div>
-              <p className="mt-1 text-sm text-slate-500">
-                Tệp JSON bao gồm phả hệ, sự kiện, nhiệt độ và kết quả Verify
-                Hash Chain tại thời điểm xuất.
-              </p>
-              <div className="mt-4 divide-y divide-slate-100">
-                {filteredBatches.map((batch) => (
-                  <div
-                    key={batch.id}
-                    className="flex items-center justify-between gap-4 py-3"
-                  >
-                    <div>
-                      <div className="font-semibold">{batch.batch_code}</div>
-                      <div className="text-sm text-slate-500">
-                        {batch.product_name}
+
+              {/* Active Cold Chain Monitor Card */}
+              <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5 flex flex-col justify-between">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm sm:text-base mb-1">
+                    Trạng thái Lô đang chọn
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4">
+                    Bấm vào một lô bất kỳ trong bảng để xem chi tiết giám sát.
+                  </p>
+
+                  {selectedBatch ? (
+                    <div className="space-y-3 text-xs sm:text-sm">
+                      <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                        <div className="text-xs text-slate-500">Mã lô được chọn:</div>
+                        <div className="text-base font-bold text-brand-900 mt-0.5">
+                          {selectedBatch.batch_code}
+                        </div>
+                        <div className="text-slate-700 mt-1 font-medium">
+                          {selectedBatch.product_name} · {Number(selectedBatch.remaining_quantity).toLocaleString()} kg
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-lg border flex items-center justify-between">
+                        <div>
+                          <div className="text-xs text-slate-500">Nhiệt độ hiện tại:</div>
+                          <div
+                            className={`text-xl font-extrabold mt-0.5 ${
+                              selectedBatch.cold_chain_alert ? "text-rose-700" : "text-emerald-700"
+                            }`}
+                          >
+                            {selectedBatch.temperature_c ?? "--"}°C
+                          </div>
+                        </div>
+                        <span
+                          className={`px-2.5 py-1 rounded text-xs font-bold ${
+                            selectedBatch.cold_chain_alert
+                              ? "bg-rose-100 text-rose-800"
+                              : "bg-emerald-100 text-emerald-800"
+                          }`}
+                        >
+                          {selectedBatch.cold_chain_alert ? "Cảnh báo vi phạm" : "Đạt chuẩn an toàn"}
+                        </span>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-slate-50 border text-xs text-slate-600">
+                        <div className="flex items-center gap-1 font-medium text-slate-700">
+                          <MapPin size={14} className="text-brand-700" />
+                          <span>Vị trí hiện tại:</span>
+                        </div>
+                        <div className="mt-1 font-semibold text-slate-900">
+                          {selectedBatch.current_location || "Vùng trồng Tây Nguyên"}
+                        </div>
                       </div>
                     </div>
+                  ) : (
+                    <div className="py-8 text-center text-xs text-slate-400">
+                      Chưa chọn lô hàng nào.
+                    </div>
+                  )}
+                </div>
+
+                {selectedBatch && (
+                  <div className="pt-4 border-t border-slate-100 mt-4 flex flex-col gap-2">
                     <button
                       type="button"
-                      onClick={() => handleAuditExport(batch.id)}
-                      className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+                      onClick={() => handleSensorSimulation(selectedBatch.id)}
+                      className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded text-xs font-semibold transition-colors"
                     >
-                      <Download size={16} /> Xuất JSON
+                      ⚡ Giả lập cảm biến nhiệt độ IoT
+                    </button>
+                    <Link
+                      to={`/trace/${encodeURIComponent(selectedBatch.batch_code)}`}
+                      target="_blank"
+                      className="w-full py-2 bg-brand-800 hover:bg-brand-900 text-white rounded text-xs font-semibold text-center transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <ExternalLink size={14} /> Mở trang truy xuất công khai
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadAuditReport(selectedBatch.id, selectedBatch.batch_code)}
+                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <Download size={14} /> Tải hồ sơ kiểm tra (JSON)
                     </button>
                   </div>
-                ))}
+                )}
               </div>
-            </section>
-          )}
-
-        {selectedView === "Chuỗi lạnh" && (
-          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <div className="flex items-center gap-3">
-              <ArrowRightLeft className="text-emerald-600" size={22} />
-              <h2 className="text-lg font-bold text-slate-900">
-                {user?.role === "user"
-                  ? "Gửi yêu cầu bàn giao lô hàng"
-                  : "Yêu cầu bàn giao lô hàng"}
-              </h2>
             </div>
-            <form
-              className="mt-4 grid gap-3 sm:grid-cols-3"
-              onSubmit={handleTransferSubmit}
-            >
-              <select
-                className="rounded-xl border px-3 py-2"
-                value={transferForm.batchId}
-                onChange={(event) =>
-                  setTransferForm({
-                    ...transferForm,
-                    batchId: event.target.value,
-                  })
-                }
-              >
-                <option value="">Chọn lô hàng</option>
-                {filteredBatches.map((batch) => (
-                  <option key={batch.id} value={batch.id}>
-                    {batch.batch_code}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="rounded-xl border px-3 py-2"
-                value={transferForm.toOrganizationId}
-                onChange={(event) =>
-                  setTransferForm({
-                    ...transferForm,
-                    toOrganizationId: event.target.value,
-                  })
-                }
-              >
-                <option value="">Chọn tổ chức nhận</option>
-                <option value="2">HTX Sơ chế Hà Nội</option>
-                <option value="3">Cửa hàng Organic Market</option>
-              </select>
-              <input
-                className="rounded-xl border px-3 py-2"
-                placeholder="Ghi chú"
-                value={transferForm.note}
-                onChange={(event) =>
-                  setTransferForm({ ...transferForm, note: event.target.value })
-                }
-              />
-              <button
-                className="sm:col-span-3 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white"
-                type="submit"
-              >
-                Gửi yêu cầu bàn giao
-              </button>
-            </form>
-          </section>
-        )}
-
-        {!!submission.message && (
-          <div
-            className={`mt-5 rounded-xl p-3 text-sm ${submission.tone === "error" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}
-          >
-            {submission.message}
           </div>
         )}
 
-        {notifications.length > 0 && (
-          <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <h2 className="text-lg font-bold text-slate-900">
-              Thông báo hệ thống
-            </h2>
-            <div className="mt-3 space-y-2">
-              {notifications.slice(0, 5).map((notification) => (
-                <div
-                  key={notification.id}
-                  className="border-l-2 border-amber-500 py-2 pl-3"
-                >
-                  <div className="text-sm font-semibold text-slate-800">
-                    {notification.title}
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    {notification.message}
-                  </p>
-                  <time className="text-xs text-slate-400">
-                    {new Date(notification.created_at).toLocaleString("vi-VN")}
-                  </time>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Danh sách yêu cầu bàn giao */}
-        {transferRequests.length > 0 && (
-          <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
+        {/* ----------------- TAB 2: QUẢN LÝ LÔ HÀNG ----------------- */}
+        {activeTab === "batches" && (
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden space-y-4 p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
               <div>
-                <div className="flex items-center gap-2.5">
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Quản lý bàn giao lô hàng
-                  </h2>
-                  {pendingIncomingCount > 0 && (
-                    <span className="rounded-full bg-rose-500 px-2.5 py-0.5 text-xs font-bold text-white animate-pulse">
-                      {pendingIncomingCount} cần xử lý
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Bàn giao quyền sở hữu lô hàng qua chuỗi cung ứng (Farm → Cơ sở sơ chế → Nhà phân phối).
+                <h2 className="text-lg font-bold text-slate-900">Danh mục Lô nông sản</h2>
+                <p className="text-xs text-slate-500">
+                  Tra cứu, xem mã định danh và hành trình chuỗi lạnh của toàn bộ lô hàng.
                 </p>
               </div>
 
-              {/* Filter tabs */}
-              <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 text-xs font-medium">
-                {[
-                  { id: "all", label: `Tất cả (${transferRequests.length})` },
-                  { id: "incoming", label: `Cần tôi xử lý (${pendingIncomingCount})` },
-                  { id: "outgoing", label: "Đã gửi" },
-                  { id: "completed", label: "Lịch sử" },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setTransferFilter(tab.id)}
-                    className={`rounded-lg px-3 py-1.5 transition ${
-                      transferFilter === tab.id
-                        ? "bg-white font-semibold text-slate-900 shadow-sm"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+              {user?.role === "farm_admin" && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("harvest")}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-brand-800 hover:bg-brand-900 text-white text-xs font-semibold rounded-md shadow-sm transition-all"
+                >
+                  <Plus size={16} /> Tạo lô thu hoạch mới
+                </button>
+              )}
+            </div>
+
+            {/* Search and Filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={batchSearch}
+                  onChange={(e) => setBatchSearch(e.target.value)}
+                  placeholder="Tìm theo mã lô hoặc tên sản phẩm..."
+                  className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded border border-slate-300 outline-none focus:border-brand-700"
+                />
+              </div>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 text-xs sm:text-sm rounded border border-slate-300 outline-none focus:border-brand-700"
+              >
+                <option value="all">Tất cả trạng thái</option>
+                <option value="registered">Đã đăng ký</option>
+                <option value="in_transit">Đang vận chuyển</option>
+                <option value="processed">Đã sơ chế</option>
+                <option value="delivered">Đã giao nhận</option>
+                <option value="recalled">Đang thu hồi</option>
+              </select>
+            </div>
+
+            {/* Batches Table */}
+            <div className="overflow-x-auto border border-slate-200 rounded-md">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold">
+                  <tr>
+                    <th className="p-3">Mã lô hàng</th>
+                    <th className="p-3">Sản phẩm</th>
+                    <th className="p-3">Khối lượng</th>
+                    <th className="p-3">Vị trí hiện tại</th>
+                    <th className="p-3">Nhiệt độ IoT</th>
+                    <th className="p-3">Trạng thái</th>
+                    <th className="p-3 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredBatches.map((batch) => (
+                    <tr
+                      key={batch.id}
+                      className={`hover:bg-slate-50 transition-colors ${
+                        selectedBatch?.id === batch.id ? "bg-emerald-50/40" : ""
+                      }`}
+                    >
+                      <td className="p-3 font-bold text-brand-800">{batch.batch_code}</td>
+                      <td className="p-3 font-semibold text-slate-800">{batch.product_name}</td>
+                      <td className="p-3 text-slate-600">
+                        {Number(batch.remaining_quantity).toLocaleString()} kg
+                      </td>
+                      <td className="p-3 text-slate-600">{batch.current_location || "Tây Nguyên"}</td>
+                      <td className="p-3">
+                        <span
+                          className={`font-bold inline-flex items-center gap-1 ${
+                            batch.cold_chain_alert ? "text-rose-700" : "text-emerald-700"
+                          }`}
+                        >
+                          <Thermometer size={14} /> {batch.temperature_c ?? "--"}°C
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                            statusColors[batch.status] || "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {statusLabels[batch.status] || batch.status}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectBatch(batch.id)}
+                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-medium transition-colors"
+                          >
+                            Chi tiết
+                          </button>
+                          <Link
+                            to={`/trace/${encodeURIComponent(batch.batch_code)}`}
+                            target="_blank"
+                            className="px-2 py-1 bg-brand-50 hover:bg-brand-100 text-brand-800 rounded text-xs font-medium transition-colors"
+                          >
+                            Tra cứu
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ----------------- TAB 3: THU HOẠCH & THỬA ĐẤT (FARM ADMIN) ----------------- */}
+        {activeTab === "harvest" && user?.role === "farm_admin" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Form Thu hoạch Lô Hàng */}
+            <div className="lg:col-span-7 bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
+                <span className="flex h-8 w-8 items-center justify-center rounded bg-emerald-100 text-emerald-800">
+                  <Sprout size={18} />
+                </span>
+                <div>
+                  <h2 className="font-bold text-slate-900 text-base">Tạo Lô Thu Hoạch Nông Sản</h2>
+                  <p className="text-xs text-slate-500">
+                    Nhập nhanh sản lượng thu hoạch tại ruộng. Dữ liệu sẽ được gắn mã băm Blockchain.
+                  </p>
+                </div>
+              </div>
+
+              {harvestError && (
+                <div className="mb-4 p-3 rounded bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700">
+                  {harvestError.message}
+                </div>
+              )}
+
+              <form onSubmit={handleHarvestSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Thửa đất thu hoạch
+                    </label>
+                    <select
+                      value={harvestForm.landPlotId}
+                      onChange={(e) => setHarvestForm({ ...harvestForm, landPlotId: e.target.value })}
+                      required
+                      className="w-full p-2.5 rounded border border-slate-300 text-sm outline-none focus:border-brand-700"
+                    >
+                      <option value="">-- Chọn thửa đất --</option>
+                      {landPlots.map((plot) => (
+                        <option key={plot.id} value={plot.id}>
+                          {plot.name} ({plot.area_ha || 1} ha)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Loại nông sản
+                    </label>
+                    <select
+                      value={harvestForm.productId}
+                      onChange={(e) => setHarvestForm({ ...harvestForm, productId: e.target.value })}
+                      required
+                      className="w-full p-2.5 rounded border border-slate-300 text-sm outline-none focus:border-brand-700"
+                    >
+                      <option value="">-- Chọn nông sản --</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">
+                      Khối lượng thu hoạch (kg)
+                    </label>
+                    {/* Quick quantity presets */}
+                    <div className="flex gap-1">
+                      {[200, 500, 1000, 2000].map((kg) => (
+                        <button
+                          key={kg}
+                          type="button"
+                          onClick={() => setHarvestForm({ ...harvestForm, quantityKg: String(kg) })}
+                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-[11px] font-semibold text-slate-700 transition-colors"
+                        >
+                          {kg} kg
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={harvestForm.quantityKg}
+                    onChange={(e) => setHarvestForm({ ...harvestForm, quantityKg: e.target.value })}
+                    required
+                    className="w-full p-2.5 rounded border border-slate-300 text-sm outline-none focus:border-brand-700"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Ngày thu hoạch
+                  </label>
+                  <input
+                    type="date"
+                    value={harvestForm.harvestedAt}
+                    onChange={(e) => setHarvestForm({ ...harvestForm, harvestedAt: e.target.value })}
+                    required
+                    className="w-full p-2.5 rounded border border-slate-300 text-sm outline-none focus:border-brand-700"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingHarvest}
+                  className="w-full py-3 bg-brand-800 hover:bg-brand-900 text-white font-bold text-sm rounded shadow transition-all disabled:opacity-50"
+                >
+                  {isSubmittingHarvest ? "Đang tạo mã lô & ký số..." : "Xác nhận tạo lô thu hoạch"}
+                </button>
+              </form>
+            </div>
+
+            {/* Form Khai báo Thửa đất */}
+            <div className="lg:col-span-5 bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
+              <div className="pb-3 border-b border-slate-100">
+                <h3 className="font-bold text-slate-900 text-sm sm:text-base">Khai Báo Thửa Đất Mới</h3>
+                <p className="text-xs text-slate-500">
+                  Đăng ký mã vùng trồng & toạ độ GPS theo chuẩn TCVN.
+                </p>
+              </div>
+
+              <form onSubmit={handleLandPlotSubmit} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Tên thửa</label>
+                  <input
+                    type="text"
+                    required
+                    value={landPlotForm.name}
+                    onChange={(e) => setLandPlotForm({ ...landPlotForm, name: e.target.value })}
+                    placeholder="VD: Thửa B1 - Vườn Đắk Lắk"
+                    className="w-full p-2 rounded border border-slate-300 text-xs sm:text-sm outline-none focus:border-brand-700"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Diện tích (ha)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      required
+                      value={landPlotForm.areaHa}
+                      onChange={(e) => setLandPlotForm({ ...landPlotForm, areaHa: e.target.value })}
+                      className="w-full p-2 rounded border border-slate-300 text-xs sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Vĩ độ</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      required
+                      value={landPlotForm.latitude}
+                      onChange={(e) => setLandPlotForm({ ...landPlotForm, latitude: e.target.value })}
+                      className="w-full p-2 rounded border border-slate-300 text-xs sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Kinh độ</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      required
+                      value={landPlotForm.longitude}
+                      onChange={(e) => setLandPlotForm({ ...landPlotForm, longitude: e.target.value })}
+                      className="w-full p-2 rounded border border-slate-300 text-xs sm:text-sm"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs rounded transition-colors"
+                >
+                  Lưu thông tin thửa đất
+                </button>
+              </form>
+
+              {/* Danh sách thửa đất hiện có */}
+              <div className="pt-3 border-t border-slate-100">
+                <div className="text-xs font-bold text-slate-700 mb-2">Thửa đất đã đăng ký ({landPlots.length}):</div>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {landPlots.map((plot) => (
+                    <div key={plot.id} className="p-2 rounded bg-slate-50 border border-slate-200 text-xs flex items-center justify-between group">
+                      <div>
+                        <div className="font-semibold text-slate-800">{plot.name}</div>
+                        <div className="text-slate-500">{plot.area_ha || 1} ha</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteLandPlot(plot.id, plot.name)}
+                        className="p-1.5 text-rose-400 hover:text-rose-700 hover:bg-rose-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+                        title="Xóa thửa đất"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ----------------- TAB 4: GIÁM SÁT CHUỖI LẠNH ----------------- */}
+        {activeTab === "coldchain" && (
+          <div className="space-y-6">
+            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Giám sát Nhiệt độ Chuỗi Lạnh</h2>
+                <p className="text-xs text-slate-500">
+                  Quy chuẩn nhiệt độ bảo quản lạnh: <strong>2°C đến 8°C</strong>. Hệ thống tự động kích hoạt cờ cảnh báo nếu vượt ngưỡng.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-xs font-bold">
+                  An toàn: ≤ 8°C
+                </span>
+                <span className="px-3 py-1 bg-rose-50 text-rose-800 border border-rose-200 rounded text-xs font-bold">
+                  Cảnh báo: &gt; 8°C
+                </span>
               </div>
             </div>
 
-            {/* Transfer List */}
-            <div className="mt-4 space-y-3">
-              {filteredTransferRequests.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-slate-400">
-                  <ArrowRightLeft size={36} className="opacity-30 mb-2" />
-                  <p className="text-sm">Không có yêu cầu bàn giao nào trong danh mục này.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {batches.map((batch) => {
+                const isViolated = Boolean(batch.cold_chain_alert);
+                return (
+                  <div
+                    key={batch.id}
+                    className={`p-4 rounded-lg border bg-white shadow-sm flex flex-col justify-between transition-all ${
+                      isViolated ? "border-rose-300 ring-1 ring-rose-200" : "border-slate-200"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-bold text-brand-900 text-sm">{batch.batch_code}</div>
+                          <div className="text-xs font-semibold text-slate-700">{batch.product_name}</div>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            isViolated ? "bg-rose-100 text-rose-800" : "bg-emerald-100 text-emerald-800"
+                          }`}
+                        >
+                          {isViolated ? "Vi phạm" : "Đạt chuẩn"}
+                        </span>
+                      </div>
+
+                      <div className="my-3 flex items-baseline gap-2">
+                        <span className={`text-2xl font-extrabold ${isViolated ? "text-rose-700" : "text-emerald-700"}`}>
+                          {batch.temperature_c ?? 5}°C
+                        </span>
+                        <span className="text-xs text-slate-400">cảm biến gần nhất</span>
+                      </div>
+
+                      <div className="text-xs text-slate-500 space-y-1">
+                        <div>Vị trí: <strong>{batch.current_location || "Vùng trồng Tây Nguyên"}</strong></div>
+                        <div>Khối lượng: <strong>{Number(batch.remaining_quantity).toLocaleString()} kg</strong></div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSensorSimulation(batch.id)}
+                        className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded text-xs font-semibold transition-colors"
+                      >
+                        ⚡ Giả lập cảm biến
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectBatch(batch.id)}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition-colors"
+                      >
+                        Xem vết
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ----------------- TAB 5: BÀN GIAO VẬN CHUYỂN ----------------- */}
+        {activeTab === "transfer" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Form Gửi Yêu Cầu Bàn Giao */}
+            <div className="lg:col-span-5 bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
+              <div className="pb-3 border-b border-slate-100">
+                <h2 className="font-bold text-slate-900 text-base">Tạo Phiếu Bàn Giao Lô Hàng</h2>
+                <p className="text-xs text-slate-500">
+                  Chuyển quyền quản lý lô hàng giữa Nông trại → Cơ sở sơ chế → Điểm phân phối.
+                </p>
+              </div>
+
+              <form onSubmit={handleTransferSubmit} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Lô hàng chuyển</label>
+                  <select
+                    required
+                    value={transferForm.batchId}
+                    onChange={(e) => setTransferForm({ ...transferForm, batchId: e.target.value })}
+                    className="w-full p-2.5 rounded border border-slate-300 text-xs sm:text-sm outline-none focus:border-brand-700"
+                  >
+                    <option value="">-- Chọn lô hàng --</option>
+                    {batches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.batch_code} ({b.product_name})
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Đơn vị nhận</label>
+                  <select
+                    required
+                    value={transferForm.toOrganizationId}
+                    onChange={(e) => setTransferForm({ ...transferForm, toOrganizationId: e.target.value })}
+                    className="w-full p-2.5 rounded border border-slate-300 text-xs sm:text-sm outline-none focus:border-brand-700"
+                  >
+                    <option value="">-- Chọn đơn vị nhận --</option>
+                    <option value="2">HTX Sơ chế Hà Nội (Cơ sở chế biến)</option>
+                    <option value="3">Cửa hàng Organic Market (Điểm phân phối)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Ghi chú vận chuyển</label>
+                  <input
+                    type="text"
+                    value={transferForm.note}
+                    onChange={(e) => setTransferForm({ ...transferForm, note: e.target.value })}
+                    placeholder="VD: Xe tải lạnh 29C-12345, nhiệt độ cài đặt 4°C"
+                    className="w-full p-2.5 rounded border border-slate-300 text-xs sm:text-sm outline-none focus:border-brand-700"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-brand-800 hover:bg-brand-900 text-white font-bold text-xs sm:text-sm rounded shadow transition-colors"
+                >
+                  Gửi yêu cầu bàn giao
+                </button>
+              </form>
+            </div>
+
+            {/* Danh Sách Phiếu Bàn Giao */}
+            <div className="lg:col-span-7 bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
+              <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-bold text-slate-900 text-base">Lịch Sử & Tiếp Nhận Bàn Giao</h3>
+                <span className="text-xs text-slate-500">{transferRequests.length} phiếu</span>
+              </div>
+
+              {transferRequests.length === 0 ? (
+                <EmptyState title="Chưa có yêu cầu bàn giao" description="Chưa có phiếu chuyển giao nào được tạo." />
               ) : (
-                filteredTransferRequests.map((request) => {
-                  const isIncoming = request.to_organization_id === user?.organizationId;
-                  const isOutgoing = request.from_organization_id === user?.organizationId;
-                  const canDecide =
-                    request.status === "pending" &&
-                    isIncoming &&
-                    ["farm_admin", "processor_admin", "distributor_admin"].includes(user?.role);
+                <div className="space-y-3">
+                  {transferRequests.map((request) => {
+                    const isIncoming = request.to_organization_id === user?.organizationId;
+                    const canDecide = request.status === "pending" && isIncoming;
+                    return (
+                      <div
+                        key={request.id}
+                        className="p-4 rounded-lg border border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div>
+                          <div className="font-bold text-slate-900 text-sm">{request.batch_code}</div>
+                          <div className="text-xs text-slate-600 mt-1 flex items-center gap-1.5">
+                            <span>{request.from_organization_name}</span>
+                            <ArrowRightLeft size={12} className="text-slate-400" />
+                            <span className="font-semibold text-slate-900">{request.to_organization_name}</span>
+                          </div>
+                          {request.note && (
+                            <div className="text-[11px] text-slate-500 mt-1 italic">
+                              "{request.note}"
+                            </div>
+                          )}
+                          <div className="mt-2">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                request.status === "confirmed"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : request.status === "rejected"
+                                  ? "bg-rose-100 text-rose-800"
+                                  : "bg-amber-100 text-amber-800"
+                              }`}
+                            >
+                              {request.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        {canDecide && (
+                          <div className="flex sm:flex-col gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleTransferDecision(request.id, "confirmed")}
+                              className="px-3 py-1.5 bg-brand-800 hover:bg-brand-900 text-white rounded text-xs font-semibold transition-colors"
+                            >
+                              Xác nhận nhận lô
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleTransferDecision(request.id, "rejected")}
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-semibold transition-colors"
+                            >
+                              Từ chối
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ----------------- TAB 6: KIỂM TOÁN BLOCKCHAIN (INTEGRITY) ----------------- */}
+        {/* ----------------- TAB 6: KIỂM TOÁN BLOCKCHAIN (INTEGRITY) ----------------- */}
+        {activeTab === "integrity" && (
+          <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Kiểm Toán Tính Toàn Vẹn Blockchain (SHA-256)</h2>
+                <p className="text-xs text-slate-500">
+                  Phát hiện giả mạo dữ liệu. Xác minh liên kết chuỗi băm để chứng minh dữ liệu đáng tin cậy.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="lg:col-span-4 space-y-3 max-h-[70vh] overflow-y-auto pr-2">
+                {batches.map((batch) => (
+                  <div key={batch.id} className={`p-4 rounded-lg border flex flex-col justify-between transition-colors ${selectedBatch?.id === batch.id ? "border-brand-500 bg-brand-50/30" : "border-slate-200 bg-slate-50/50"}`}>
+                    <div>
+                      <div className="font-bold text-slate-900 text-sm">{batch.batch_code}</div>
+                      <div className="text-xs text-slate-600 mt-0.5">{batch.product_name}</div>
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        Tổ chức: <strong>{batch.organization_name}</strong>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-slate-200 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleVerifyIntegrity(batch)}
+                        className={`flex-1 py-1.5 rounded text-xs font-semibold transition-colors ${selectedBatch?.id === batch.id ? "bg-brand-900 text-white" : "bg-brand-800 hover:bg-brand-900 text-white"}`}
+                      >
+                        Kiểm tra Hash Chain
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAuditExport(batch.id)}
+                        className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 rounded text-xs font-semibold transition-colors"
+                        title="Xuất file JSON kiểm toán"
+                      >
+                        <Download size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="lg:col-span-8 bg-slate-50 rounded-lg border border-slate-200 p-5">
+                {selectedBatch && selectedBatch.integrity ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
+                      <div>
+                        <h3 className="font-bold text-slate-900">Chi tiết chuỗi sự kiện lô: {selectedBatch.batch_code}</h3>
+                        <p className="text-xs text-slate-500 mt-1">Tổng cộng {selectedBatch.integrity.total_events} sự kiện mã hóa</p>
+                      </div>
+                      <div className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 ${selectedBatch.integrity.is_valid ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                        {selectedBatch.integrity.is_valid ? <ShieldCheck size={16} /> : <AlertTriangle size={16} />}
+                        {selectedBatch.integrity.is_valid ? "Toàn vẹn 100%" : "Phát hiện giả mạo"}
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      {selectedBatch.integrity.events?.map((ev, index) => (
+                        <div key={ev.event_id || index} className={`relative p-4 rounded-lg border flex flex-col gap-2 shadow-sm ${ev.status === "VALID" ? "bg-white border-slate-200" : ev.status === "TAMPERED" ? "bg-rose-50 border-rose-300" : "bg-amber-50 border-amber-300"}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Sự kiện #{index + 1}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${ev.status === "VALID" ? "bg-emerald-100 text-emerald-800" : ev.status === "TAMPERED" ? "bg-rose-600 text-white" : "bg-amber-100 text-amber-800"}`}>
+                              {ev.status === "VALID" ? "Khớp Hash" : ev.status === "TAMPERED" ? "Bị sửa lén" : "Mất liên kết"}
+                            </span>
+                          </div>
+                          
+                          <div className="text-sm font-semibold text-slate-900">ID: {ev.event_id}</div>
+                          
+                          {ev.status === "TAMPERED" && (
+                            <div className="text-xs text-rose-700 bg-rose-100/50 p-2 rounded mt-1 border border-rose-200">
+                              <strong>Phân tích:</strong> Nội dung (data_json) đã bị thay đổi trái phép. Mã Hash hiện tại không khớp với nội dung thực tế.
+                            </div>
+                          )}
+                          {ev.status === "SUSPECT" && (
+                            <div className="text-xs text-amber-800 bg-amber-100/50 p-2 rounded mt-1 border border-amber-200">
+                              <strong>Phân tích:</strong> Sự kiện này đáng ngờ vì liên kết `previous_hash` bị đứt gãy từ sự kiện trước đó.
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {selectedBatch.integrity.total_events === 0 && (
+                        <div className="text-center py-8 text-sm text-slate-500">
+                          Chưa có sự kiện nào được ghi nhận cho lô hàng này.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 py-12">
+                    <ShieldCheck size={48} className="mb-4 opacity-50" />
+                    <p className="text-sm font-medium">Bấm "Kiểm tra Hash Chain" để phân tích</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ----------------- TAB 7: LỆNH THU HỒI (RECALL) ----------------- */}
+        {activeTab === "recall" && (
+          <div className="space-y-6">
+            {user?.role !== "auditor" && (
+              <div className="bg-white p-6 rounded-lg border border-rose-200 shadow-sm space-y-4">
+                <div className="pb-3 border-b border-rose-100">
+                  <h2 className="font-bold text-rose-800 text-base flex items-center gap-2">
+                    <Siren size={18} /> Kích Hoạt Lệnh Thu Hồi Khẩn Cấp
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Sử dụng khi phát hiện nguy cơ an toàn thực phẩm hoặc vi phạm nghiêm trọng chuỗi lạnh.
+                  </p>
+                </div>
+
+                <form onSubmit={handleRecallSubmit} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                  <div className="sm:col-span-4">
+                    <select
+                      required
+                      value={recallForm.batchId}
+                      onChange={(e) => setRecallForm({ ...recallForm, batchId: e.target.value })}
+                      className="w-full p-2.5 rounded border border-slate-300 text-xs sm:text-sm outline-none focus:border-rose-600"
+                    >
+                      <option value="">-- Chọn lô thu hồi --</option>
+                      {batches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.batch_code} ({b.product_name})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-6">
+                    <input
+                      type="text"
+                      required
+                      minLength={5}
+                      value={recallForm.reason}
+                      onChange={(e) => setRecallForm({ ...recallForm, reason: e.target.value })}
+                      placeholder="Lý do thu hồi (VD: Phát hiện vi phạm nhiệt độ bảo quản lạnh)"
+                      className="w-full p-2.5 rounded border border-slate-300 text-xs sm:text-sm outline-none focus:border-rose-600"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs sm:text-sm rounded transition-colors"
+                    >
+                      Thu hồi
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Danh sách báo cáo thu hồi */}
+            <div className="space-y-4">
+              {recallReports.map((report) => (
+                <div key={report.id} className="bg-white rounded-lg border border-rose-200 shadow-sm p-5 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-rose-100 pb-3">
+                    <div>
+                      <div className="text-sm font-bold text-rose-900">
+                        Lệnh thu hồi #{report.id} · <span className="font-mono">{report.root_batch_code}</span>
+                      </div>
+                      <div className="text-xs text-slate-600 mt-0.5">Lý do: {report.reason}</div>
+                    </div>
+                    <div className="text-xs font-semibold text-slate-700">
+                      Còn tại điểm bán: <span className="text-rose-700 font-bold">{Number(report.totals?.remainingQuantity || 0).toLocaleString()} kg</span>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-rose-50/50 text-rose-900 border-b border-rose-100">
+                        <tr>
+                          <th className="p-2 font-semibold">Mã lô</th>
+                          <th className="p-2 font-semibold">Đơn vị giữ</th>
+                          <th className="p-2 font-semibold">Vị trí</th>
+                          <th className="p-2 font-semibold">Còn tồn</th>
+                          <th className="p-2 font-semibold">Đã tiêu thụ</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {report.items?.map((item) => (
+                          <tr key={item.batch_id}>
+                            <td className="p-2 font-bold text-slate-900">{item.batch_code}</td>
+                            <td className="p-2 text-slate-700">{item.organization_name}</td>
+                            <td className="p-2 text-slate-600">{item.current_location || "Kho"}</td>
+                            <td className="p-2 font-bold text-rose-700">{Number(item.remaining_quantity).toLocaleString()} kg</td>
+                            <td className="p-2 text-slate-600">{Number(item.consumed_quantity).toLocaleString()} kg</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ----------------- KHỐI CHI TIẾT SỰ KIỆN LÔ ĐANG CHỌN (GỌN GÀNG, KHÔNG RƯỜM RÀ) ----------------- */}
+        {selectedBatch && (
+          <div className="mt-8 bg-white rounded-lg border border-slate-200 shadow-sm p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-brand-800">
+                  Hồ sơ chi tiết lô hàng
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mt-0.5">
+                  {selectedBatch.batch_code} — {selectedBatch.product_name}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-300 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition-colors"
+                >
+                  <ShieldCheck size={14} className="text-brand-700" />
+                  <span>{showTechnicalDetails ? "Ẩn mã băm SHA-256" : "Xem mã băm SHA-256"}</span>
+                  {showTechnicalDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+
+                <Link
+                  to={`/trace/${encodeURIComponent(selectedBatch.batch_code)}`}
+                  target="_blank"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-brand-800 hover:bg-brand-900 text-xs font-semibold text-white shadow-sm transition-colors"
+                >
+                  <ExternalLink size={14} /> Xem trang công khai
+                </Link>
+              </div>
+            </div>
+
+            {/* Event Timeline (Thân thiện, Dễ hiểu cho người mới) */}
+            <div>
+              <div className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <Activity size={16} className="text-brand-700" />
+                Chuỗi sự kiện lịch sử ({selectedBatch.events?.length || 0} sự kiện)
+              </div>
+
+              <div className="space-y-3">
+                {selectedBatch.events?.map((ev, index) => {
+                  let parsedData = {};
+                  try {
+                    parsedData = JSON.parse(ev.data_json);
+                  } catch {
+                    // skip
+                  }
 
                   return (
                     <div
-                      key={request.id}
-                      className={`group relative flex flex-col gap-3.5 rounded-2xl border p-5 transition-all ${
-                        request.status === "pending" && isIncoming
-                          ? "border-amber-300 bg-amber-50/40 hover:border-amber-400 hover:shadow-md ring-1 ring-amber-200"
-                          : request.status === "confirmed"
-                          ? "border-emerald-200 bg-emerald-50/20 hover:border-emerald-300"
-                          : request.status === "rejected"
-                          ? "border-rose-200 bg-rose-50/20 hover:border-rose-300"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
+                      key={ev.id || index}
+                      className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/50 text-xs space-y-2"
                     >
-                      {/* Top row: Organizations & Status Badge */}
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-                            <span className="text-slate-400 font-normal">Từ:</span> {request.from_organization_name}
-                          </span>
-                          <ArrowRight size={14} className="text-slate-400" />
-                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-                            <span className="text-slate-400 font-normal">Đến:</span> {request.to_organization_name}
-                          </span>
-                          {isIncoming && (
-                            <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                              Bên nhận (Tổ chức của bạn)
-                            </span>
-                          )}
-                          {isOutgoing && (
-                            <span className="rounded-md bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-                              Bên gửi (Tổ chức của bạn)
-                            </span>
-                          )}
-                        </div>
-
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                         <div className="flex items-center gap-2">
-                          {Boolean(request.is_overdue) && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-700 animate-bounce">
-                              <AlertTriangle size={12} />
-                              Quá hạn 48h
-                            </span>
-                          )}
-                          <span
-                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
-                              request.status === "pending"
-                                ? "bg-amber-100 text-amber-800 ring-1 ring-amber-300"
-                                : request.status === "confirmed"
-                                ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300"
-                                : "bg-rose-100 text-rose-800 ring-1 ring-rose-300"
-                            }`}
-                          >
-                            {request.status === "pending" && <Clock size={12} />}
-                            {request.status === "confirmed" && <CheckCircle2 size={12} />}
-                            {request.status === "rejected" && <ShieldAlert size={12} />}
-                            {request.status === "pending"
-                              ? "Chờ xác nhận"
-                              : request.status === "confirmed"
-                              ? "Đã xác nhận"
-                              : "Đã từ chối"}
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-800 text-white font-bold text-[10px]">
+                            {index + 1}
+                          </span>
+                          <span className="font-bold text-slate-900 text-sm">
+                            {eventLabels[ev.event_type] || ev.event_type}
                           </span>
                         </div>
+                        <span className="text-slate-500 font-mono text-[11px]">
+                          {new Date(ev.timestamp).toLocaleString("vi-VN")}
+                        </span>
                       </div>
 
-                      {/* Middle row: Batch details */}
-                      <div className="grid gap-3 sm:grid-cols-3 rounded-xl bg-white/90 p-3 ring-1 ring-slate-200/70">
-                        <div>
-                          <p className="text-[11px] text-slate-400">Mã lô hàng</p>
-                          <p className="font-mono font-bold text-slate-800">{request.batch_code}</p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] text-slate-400">Sản phẩm & Khối lượng</p>
-                          <p className="font-semibold text-slate-800">
-                            {request.product_name || "Nông sản"} · {request.remaining_quantity || request.initial_quantity || 0} {request.product_unit || "kg"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] text-slate-400">Thời gian tạo</p>
-                          <p className="text-xs text-slate-600">
-                            {new Date(request.created_at).toLocaleString("vi-VN")}
-                          </p>
-                        </div>
+                      <div className="text-slate-600 pl-7 flex flex-wrap gap-x-4 gap-y-1">
+                        {ev.actor_name && (
+                          <span>Người thực hiện: <strong>{ev.actor_name}</strong></span>
+                        )}
+                        {parsedData.source_farm && (
+                          <span>Vườn: <strong>{parsedData.source_farm}</strong></span>
+                        )}
+                        {parsedData.initial_quantity && (
+                          <span>Khối lượng: <strong>{parsedData.initial_quantity} kg</strong></span>
+                        )}
+                        {parsedData.temperature !== undefined && (
+                          <span>Nhiệt độ: <strong>{parsedData.temperature}°C</strong></span>
+                        )}
                       </div>
 
-                      {/* Note row if sender provided note */}
-                      {request.note && (
-                        <div className="rounded-xl bg-slate-50/90 px-3.5 py-2 text-xs text-slate-600">
-                          <span className="font-semibold text-slate-700">Ghi chú từ bên gửi: </span>
-                          <span>{request.note}</span>
-                        </div>
-                      )}
-
-                      {/* Reason row if confirmed or rejected */}
-                      {request.reason && (
-                        <div className={`rounded-xl px-3.5 py-2.5 text-xs ${
-                          request.status === "confirmed"
-                            ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
-                            : "bg-rose-50 text-rose-900 border border-rose-200"
-                        }`}>
-                          <span className="font-bold">
-                            {request.status === "confirmed" ? "Lý do tiếp nhận: " : "Lý do từ chối: "}
-                          </span>
-                          <span>{request.reason}</span>
-                        </div>
-                      )}
-
-                      {/* Action buttons if current user is the receiver */}
-                      {canDecide && (
-                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-amber-200">
-                          <span className="text-xs font-semibold text-amber-900">
-                            👉 Vui lòng kiểm tra và xác nhận hoặc từ chối bàn giao:
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition"
-                              onClick={() => openDecisionModal(request, "confirmed")}
-                            >
-                              <CheckCircle2 size={14} />
-                              Xác nhận tiếp nhận
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700 transition"
-                              onClick={() => openDecisionModal(request, "rejected")}
-                            >
-                              <XCircle size={14} />
-                              Từ chối bàn giao
-                            </button>
+                      {/* Technical Blockchain Hashes (Chỉ hiện khi người dùng bấm xem) */}
+                      {showTechnicalDetails && (
+                        <div className="mt-2 pl-7 pt-2 border-t border-slate-200 font-mono text-[10px] text-slate-500 space-y-1 bg-white p-2 rounded">
+                          <div className="truncate">
+                            <span className="font-semibold text-slate-600">Previous Hash:</span> {ev.previous_hash}
+                          </div>
+                          <div className="truncate">
+                            <span className="font-semibold text-slate-600">Current Hash:</span> {ev.current_hash}
                           </div>
                         </div>
                       )}
                     </div>
                   );
-                })
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* Modal xác nhận hoặc từ chối bàn giao kèm lý do */}
-        {decisionModal.open && decisionModal.transfer && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
-              {/* Modal Header */}
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
-                      decisionModal.decision === "confirmed"
-                        ? "bg-emerald-100 text-emerald-600"
-                        : "bg-rose-100 text-rose-600"
-                    }`}
-                  >
-                    {decisionModal.decision === "confirmed" ? (
-                      <CheckCircle2 size={26} />
-                    ) : (
-                      <XCircle size={26} />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900">
-                      {decisionModal.decision === "confirmed"
-                        ? "Xác nhận nhận bàn giao lô hàng"
-                        : "Từ chối nhận bàn giao lô hàng"}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {decisionModal.decision === "confirmed"
-                        ? "Lô hàng sẽ được chuyển quyền sở hữu sang tổ chức của bạn."
-                        : "Lô hàng sẽ được hoàn trả về trạng thái của bên gửi."}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeDecisionModal}
-                  disabled={decisionModal.submitting}
-                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
-                >
-                  <X size={18} />
-                </button>
+                })}
               </div>
-
-              {/* Transfer Summary */}
-              <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/90 p-4 space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Mã lô hàng:</span>
-                  <span className="font-mono font-bold text-slate-800">
-                    {decisionModal.transfer.batch_code}
-                  </span>
-                </div>
-                {decisionModal.transfer.product_name && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Sản phẩm:</span>
-                    <span className="font-semibold text-slate-800">
-                      {decisionModal.transfer.product_name} ({decisionModal.transfer.remaining_quantity || decisionModal.transfer.initial_quantity || 0} {decisionModal.transfer.product_unit || "kg"})
-                    </span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Bên chuyển giao:</span>
-                  <span className="font-medium text-slate-700">
-                    {decisionModal.transfer.from_organization_name}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Bên nhận (Tổ chức của bạn):</span>
-                  <span className="font-medium text-emerald-700">
-                    {decisionModal.transfer.to_organization_name}
-                  </span>
-                </div>
-                {decisionModal.transfer.note && (
-                  <div className="pt-2 border-t border-slate-200/60 text-slate-600">
-                    <span className="font-semibold text-slate-700">Ghi chú từ bên gửi: </span>
-                    <span className="italic">{decisionModal.transfer.note}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Preset suggestion chips */}
-              <div className="mt-4">
-                <label className="text-xs font-semibold text-slate-700 block mb-2">
-                  Gợi ý lý do nhanh:
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {(decisionModal.decision === "confirmed"
-                    ? [
-                        "Đã kiểm tra chất lượng và nhận đủ số lượng.",
-                        "Bao bì nguyên vẹn, nhiệt độ đạt chuẩn.",
-                        "Đã đối chiếu chứng từ thành công.",
-                        "Hàng đạt tiêu chuẩn VietGAP/GlobalGAP."
-                      ]
-                    : [
-                        "Lô hàng không đạt tiêu chuẩn chất lượng.",
-                        "Nhiệt độ bảo quản bị vi phạm quá ngưỡng.",
-                        "Khối lượng thực tế không khớp với chứng từ.",
-                        "Bao bì bị rách hỏng, biến dạng nghiêm trọng."
-                      ]
-                  ).map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() =>
-                        setDecisionModal((prev) => ({ ...prev, reason: preset }))
-                      }
-                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 hover:border-slate-400 hover:bg-slate-50 transition"
-                    >
-                      {preset}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Reason Form */}
-              <form onSubmit={handleSubmitDecisionModal} className="mt-4 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-800">
-                    {decisionModal.decision === "confirmed" ? (
-                      <>
-                        Ghi chú / Nhận xét tiếp nhận <span className="text-slate-400 font-normal">(Không bắt buộc)</span>
-                      </>
-                    ) : (
-                      <>
-                        Lý do từ chối <span className="text-rose-500">* (Bắt buộc tối thiểu 10 ký tự)</span>
-                      </>
-                    )}
-                  </label>
-                  <textarea
-                    rows={3}
-                    required={decisionModal.decision === "rejected"}
-                    className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                    placeholder={
-                      decisionModal.decision === "confirmed"
-                        ? "Có thể để trống hoặc ghi chú thêm nếu muốn..."
-                        : "Bắt buộc nhập rõ nguyên nhân từ chối lô hàng (tối thiểu 10 ký tự)..."
-                    }
-                    value={decisionModal.reason}
-                    onChange={(e) =>
-                      setDecisionModal((prev) => ({ ...prev, reason: e.target.value }))
-                    }
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-2">
-                  <button
-                    type="button"
-                    disabled={decisionModal.submitting}
-                    onClick={closeDecisionModal}
-                    className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
-                  >
-                    Hủy bỏ
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={
-                      decisionModal.submitting ||
-                      (decisionModal.decision === "rejected" &&
-                        decisionModal.reason.trim().length < 10)
-                    }
-                    className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:opacity-50 ${
-                      decisionModal.decision === "confirmed"
-                        ? "bg-emerald-600 hover:bg-emerald-700"
-                        : "bg-rose-600 hover:bg-rose-700"
-                    }`}
-                  >
-                    {decisionModal.submitting ? (
-                      <span>Đang xử lý...</span>
-                    ) : decisionModal.decision === "confirmed" ? (
-                      <>
-                        <CheckCircle2 size={16} />
-                        <span>Xác nhận tiếp nhận</span>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle size={16} />
-                        <span>Từ chối tiếp nhận</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
             </div>
           </div>
         )}
+        {/* ----------------- TAB: TÁCH VÀ GỘP LÔ (SPRINT 3) ----------------- */}
+        {activeTab === "split_merge" && ["processor_admin", "farm_admin"].includes(user?.role) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Form Tách Lô */}
+            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
+              <div className="pb-3 border-b border-slate-100">
+                <h3 className="font-bold text-slate-900 text-base">Tách Lô Nông Sản (Split)</h3>
+                <p className="text-xs text-slate-500">
+                  Chia một lô lớn thành các lô nhỏ để phân phối. Lịch sử nguồn gốc sẽ được kế thừa.
+                </p>
+              </div>
 
-        {selectedBatch && (
-          <section className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
-            {/* Event Timeline */}
-            <div className="rounded-2xl bg-white p-6 card-shadow border border-slate-200/80">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <form onSubmit={handleSplitSubmit} className="space-y-4">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-slate-900">Dòng thời gian sự kiện (Hash Chain)</h2>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
-                      {(selectedBatch.events || []).length} mốc
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Lô hàng: <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{selectedBatch.batch_code}</span>
-                  </p>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Chọn lô để tách</label>
+                  <select
+                    required
+                    value={splitForm.batchId}
+                    onChange={(e) => setSplitForm({ ...splitForm, batchId: e.target.value })}
+                    className="w-full p-2.5 rounded border border-slate-300 text-sm outline-none focus:border-brand-700"
+                  >
+                    <option value="">-- Chọn lô hàng gốc --</option>
+                    {batches.filter(b => b.remaining_quantity > 0).map(b => (
+                      <option key={b.id} value={b.id}>{b.batch_code} ({b.product_name}) - Còn {b.remaining_quantity}kg</option>
+                    ))}
+                  </select>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleVerifyIntegrity(selectedBatch.id)}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-800 transition"
-                >
-                  <ShieldCheck size={14} />
-                  Xác minh tính toàn vẹn
-                </button>
-              </div>
-
-              {selectedBatch.integrity && (
-                <div
-                  className={`mt-4 rounded-xl p-3.5 text-xs flex items-center gap-2.5 border ${
-                    selectedBatch.integrity.valid
-                      ? "bg-emerald-50 text-emerald-900 border-emerald-200"
-                      : "bg-rose-50 text-rose-900 border-rose-300 animate-pulse"
-                  }`}
-                >
-                  {selectedBatch.integrity.valid ? (
-                    <ShieldCheck size={18} className="text-emerald-600 flex-shrink-0" />
-                  ) : (
-                    <ShieldAlert size={18} className="text-rose-600 flex-shrink-0" />
-                  )}
-                  <div>
-                    <p className="font-bold">
-                      {selectedBatch.integrity.valid
-                        ? "Chuỗi Hash SHA-256 hoàn toàn nguyên vẹn."
-                        : `CẢNH BÁO: Phát hiện đứt gãy/sửa lén tại event ID: ${selectedBatch.integrity.invalidEventIds.join(", ")}!`}
-                    </p>
-                    <p className="text-[11px] opacity-80 mt-0.5">
-                      {selectedBatch.integrity.valid
-                        ? "Tất cả các hash liên tiếp khớp 100% với genesis hash."
-                        : "Dữ liệu sự kiện đã bị chỉnh sửa bất hợp pháp ngoài ứng dụng."}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {(selectedBatch.events || []).length === 0 ? (
-                <div className="mt-12 flex flex-col items-center justify-center py-10 text-slate-400">
-                  <ClipboardList size={40} className="opacity-30 mb-2" />
-                  <p className="text-sm">Chưa có sự kiện nào cho lô này.</p>
-                </div>
-              ) : (
-                <ol className="mt-6 relative border-l-2 border-slate-200 pl-6 space-y-0">
-                  {(selectedBatch.events || []).map((event, index) => {
-                    let parsedData = {};
-                    try { parsedData = JSON.parse(event.data_json); } catch { /* ignore */ }
-                    const isLast = index === (selectedBatch.events.length - 1);
-                    const meta = EVENT_META[event.event_type] || {};
-                    const dotColor = meta.color?.includes("rose") ? "bg-rose-500" :
-                      meta.color?.includes("orange") ? "bg-orange-500" :
-                      meta.color?.includes("amber") ? "bg-amber-500" :
-                      meta.color?.includes("emerald") ? "bg-emerald-500" :
-                      meta.color?.includes("violet") ? "bg-violet-500" :
-                      meta.color?.includes("sky") || meta.color?.includes("blue") ? "bg-sky-500" :
-                      meta.color?.includes("indigo") ? "bg-indigo-500" :
-                      meta.color?.includes("teal") ? "bg-teal-500" : "bg-slate-400";
-                    return (
-                      <li key={event.id || index} className={`relative pb-6 ${isLast ? "pb-0" : ""}`}>
-                        {/* Milestone icon dot */}
-                        <span className={`absolute -left-[calc(0.75rem+1px)] top-1 flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-white ${dotColor} shadow-sm`} />
-
-                        <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 hover:border-slate-300 hover:bg-white transition-all card-shadow">
-                          {/* Event header */}
-                          <div className="flex flex-wrap items-start gap-2 justify-between">
-                            <EventBadge eventType={event.event_type} />
-                            <time className="text-[11px] font-mono text-slate-400 tabular-nums">
-                              {new Date(event.timestamp).toLocaleString("vi-VN", {
-                                day: "2-digit", month: "2-digit", year: "numeric",
-                                hour: "2-digit", minute: "2-digit", second: "2-digit"
-                              })}
-                            </time>
-                          </div>
-
-                          {/* Actor */}
-                          {event.actor_name && (
-                            <p className="mt-2 text-xs text-slate-500">
-                              Người thực hiện: <span className="font-semibold text-slate-800">{event.actor_name}</span>
-                            </p>
-                          )}
-
-                          {/* Parsed data fields */}
-                          <div className="mt-3 grid gap-1.5 rounded-xl bg-white/90 p-3 border border-slate-100">
-                            {Object.entries(parsedData).map(([k, v]) => (
-                              <DataField key={k}
-                                label={k.replaceAll("_", " ")}
-                                value={Array.isArray(v) ? v.join(", ") : typeof v === "object" ? JSON.stringify(v) : v}
-                              />
-                            ))}
-                          </div>
-
-                          {/* Hash chain badges */}
-                          <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/60">
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">SHA-256:</span>
-                            <HashBadge label="prev" hash={event.previous_hash} />
-                            <HashBadge label="curr" hash={event.current_hash} />
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-            </div>
-
-            {/* Right Column: Details & Genealogy */}
-            <div className="space-y-6">
-              {/* Batch Info Card */}
-              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80">
-                <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
-                  Thông tin chi tiết lô
-                </h3>
-                <dl className="mt-4 space-y-3 text-xs">
-                  <div className="flex justify-between items-center gap-4">
-                    <dt className="text-slate-500">Mã lô</dt>
-                    <dd className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                      {selectedBatch.batch_code}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between items-center gap-4">
-                    <dt className="text-slate-500">Sản phẩm</dt>
-                    <dd className="font-semibold text-slate-800">
-                      {selectedBatch.product_name}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between items-center gap-4">
-                    <dt className="text-slate-500">Trạng thái hiện tại</dt>
-                    <dd>
-                      <BatchStatusBadge status={selectedBatch.status} />
-                    </dd>
-                  </div>
-                  <div className="flex justify-between items-center gap-4">
-                    <dt className="text-slate-500">Tổ chức quản lý</dt>
-                    <dd className="font-semibold text-slate-800">
-                      {selectedBatch.organization_name}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between items-center gap-4">
-                    <dt className="text-slate-500">Khối lượng còn lại</dt>
-                    <dd className="font-mono font-bold text-slate-900">
-                      {Number(selectedBatch.remaining_quantity).toLocaleString()} kg
-                    </dd>
-                  </div>
-                  <div className="flex justify-between items-center gap-4">
-                    <dt className="text-slate-500">Nhiệt độ hiện tại</dt>
-                    <dd className="font-mono font-bold text-emerald-700">
-                      {selectedBatch.temperature_c ?? 9}°C
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-
-              {/* Integrity & Public Trace Card */}
-              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80">
-                <h3 className="text-base font-bold text-slate-900">Bảo chứng toàn vẹn & Truy xuất</h3>
-                <div className="mt-3 flex items-center gap-2.5 rounded-xl bg-emerald-50 p-3 text-emerald-800 border border-emerald-200">
-                  <ShieldCheck size={20} className="text-emerald-600 flex-shrink-0" />
-                  <span className="text-xs font-semibold">
-                    Lịch sử sự kiện chống giả mạo, không thể sửa hay xóa.
-                  </span>
-                </div>
-                <p className="mt-3 text-xs text-slate-500 leading-relaxed">
-                  Mỗi sự kiện được liên kết bằng SHA-256 băm tuần tự. Cơ chế Database Trigger ngăn chặn triệt để mọi hành vi sửa/xóa.
-                </p>
-                <a
-                  href={`/trace/${encodeURIComponent(selectedBatch.batch_code)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-800 transition"
-                >
-                  <ExternalLink size={14} /> Mở trang truy xuất công khai
-                </a>
-              </div>
-
-              {/* Genealogy Card */}
-              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80">
-                <h3 className="text-base font-bold text-slate-900">Nguồn gốc phả hệ (Genealogy)</h3>
-                <p className="mt-1 text-xs text-slate-400">
-                  Truy nguyên lô gốc và quan hệ tách/gộp qua các công đoạn.
-                </p>
-                {genealogy ? (
-                  <div className="mt-4 space-y-3 text-xs">
-                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                      <span className="text-slate-500 font-medium">Lô tổ tiên (Ancestors):</span>
-                      <span className="font-bold text-slate-800">{genealogy.ancestors?.length || 0} lô</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                      <span className="text-slate-500 font-medium">Lô con cháu (Descendants):</span>
-                      <span className="font-bold text-slate-800">{genealogy.descendants?.length || 0} lô</span>
-                    </div>
-                    {genealogy.roots?.length > 0 && (
-                      <div className="pt-2">
-                        <span className="font-semibold text-slate-700 block mb-2">Lô gốc ban đầu (Roots):</span>
-                        <div className="space-y-1.5">
-                          {genealogy.roots.map((root) => (
-                            <div key={root.id} className="font-mono text-xs font-bold text-slate-800 bg-emerald-50/80 px-3 py-1.5 rounded-lg border border-emerald-200 flex items-center justify-between">
-                              <span>{root.batch_code}</span>
-                              <span className="text-[10px] text-emerald-700 font-normal">Lô gốc</span>
-                            </div>
-                          ))}
-                        </div>
+                
+                <div className="space-y-3">
+                  {splitForm.parts.map((part, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <div className="flex-1">
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">Khối lượng lô con {idx + 1} (kg)</label>
+                        <input
+                          type="number"
+                          required
+                          value={part.quantity}
+                          onChange={(e) => {
+                            const newParts = [...splitForm.parts];
+                            newParts[idx].quantity = e.target.value;
+                            setSplitForm({ ...splitForm, parts: newParts });
+                          }}
+                          className="w-full p-2 rounded border border-slate-300 text-sm"
+                        />
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-xs text-slate-400 italic">
-                    Chọn một lô để tải cây phả hệ nguồn gốc.
-                  </p>
-                )}
-              </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSplitForm({ ...splitForm, parts: [...splitForm.parts, { quantity: "" }] })}
+                    className="text-xs text-brand-700 font-semibold hover:underline"
+                  >
+                    + Thêm lô con
+                  </button>
+                </div>
+
+                <button type="submit" className="w-full py-2 bg-brand-800 hover:bg-brand-900 text-white font-semibold text-sm rounded shadow transition-colors">
+                  Xác nhận tách lô
+                </button>
+              </form>
             </div>
-          </section>
+
+            {/* Form Gộp Lô */}
+            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
+              <div className="pb-3 border-b border-slate-100">
+                <h3 className="font-bold text-slate-900 text-base">Gộp Lô Nông Sản (Merge)</h3>
+                <p className="text-xs text-slate-500">
+                  Gộp nhiều lô cùng loại thành một lô lớn để xuất khẩu/chế biến.
+                </p>
+              </div>
+
+              <form onSubmit={handleMergeSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Chọn các lô để gộp (Chọn nhiều)</label>
+                  <select
+                    multiple
+                    required
+                    value={mergeForm.parentBatchIds}
+                    onChange={(e) => {
+                      const options = Array.from(e.target.options);
+                      const selected = options.filter(opt => opt.selected).map(opt => opt.value);
+                      setMergeForm({ ...mergeForm, parentBatchIds: selected });
+                    }}
+                    className="w-full p-2 rounded border border-slate-300 text-sm outline-none focus:border-brand-700 min-h-[120px]"
+                  >
+                    {batches.filter(b => b.remaining_quantity > 0).map(b => (
+                      <option key={b.id} value={b.id}>{b.batch_code} ({b.product_name}) - {b.remaining_quantity}kg</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-1">Giữ Ctrl hoặc Command để chọn nhiều lô.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Ghi chú (Tùy chọn)</label>
+                  <input
+                    type="text"
+                    value={mergeForm.note}
+                    onChange={(e) => setMergeForm({ ...mergeForm, note: e.target.value })}
+                    placeholder="VD: Gộp lô xuất khẩu thị trường EU"
+                    className="w-full p-2.5 rounded border border-slate-300 text-sm outline-none focus:border-brand-700"
+                  />
+                </div>
+
+                <button type="submit" className="w-full py-2 bg-brand-800 hover:bg-brand-900 text-white font-semibold text-sm rounded shadow transition-colors">
+                  Xác nhận gộp lô
+                </button>
+              </form>
+            </div>
+          </div>
         )}
       </main>
     </div>

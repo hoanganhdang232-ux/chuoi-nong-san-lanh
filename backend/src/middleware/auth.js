@@ -2,7 +2,6 @@ import jwt from "jsonwebtoken";
 import { config } from "../config.js";
 import { getDb } from "../db/database.js";
 import { requireOrganizationAccess } from "../utils/authorization.js";
-import { findSessionByToken } from "../services/authService.js";
 
 export function authenticateToken(req, res, next) {
   const header = req.headers.authorization;
@@ -13,14 +12,7 @@ export function authenticateToken(req, res, next) {
   }
 
   try {
-    let userId;
-    try {
-      userId = jwt.verify(token, config.jwtSecret).sub;
-    } catch {
-      const session = findSessionByToken(token);
-      if (!session) throw new Error("Invalid session");
-      userId = session.user_id;
-    }
+    const payload = jwt.verify(token, config.jwtSecret);
     const db = getDb();
     const user = db
       .prepare(
@@ -31,7 +23,7 @@ export function authenticateToken(req, res, next) {
       WHERE u.id = ? AND u.is_active = 1
     `,
       )
-      .get(userId);
+      .get(payload.sub);
 
     if (!user) {
       return res

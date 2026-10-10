@@ -4,9 +4,9 @@ Demo truy xuất nguồn gốc và giám sát chuỗi lạnh nông sản.
 
 ## Công nghệ
 
-- Backend: Node.js, Express, SQLite, Argon2id, server-side sessions
+- Backend: Node.js, Express, SQLite, JWT
 - Frontend: React, Vite, Tailwind CSS
-- Mật khẩu: Argon2id (tự nâng cấp hash bcrypt cũ sau lần đăng nhập thành công)
+- Mật khẩu: bcrypt
 - Chuỗi hash: SHA-256
 
 ## Chạy nhanh
@@ -15,14 +15,6 @@ Demo truy xuất nguồn gốc và giám sát chuỗi lạnh nông sản.
 npm install
 npm run dev
 ```
-
-Chạy bản production bằng Docker (SQLite được lưu trong volume để không mất dữ liệu khi container khởi động lại):
-
-```bash
-docker compose up --build
-```
-
-Đặt `JWT_SECRET` trong file `.env` trước khi chạy Docker Compose. Dự án hiện chủ động dùng SQLite; `DATABASE_PATH` là đường dẫn tương đối bên trong thư mục `backend`.
 
 Mặc định:
 

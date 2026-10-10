@@ -1,13 +1,17 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  AlertTriangle,
+  ArrowLeft,
   ArrowRight,
-  Leaf,
-  Lock,
-  ShieldAlert,
   ShieldCheck,
   Sprout,
-  ThermometerSun,
+  Building2,
+  Truck,
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 
@@ -15,46 +19,18 @@ export default function LoginPage() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [emailError, setEmailError] = useState("");
-  const [passwordError, setPasswordError] = useState("");
-  const [serverError, setServerError] = useState("");
+  const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const validate = () => {
-    let isValid = true;
-    let errEmail = "";
-    let errPass = "";
-
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail) {
-      errEmail = "Vui lòng điền vào trường này.";
-      isValid = false;
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(trimmedEmail)) {
-        errEmail = "Email không hợp lệ (VD: example@domain.com)";
-        isValid = false;
-      }
-    }
-
-    if (!password) {
-      errPass = "Vui lòng điền vào trường này.";
-      isValid = false;
-    }
-
-    setEmailError(errEmail);
-    setPasswordError(errPass);
-    return isValid;
-  };
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (loginEmail, loginPassword) => {
-    setServerError("");
+    setError("");
     setIsSubmitting(true);
 
     try {
       await login(loginEmail, loginPassword);
     } catch (loginError) {
-      setServerError(loginError.message);
+      setError(loginError.message || "Đăng nhập không thành công.");
     } finally {
       setIsSubmitting(false);
     }
@@ -62,235 +38,188 @@ export default function LoginPage() {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (!validate()) {
-      return;
-    }
-    void handleLogin(email.trim(), password);
+    void handleLogin(email, password);
   };
 
-  const isLocked = serverError.toLowerCase().includes("bị khóa") || serverError.toLowerCase().includes("locked");
+  const demoRoles = [
+    {
+      title: "Nông dân / Hợp tác xã",
+      desc: "Khai báo thửa đất, nhập sản lượng & tạo lô thu hoạch",
+      email: "farm@agritrace.demo",
+      pass: "Farm@123",
+      icon: Sprout,
+      color: "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100",
+    },
+    {
+      title: "Cơ sở sơ chế / Chế biến",
+      desc: "Tiếp nhận lô hàng, đóng gói & bảo quản",
+      email: "processor@agritrace.demo",
+      pass: "Processor@123",
+      icon: Building2,
+      color: "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100",
+    },
+    {
+      title: "Đơn vị vận chuyển / Phân phối",
+      desc: "Giám sát chuỗi lạnh trên đường đi, tiếp nhận kho",
+      email: "distributor@agritrace.demo",
+      pass: "Distributor@123",
+      icon: Truck,
+      color: "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100",
+    },
+    {
+      title: "Cán bộ kiểm tra / Thanh tra",
+      desc: "Kiểm toán toàn vẹn Blockchain, kích hoạt thu hồi",
+      email: "auditor@agritrace.demo",
+      pass: "Auditor@123",
+      icon: ShieldCheck,
+      color: "bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100",
+    },
+    {
+      title: "Quản trị viên (Admin)",
+      desc: "Quản lý hệ thống, phân quyền và giám sát tổng thể",
+      email: "admin",
+      pass: "123456",
+      icon: Settings,
+      color: "bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200",
+    },
+  ];
 
   return (
-    <div className="login-bg flex min-h-screen items-center justify-center p-6 font-sans">
-      <div className="grid w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft lg:grid-cols-2">
-        {/* Left Branding Side */}
-        <div className="relative hidden overflow-hidden bg-slate-950 p-10 text-white lg:block">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.35),transparent_30%)]" />
-          <div className="relative z-10 flex h-full flex-col">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 font-bold shadow-sm">
-                A
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
+      {/* Top Banner */}
+      <div className="bg-brand-900 text-white text-xs py-2 px-4 border-b border-brand-800">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-brand-100 hover:text-white transition-colors"
+          >
+            <ArrowLeft size={14} /> Quay lại Cổng tra cứu công khai
+          </Link>
+          <span className="text-[11px] text-brand-200 hidden sm:inline">
+            Hệ thống Quản lý Tác nghiệp An toàn Chuỗi lạnh
+          </span>
+        </div>
+      </div>
+
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-4xl bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden grid md:grid-cols-12">
+          {/* Left / Top Info: 1-Click Demo Login */}
+          <div className="md:col-span-6 bg-slate-50 p-6 sm:p-8 border-b md:border-b-0 md:border-r border-slate-200 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-800 text-white font-bold text-sm">
+                  VN
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wider text-brand-800">
+                  BỘ NÔNG NGHIỆP VÀ PTNT
+                </span>
               </div>
-              <div>
-                <div className="font-bold tracking-tight">Agritrace</div>
-                <div className="text-xs text-slate-400">
-                  Traceability & Cold Chain
-                </div>
-              </div>
-            </div>
-            <div className="mt-16">
-              <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
-                <ShieldCheck size={14} /> Chuỗi Hash Bất Biến
-              </div>
-              <h1 className="mt-4 max-w-sm text-3xl font-bold leading-tight tracking-tight">
-                Truy xuất nguồn gốc & giám sát chuỗi lạnh nông sản.
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
+                Đăng nhập
               </h1>
-              <p className="mt-4 max-w-md text-sm text-slate-300 leading-relaxed">
-                Theo dõi từng lô hàng từ vùng trồng đến điểm phân phối với lịch sử sự kiện minh bạch và cảnh báo vi phạm nhiệt độ thời gian thực.
+              <p className="text-xs sm:text-sm text-slate-600 mb-6">
+                Bấm vào vai trò bạn muốn thử nghiệm bên dưới để điền tự động thông tin đăng nhập:
               </p>
+
+              <div className="space-y-2.5">
+                {demoRoles.map((role) => {
+                  const Icon = role.icon;
+                  return (
+                    <button
+                      key={role.email}
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => {
+                        setEmail(role.email);
+                        setPassword(role.pass);
+                      }}
+                      className={`w-full text-left p-3 rounded-lg border transition-all flex items-start gap-3 ${role.color} disabled:opacity-50`}
+                    >
+                      <Icon size={20} className="shrink-0 mt-0.5" />
+                      <div>
+                        <div className="text-sm font-bold">{role.title}</div>
+                        <div className="text-[11px] opacity-80 mt-0.5">{role.desc}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="mt-auto grid grid-cols-3 gap-3 text-xs">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5">
-                <Leaf className="mb-2 text-emerald-300" size={20} />
-                <span className="font-semibold block">Vùng trồng</span>
-                <span className="text-[11px] text-slate-400">Khai báo thửa đất</span>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5">
-                <ThermometerSun className="mb-2 text-cyan-300" size={20} />
-                <span className="font-semibold block">Chuỗi lạnh</span>
-                <span className="text-[11px] text-slate-400">Giám sát liên tục</span>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5">
-                <ShieldCheck className="mb-2 text-violet-300" size={20} />
-                <span className="font-semibold block">Toàn vẹn</span>
-                <span className="text-[11px] text-slate-400">Chống sửa xóa</span>
-              </div>
+
+            <div className="mt-6 pt-4 border-t border-slate-200 text-xs text-slate-500">
+              * Dành cho học phần Thực tập cơ sở: Truy xuất nguồn gốc & giám sát chuỗi lạnh nông sản.
             </div>
           </div>
-        </div>
 
-        {/* Right Form Side */}
-        <div className="flex items-center p-8 sm:p-12">
-          <div className="w-full max-w-md">
-            <div className="mb-6">
-              <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">
-                Đăng nhập hệ thống
-              </p>
-              <h2 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-                Chào mừng trở lại
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Nhập email và mật khẩu tài khoản của bạn để tiếp tục.
-              </p>
-            </div>
+          {/* Right: Manual Login Form */}
+          <div className="md:col-span-6 p-6 sm:p-8 flex flex-col justify-center">
+            <h2 className="text-lg font-bold text-slate-900 mb-1">
+              Đăng nhập tài khoản cá nhân
+            </h2>
+            <p className="text-xs text-slate-500 mb-6">
+              Nhập email và mật khẩu được cấp để truy cập hệ thống.
+            </p>
 
-            {/* Server Error / Lockout Banner */}
-            {serverError && (
-              <div
-                className={`mb-5 rounded-2xl p-4 text-xs font-medium border flex items-start gap-3 animate-in fade-in ${
-                  isLocked
-                    ? "bg-rose-100 text-rose-950 border-rose-300 ring-2 ring-rose-200"
-                    : "bg-rose-50 text-rose-800 border-rose-200"
-                }`}
-              >
-                {isLocked ? (
-                  <Lock size={20} className="text-rose-600 flex-shrink-0 mt-0.5" />
-                ) : (
-                  <ShieldAlert size={20} className="text-rose-600 flex-shrink-0 mt-0.5" />
-                )}
-                <div>
-                  <p className="font-bold text-sm">{isLocked ? "Tài khoản bị tạm khóa" : "Đăng nhập không thành công"}</p>
-                  <p className="mt-1 leading-relaxed opacity-90">{serverError}</p>
-                </div>
+            {error && (
+              <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700">
+                {error}
               </div>
             )}
 
-            <div className="space-y-4">
-              <form id="loginForm" noValidate className="space-y-3.5" onSubmit={handleSubmit}>
-                {/* Email Field */}
-                <div className="flex flex-col">
-                  <label htmlFor="email" className="block text-xs font-bold text-slate-700 mb-1">
-                    Địa chỉ Email <span className="text-rose-500">*</span>
-                  </label>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Email đăng nhập
+                </label>
+                <div className="relative">
+                  <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="username"
-                    placeholder="example@domain.com"
-                    disabled={isSubmitting}
+                    type="text"
                     value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      if (emailError) setEmailError("");
-                      if (serverError) setServerError("");
-                    }}
-                    className={`w-full rounded-xl border px-3.5 py-2.5 text-sm outline-none transition ${
-                      emailError
-                        ? "border-red-600 bg-red-50 text-red-950 focus:border-red-600 focus:ring-2 focus:ring-red-200"
-                        : "border-slate-300 bg-white text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                    }`}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    placeholder="ví dụ: farm@agritrace.demo"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:border-brand-700 focus:ring-1 focus:ring-brand-700 outline-none transition-all"
                   />
-                  {emailError && (
-                    <div className="mt-1 flex items-center gap-1.5 text-red-600 text-xs font-medium min-h-[1.2rem]">
-                      <AlertTriangle size={13} className="flex-shrink-0" />
-                      <span id="emailError">{emailError}</span>
-                    </div>
-                  )}
                 </div>
-
-                {/* Password Field */}
-                <div className="flex flex-col">
-                  <label htmlFor="password" className="block text-xs font-bold text-slate-700 mb-1">
-                    Mật khẩu <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    id="password"
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    disabled={isSubmitting}
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (passwordError) setPasswordError("");
-                      if (serverError) setServerError("");
-                    }}
-                    className={`w-full rounded-xl border px-3.5 py-2.5 text-sm outline-none transition ${
-                      passwordError
-                        ? "border-red-600 bg-red-50 text-red-950 focus:border-red-600 focus:ring-2 focus:ring-red-200"
-                        : "border-slate-300 bg-white text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                    }`}
-                  />
-                  {passwordError && (
-                    <div className="mt-1 flex items-center gap-1.5 text-red-600 text-xs font-medium min-h-[1.2rem]">
-                      <AlertTriangle size={13} className="flex-shrink-0" />
-                      <span id="passwordError">{passwordError}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Submit button */}
-                <button
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={isSubmitting}
-                  type="submit"
-                >
-                  {isSubmitting ? "Đang xác thực..." : "Đăng nhập"}
-                  {!isSubmitting && <ArrowRight size={16} />}
-                </button>
-              </form>
-
-              <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider text-slate-400 py-1">
-                <span className="h-px flex-1 bg-slate-200" />
-                Hoặc chọn nhanh tài khoản demo
-                <span className="h-px flex-1 bg-slate-200" />
               </div>
 
-              {/* Demo Account Buttons */}
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => {
-                  setEmailError("");
-                  setPasswordError("");
-                  handleLogin("farm@agritrace.demo", "Farm@123");
-                }}
-                className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left transition hover:border-emerald-500 hover:bg-emerald-50/50 disabled:cursor-not-allowed disabled:opacity-60 card-shadow"
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
-                  <ShieldCheck size={20} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-bold text-slate-900">
-                    Quản trị viên Farm (Farm Admin)
-                  </span>
-                  <span className="block text-[11px] text-slate-500 truncate">
-                    farm@agritrace.demo · Quản lý vùng trồng, thửa đất và lô thu hoạch
-                  </span>
-                </span>
-                <ArrowRight className="shrink-0 text-emerald-700" size={16} />
-              </button>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Mật khẩu
+                </label>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-10 py-2.5 rounded-lg border border-slate-300 text-sm focus:border-brand-700 focus:ring-1 focus:ring-brand-700 outline-none transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
 
               <button
-                type="button"
+                type="submit"
                 disabled={isSubmitting}
-                onClick={() => {
-                  setEmailError("");
-                  setPasswordError("");
-                  handleLogin("user@agritrace.demo", "User@123");
-                }}
-                className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left transition hover:border-emerald-500 hover:bg-emerald-50/50 disabled:cursor-not-allowed disabled:opacity-60 card-shadow"
+                className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-brand-800 hover:bg-brand-900 text-white font-semibold text-sm shadow transition-all active:scale-95 disabled:opacity-60"
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
-                  <Sprout size={20} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-bold text-slate-900">
-                    Farmer (Nông dân)
-                  </span>
-                  <span className="block text-[11px] text-slate-500 truncate">
-                    user@agritrace.demo · Theo dõi lô hàng, chuỗi lạnh và tính toàn vẹn
-                  </span>
-                </span>
-                <ArrowRight className="shrink-0 text-emerald-700" size={16} />
+                <span>{isSubmitting ? "Đang xác thực..." : "Đăng nhập hệ thống"}</span>
+                <ArrowRight size={16} />
               </button>
-            </div>
+            </form>
           </div>
         </div>
       </div>
     </div>
   );
 }
-
