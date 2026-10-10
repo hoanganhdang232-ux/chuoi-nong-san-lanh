@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agritrace - Liên kết nhanh</title>
+    <style>
+      :root { font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif; color: #172033; background: #eef3f8; }
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 42px 20px 56px; }
+      header { background: linear-gradient(135deg, #0f766e, #155e75); color: white; border-radius: 22px; padding: 30px; box-shadow: 0 16px 40px #0f172a22; }
+      h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 42px); }
+      header p { margin: 0; color: #d9fffa; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-top: 20px; }
+      .card { background: white; border: 1px solid #dbe5ee; border-radius: 16px; padding: 20px; box-shadow: 0 6px 18px #0f172a0d; }
+      .card h2 { margin: 0 0 8px; font-size: 19px; }
+      .card p { color: #526175; min-height: 44px; margin: 0 0 16px; line-height: 1.45; }
+      a, button { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 10px; padding: 11px 15px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+      a { background: #0f766e; color: white; }
+      a:hover { background: #115e59; }
+      .secondary { background: #e7f5f3; color: #0f766e; margin-left: 8px; }
+      .secondary:hover { background: #d0eeea; }
+      .command { display: flex; gap: 10px; align-items: center; margin-top: 20px; background: #172033; color: #ecf4ff; border-radius: 14px; padding: 14px 16px; overflow: auto; }
+      code { white-space: nowrap; }
+      .copy { flex: 0 0 auto; background: #334155; color: white; }
+      .hint { margin-top: 22px; color: #526175; font-size: 14px; }
+      @media (max-width: 560px) { .secondary { margin: 8px 0 0; } .command { align-items: flex-start; flex-direction: column; } }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <header>
+        <h1>Agritrace — Liên kết nhanh</h1>
+        <p>Một trang để mở nhanh toàn bộ địa chỉ cần dùng khi chạy thử dự án.</p>
+      </header>
+
+      <section class="grid" aria-label="Các liên kết dự án">
+        <article class="card">
+          <h2>Ứng dụng web</h2>
+          <p>Mở giao diện chính và đăng nhập bằng tài khoản demo.</p>
+          <a href="http://localhost:5173" target="_blank" rel="noreferrer">Mở ứng dụng</a>
+          <a class="secondary" href="http://localhost:5173/login" target="_blank" rel="noreferrer">Đăng nhập</a>
+        </article>
+
+        <article class="card">
+          <h2>Kiểm tra backend</h2>
+          <p>Xem nhanh backend có đang chạy và trả về trạng thái hay không.</p>
+          <a href="http://localhost:3001/api/health" target="_blank" rel="noreferrer">Mở API health</a>
+        </article>
+
+        <article class="card">
+          <h2>Truy xuất công khai</h2>
+          <p>Trang truy xuất mẫu không cần đăng nhập.</p>
+          <a href="http://localhost:5173/trace/BATCH-THA-2026-0001-F1" target="_blank" rel="noreferrer">Mở trang mẫu</a>
+        </article>
+
+        <article class="card">
+          <h2>Trang truy xuất khác</h2>
+          <p>Đổi mã lô trong địa chỉ để xem lô khác.</p>
+          <a href="http://localhost:5173/trace/BATCH-THA-2026-0001" target="_blank" rel="noreferrer">Mở BATCH-THA-2026-0001</a>
+        </article>
+      </section>
+
+      <div class="command">
+        <code>npm run dev</code>
+        <button class="copy" type="button" onclick="copyCommand()">Sao chép lệnh</button>
+      </div>
+      <p class="hint">Nếu các nút báo không kết nối được, hãy mở PowerShell trong thư mục dự án và chạy lệnh trên trước.</p>
+    </main>
+    <script>
+      function copyCommand() {
+        navigator.clipboard.writeText('npm run dev');
+        document.querySelector('.copy').textContent = 'Đã sao chép';
+        setTimeout(() => document.querySelector('.copy').textContent = 'Sao chép lệnh', 1600);
+      }
+    </script>
+  </body>
+</html>

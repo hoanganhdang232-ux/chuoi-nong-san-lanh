@@ -76,6 +76,15 @@ export default function Sidebar({ user, currentView, onSelectView, onLogout }) {
           <div className="mt-1 font-semibold text-white">{user?.name}</div>
           <div className="text-xs text-slate-400">{user?.organizationName}</div>
         </div>
+
+        <button
+          type="button"
+          onClick={onLogout}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-white"
+        >
+          <LogOut size={18} />
+          Đăng xuất
+        </button>
       </div>
 
       <nav className="flex-1 px-3">
@@ -92,14 +101,6 @@ export default function Sidebar({ user, currentView, onSelectView, onLogout }) {
         ))}
       </nav>
 
-      <button
-        type="button"
-        onClick={onLogout}
-        className="m-4 flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-3 text-sm text-slate-300 hover:border-rose-500/30 hover:text-rose-200"
-      >
-        <LogOut size={18} />
-        Đăng xuất
-      </button>
     </aside>
   );
 }
