@@ -313,10 +313,7 @@ export default function DashboardPage() {
       open: true,
       transfer,
       decision,
-      reason:
-        decision === "confirmed"
-          ? "Đã kiểm tra chất lượng và nhận đủ số lượng."
-          : "Lô hàng không đạt tiêu chuẩn chất lượng.",
+      reason: decision === "confirmed" ? "" : "Lô hàng không đạt tiêu chuẩn chất lượng.",
       submitting: false,
     });
   };
@@ -335,25 +332,20 @@ export default function DashboardPage() {
     if (e) e.preventDefault();
     const { transfer, decision, reason } = decisionModal;
     if (!transfer) return;
-    if (!reason || !reason.trim()) {
-      setSubmission({
-        message: "Vui lòng nhập lý do trước khi xử lý bàn giao.",
-        tone: "error",
-      });
-      return;
-    }
-    if (decision === "rejected" && reason.trim().length < 10) {
-      setSubmission({
-        message: "Lý do từ chối bắt buộc và phải có tối thiểu 10 ký tự.",
-        tone: "error",
-      });
-      return;
+    if (decision === "rejected") {
+      if (!reason || !reason.trim() || reason.trim().length < 10) {
+        setSubmission({
+          message: "Lý do từ chối bắt buộc và phải có tối thiểu 10 ký tự.",
+          tone: "error",
+        });
+        return;
+      }
     }
     setDecisionModal((prev) => ({ ...prev, submitting: true }));
     try {
       await api.decideTransfer(transfer.id, {
         decision,
-        reason: reason.trim(),
+        reason: reason?.trim() || null,
       });
       await loadData();
       setSubmission({
@@ -1907,16 +1899,24 @@ export default function DashboardPage() {
               <form onSubmit={handleSubmitDecisionModal} className="mt-4 space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-800">
-                    Lý do {decisionModal.decision === "confirmed" ? "xác nhận" : "từ chối"} <span className="text-rose-500">*</span>
+                    {decisionModal.decision === "confirmed" ? (
+                      <>
+                        Ghi chú / Nhận xét tiếp nhận <span className="text-slate-400 font-normal">(Không bắt buộc)</span>
+                      </>
+                    ) : (
+                      <>
+                        Lý do từ chối <span className="text-rose-500">* (Bắt buộc tối thiểu 10 ký tự)</span>
+                      </>
+                    )}
                   </label>
                   <textarea
                     rows={3}
-                    required
+                    required={decisionModal.decision === "rejected"}
                     className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                     placeholder={
                       decisionModal.decision === "confirmed"
-                        ? "Nhập lý do hoặc nhận xét khi tiếp nhận lô hàng..."
-                        : "Bắt buộc nhập rõ nguyên nhân từ chối lô hàng..."
+                        ? "Có thể để trống hoặc ghi chú thêm nếu muốn..."
+                        : "Bắt buộc nhập rõ nguyên nhân từ chối lô hàng (tối thiểu 10 ký tự)..."
                     }
                     value={decisionModal.reason}
                     onChange={(e) =>
@@ -1936,7 +1936,11 @@ export default function DashboardPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={decisionModal.submitting || !decisionModal.reason.trim()}
+                    disabled={
+                      decisionModal.submitting ||
+                      (decisionModal.decision === "rejected" &&
+                        decisionModal.reason.trim().length < 10)
+                    }
                     className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:opacity-50 ${
                       decisionModal.decision === "confirmed"
                         ? "bg-emerald-600 hover:bg-emerald-700"

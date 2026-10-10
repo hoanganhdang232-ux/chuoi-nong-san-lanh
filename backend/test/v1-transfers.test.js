@@ -242,9 +242,7 @@ test("API v1 Transfers: Full Handover workflow with Locking, Validation, Reject,
       Authorization: `Bearer ${processorToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      reason: "Đã kiểm tra chất lượng và nhận đủ hàng vào kho",
-    }),
+    body: JSON.stringify({}),
   });
   assert.equal(approveRes.status, 200);
   const approveData = await approveRes.json();

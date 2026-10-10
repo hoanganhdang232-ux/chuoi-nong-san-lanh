@@ -110,12 +110,9 @@ export function decideTransfer({
       if (typeof reason !== "string" || reason.trim().length < 10) {
         throw new Error("Lý do từ chối bắt buộc và phải có tối thiểu 10 ký tự.");
       }
-    } else {
-      if (typeof reason !== "string" || !reason.trim()) {
-        throw new Error("Vui lòng nhập lý do xác nhận hoặc từ chối bàn giao.");
-      }
     }
-    const decisionReason = reason.trim();
+    const decisionReason =
+      typeof reason === "string" && reason.trim() ? reason.trim() : null;
 
     const nextStatus = decision === "confirmed" ? "confirmed" : "rejected";
     db.prepare(

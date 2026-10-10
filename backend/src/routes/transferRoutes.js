@@ -128,7 +128,7 @@ router.post(
   requireRole("farm_admin", "processor_admin", "distributor_admin", "user"),
   (req, res) => {
     const transferId = Number(req.params.id);
-    const reason = req.body?.reason ? String(req.body.reason).trim() : "Đã đồng ý nhận bàn giao lô hàng.";
+    const reason = req.body?.reason ? String(req.body.reason).trim() : null;
 
     try {
       const result = decideTransfer({

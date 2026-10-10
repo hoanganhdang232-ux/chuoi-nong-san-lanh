@@ -318,7 +318,7 @@ test("creates transfer request, confirms it, and records a new chain event", asy
         Authorization: `Bearer ${processorToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ decision: "confirmed" }),
+      body: JSON.stringify({ decision: "rejected" }),
     },
   );
   assert.equal(decisionWithoutReason.status, 400);
