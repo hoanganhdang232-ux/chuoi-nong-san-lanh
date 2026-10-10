@@ -227,7 +227,7 @@ router.post(
       const months = Number(req.body?.months) || 1;
       const result = anonymizeOldData(months);
       return res.json(result);
-    } catch (error) {
+    } catch {
       return res.status(500).json({ message: "Lỗi hệ thống khi ẩn danh dữ liệu." });
     }
   }
@@ -240,7 +240,7 @@ router.get("/public/trace/:batchCode", (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy dữ liệu truy xuất." });
     }
     return res.json(traceData);
-  } catch (error) {
+  } catch {
     return res.status(500).json({ message: "Lỗi hệ thống khi tra cứu dữ liệu." });
   }
 });

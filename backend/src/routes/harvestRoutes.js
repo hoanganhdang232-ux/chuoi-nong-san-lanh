@@ -118,7 +118,7 @@ router.delete("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
   }
 
   // Optional: check if plot is used in batches
-  const inUse = db.prepare("SELECT id FROM batches WHERE current_location LIKE ? LIMIT 1").get(`%${plot.name}%`);
+  db.prepare("SELECT id FROM batches WHERE current_location LIKE ? LIMIT 1").get(`%${plot.name}%`);
   // Note: normally there would be a foreign key or better check, but we'll do a simple check.
   // Actually batches don't explicitly store land_plot_id, they store source_farm_id. 
   // Let's just delete it directly since event_logs has the stringified name anyway.
@@ -126,7 +126,7 @@ router.delete("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
   try {
     db.prepare("DELETE FROM land_plots WHERE id = ?").run(plotId);
     res.json({ message: "Xóa thửa đất thành công." });
-  } catch (error) {
+  } catch {
     res.status(400).json({ message: "Không thể xóa thửa đất này vì đã có dữ liệu ràng buộc." });
   }
 });

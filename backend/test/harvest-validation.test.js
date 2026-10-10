@@ -142,7 +142,7 @@ test("AC2 - Báo lỗi khi khối lượng thu hoạch <= 0", async () => {
 test("AC3 - Báo lỗi 403 Forbidden khi thửa thuộc tổ chức khác (kiểm tra trước tiên)", async () => {
   const db = getDb();
   // Find a plot that does NOT belong to the farmer's organization
-  const user = db.prepare("SELECT organization_id FROM users WHERE role = 'farm_admin' LIMIT 1").get();
+  db.prepare("SELECT organization_id FROM users WHERE role = 'farm_admin' LIMIT 1").get();
   
   // create a dummy org and plot
   const orgResult = db.prepare("INSERT INTO organizations(name, type) VALUES ('Org Khac', 'farm')").run();
@@ -190,7 +190,7 @@ test("AC4 - Prevent duplicate submit (Idempotency server protection)", async () 
     },
     body: reqBody
   });
-  const data1 = await res1.json();
+  await res1.json();
   assert.equal(res1.status, 201, "Lần đầu tiên phải tạo thành công");
 
   // Gửi request thứ hai ngay sau đó (bị trùng)
@@ -202,6 +202,6 @@ test("AC4 - Prevent duplicate submit (Idempotency server protection)", async () 
     },
     body: reqBody
   });
-  const data2 = await res2.json();
+  await res2.json();
   assert.equal(res2.status, 409, "Lần thứ hai phải bị từ chối 409 Conflict (idempotency)");
 });

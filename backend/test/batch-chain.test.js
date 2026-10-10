@@ -61,9 +61,9 @@ test("AC2 - Sửa nội dung bằng SQL", async () => {
   const batchResult = db.prepare("INSERT INTO batches(product_id, organization_id, source_farm_id, status, batch_code, initial_quantity, remaining_quantity) VALUES(1, 1, 1, 'registered', 'B001', 100, 100)").run();
   const batchId = batchResult.lastInsertRowid;
   
-  const e1 = createEventLog({ batchId, eventType: "batch_harvested", actorId: 1, data: { val: 1 } });
+  createEventLog({ batchId, eventType: "batch_harvested", actorId: 1, data: { val: 1 } });
   const e2 = createEventLog({ batchId, eventType: "batch_processed", actorId: 1, data: { val: 2 } });
-  const e3 = createEventLog({ batchId, eventType: "batch_packaged", actorId: 1, data: { val: 3 } });
+  createEventLog({ batchId, eventType: "batch_packaged", actorId: 1, data: { val: 3 } });
   
   // Directly tamper with e2 using SQL
   db.exec("DROP TRIGGER IF EXISTS event_logs_prevent_update");
@@ -84,7 +84,7 @@ test("AC3 - Xóa sự kiện ở giữa chuỗi", async () => {
   const batchResult = db.prepare("INSERT INTO batches(product_id, organization_id, source_farm_id, status, batch_code, initial_quantity, remaining_quantity) VALUES(1, 1, 1, 'registered', 'B001', 100, 100)").run();
   const batchId = batchResult.lastInsertRowid;
   
-  const e1 = createEventLog({ batchId, eventType: "batch_harvested", actorId: 1, data: { val: 1 } });
+  createEventLog({ batchId, eventType: "batch_harvested", actorId: 1, data: { val: 1 } });
   const e2 = createEventLog({ batchId, eventType: "batch_processed", actorId: 1, data: { val: 2 } });
   const e3 = createEventLog({ batchId, eventType: "batch_packaged", actorId: 1, data: { val: 3 } });
 

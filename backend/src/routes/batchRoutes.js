@@ -8,7 +8,6 @@ import {
   getBatchWithEvents,
   parseBatchIds,
   updateBatchStatus,
-  verifyEventChain,
   verifyBatchChain,
 } from "../services/batchService.js";
 import {
