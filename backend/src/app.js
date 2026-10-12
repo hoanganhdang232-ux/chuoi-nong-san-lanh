@@ -4,13 +4,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import authRoutes from "./routes/authRoutes.js";
 import batchRoutes from "./routes/batchRoutes.js";
-import transferRoutes from "./routes/transferRoutes.js";
-import featureRoutes from "./routes/featureRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import farmRoutes from "./routes/farmRoutes.js";
+import transferRoutes from "./routes/transferRoutes.js";
+import featureRoutes from "./routes/featureRoutes.js";
 import { runMigrations } from "./db/migrations.js";
 import { ensureDemoFarmerAccount } from "./db/seed.js";
 import { processOverdueTransfers } from "./services/transferService.js";
+import { getDb } from "./db/database.js";
 
 const frontendDistPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -24,7 +25,18 @@ export function createApp() {
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", service: "agritrace-backend" });
+    try {
+      getDb().prepare("SELECT 1 AS healthy").get();
+      res.setHeader("X-Commit-Sha", process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "development");
+      return res.json({ status: "ok", service: "agritrace-backend", database: "ok" });
+    } catch (error) {
+      console.error("Health check failed", error);
+      return res.status(503).json({
+        status: "error",
+        service: "agritrace-backend",
+        database: "unavailable",
+      });
+    }
   });
 
   app.use("/api/auth", authRoutes);

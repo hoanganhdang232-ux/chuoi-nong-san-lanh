@@ -146,9 +146,6 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-slate-200 text-xs text-slate-500">
-              * Dành cho học phần Thực tập cơ sở: Truy xuất nguồn gốc & giám sát chuỗi lạnh nông sản.
-            </div>
           </div>
 
           {/* Right: Manual Login Form */}

@@ -15,21 +15,16 @@ import {
   Thermometer,
   Search,
   Sprout,
-  Truck,
   Building2,
-  Calendar,
   LogOut,
   ChevronDown,
   ChevronUp,
-  FileCheck,
-  RefreshCw,
-  Eye,
   Trash2,
   Bell,
 } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
-import { SkeletonCard, SkeletonRow } from "../components/ui/Skeleton.jsx";
+import { SkeletonCard } from "../components/ui/Skeleton.jsx";
 import { EmptyState } from "../components/ui/EmptyState.jsx";
 
 const statusColors = {
@@ -70,7 +65,8 @@ export default function DashboardPage() {
   const [landPlots, setLandPlots] = useState([]);
   const [products, setProducts] = useState([]);
   const [farms, setFarms] = useState([]);
-  const [temperatureLogs, setTemperatureLogs] = useState([]);
+  const [selectedFarmId, setSelectedFarmId] = useState(null);
+  const [, setTemperatureLogs] = useState([]);
   const [recallReports, setRecallReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState(null);
@@ -884,21 +880,29 @@ export default function DashboardPage() {
                     ) : (
                       <div className="grid grid-cols-1 gap-3">
                         {farms.map((f) => (
-                          <div key={f.id} className="group flex justify-between items-start p-4 border border-slate-200 rounded-xl hover:border-brand-300 hover:shadow-md transition-all bg-white relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-brand-500"></div>
+                          <div 
+                            key={f.id} 
+                            onClick={() => setSelectedFarmId(f.id)}
+                            className={`cursor-pointer group flex justify-between items-start p-4 border rounded-xl hover:shadow-md transition-all relative overflow-hidden ${
+                              selectedFarmId === f.id ? "border-brand-500 bg-brand-50/50" : "border-slate-200 bg-white hover:border-brand-300"
+                            }`}
+                          >
+                            <div className={`absolute top-0 left-0 w-1 h-full ${selectedFarmId === f.id ? "bg-brand-600" : "bg-brand-500"}`}></div>
                             <div className="pl-2">
-                              <div className="font-bold text-slate-800">{f.name}</div>
-                              <div className="text-xs text-slate-500 mt-1 flex items-start gap-1">
+                              <div className={`font-bold ${selectedFarmId === f.id ? "text-brand-800" : "text-slate-800"}`}>{f.name}</div>
+                              <div className={`text-xs mt-1 flex items-start gap-1 ${selectedFarmId === f.id ? "text-brand-700" : "text-slate-500"}`}>
                                 <MapPin size={12} className="mt-0.5 shrink-0" />
                                 <span>{f.address || "Chưa cập nhật địa chỉ"}</span>
                               </div>
                               {(f.latitude || f.longitude) && (
-                                <div className="text-[10px] text-brand-600 mt-2 font-mono bg-brand-50 inline-block px-2 py-0.5 rounded border border-brand-100">
+                                <div className={`text-[10px] mt-2 font-mono inline-block px-2 py-0.5 rounded border ${
+                                  selectedFarmId === f.id ? "text-brand-700 bg-brand-100 border-brand-200" : "text-brand-600 bg-brand-50 border-brand-100"
+                                }`}>
                                   {f.latitude}, {f.longitude}
                                 </div>
                               )}
                             </div>
-                            <button onClick={() => handleDeleteFarm(f.id, f.name)} className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-2 rounded-lg transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100" title="Xóa">
+                            <button onClick={(e) => { e.stopPropagation(); handleDeleteFarm(f.id, f.name); }} className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-2 rounded-lg transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100" title="Xóa">
                               <Trash2 size={18} />
                             </button>
                           </div>

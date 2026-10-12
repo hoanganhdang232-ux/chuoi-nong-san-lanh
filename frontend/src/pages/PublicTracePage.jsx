@@ -9,15 +9,9 @@ import {
   Thermometer,
   MapPin,
   Calendar,
-  Building2,
-  QrCode,
-  Download,
   Printer,
-  ChevronRight,
   ShieldCheck,
   Truck,
-  Sprout,
-  Store,
 } from "lucide-react";
 
 function TemperatureChart({ readings }) {
@@ -53,11 +47,6 @@ function TemperatureChart({ readings }) {
     height -
     padding -
     ((8 - minimum) * (height - padding * 2)) / (maximum - minimum || 1);
-
-  const threshold2Y =
-    height -
-    padding -
-    ((2 - minimum) * (height - padding * 2)) / (maximum - minimum || 1);
 
   return (
     <div className="overflow-x-auto bg-white p-4 rounded-lg border border-slate-200">

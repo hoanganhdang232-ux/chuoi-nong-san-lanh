@@ -645,9 +645,21 @@ router.get("/:id/integrity", authenticateToken, (req, res) => {
   }
 
   const integrity = verifyBatchChain(batchId);
+  const isValid = integrity.valid ?? integrity.is_valid ?? true;
+  const invalidIds = (integrity.events
+    ? integrity.events.filter((e) => e.status !== "VALID").map((e) => e.event_id)
+    : []
+  );
+  if (integrity.first_broken_event_id && !invalidIds.includes(integrity.first_broken_event_id)) {
+    invalidIds.push(integrity.first_broken_event_id);
+  }
   res.json({
     ...integrity,
-    broken: !integrity.is_valid,
+    valid: isValid,
+    is_valid: isValid,
+    broken: !isValid,
+    invalidEventIds: invalidIds,
+    invalid_event_ids: invalidIds,
     batch,
   });
 });

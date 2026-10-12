@@ -3,17 +3,11 @@ import { useNavigate } from "react-router-dom";
 import NationalHeader from "../components/NationalHeader.jsx";
 import {
   Search,
-  QrCode,
   ShieldCheck,
   ThermometerSnowflake,
-  Truck,
   Sprout,
   Store,
-  CheckCircle2,
-  AlertTriangle,
   ArrowRight,
-  ExternalLink,
-  ChevronRight,
   Sparkles,
 } from "lucide-react";
 

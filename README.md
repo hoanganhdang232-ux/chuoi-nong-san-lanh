@@ -4,9 +4,9 @@ Demo truy xuất nguồn gốc và giám sát chuỗi lạnh nông sản.
 
 ## Công nghệ
 
-- Backend: Node.js, Express, SQLite, JWT
+- Backend: Node.js, Express, SQLite, Argon2id, server-side sessions
 - Frontend: React, Vite, Tailwind CSS
-- Mật khẩu: bcrypt
+- Mật khẩu: Argon2id (tự nâng cấp hash bcrypt cũ sau lần đăng nhập thành công)
 - Chuỗi hash: SHA-256
 
 ## Chạy nhanh
@@ -16,17 +16,34 @@ npm install
 npm run dev
 ```
 
+Chạy bản production bằng Docker (SQLite được lưu trong volume để không mất dữ liệu khi container khởi động lại):
+
+```bash
+docker compose up --build
+```
+
+Đặt `JWT_SECRET` trong file `.env` trước khi chạy Docker Compose. Dự án hiện chủ động dùng SQLite; `DATABASE_PATH` là đường dẫn tương đối bên trong thư mục `backend`.
+
 Mặc định:
 
 - Frontend: http://localhost:5173
 - Backend: http://localhost:3001
 - API health: http://localhost:3001/api/health
 
-## Staging trên Render
+## Staging & Tự động hóa CI/CD
 
-Staging dùng một Render Web Service để phục vụ frontend và API cùng domain, với persistent disk cho SQLite. Tạo service từ `render.yaml` trên Render và kết nối repo này. Trong Settings của service, tạo Deploy Hook rồi lưu URL đó trong GitHub repository secret `RENDER_DEPLOY_HOOK_URL`.
+Pipeline CI/CD tự động hóa toàn diện triển khai lên môi trường Staging (Render):
 
-Workflow CI chạy lint, test và build trên pull request cũng như khi push lên `main`. Khi CI của một commit trên `main` thành công, GitHub Actions gọi Deploy Hook để cập nhật staging. Hãy đặt check `Lint, test, and build` thành required status check trong branch protection của `main` nếu muốn chặn merge khi CI đỏ.
+1. **Auto Deploy**: Ngay khi Pull Request được merge vào nhánh `main`, workflow CI (Lint, Test, Build) tự động kích hoạt. Khi CI vượt qua, workflow `Deploy staging` sẽ tự động trigger deploy lên Render và hoàn tất trong vòng 10 phút mà không cần thao tác tay.
+2. **Database Migration**: Trước khi phiên bản mới khởi động và nhận bất kỳ HTTP request nào, Render tự động thực thi `preDeployCommand: npm run db:migrate --workspace backend`. Nếu migration thất bại, tiến trình deploy bị hủy ngay lập tức và hệ thống giữ nguyên phiên bản cũ.
+3. **Health Check & Rollback**: Sau khi deploy, pipeline liên tục thăm dò endpoint `/api/health` của Staging:
+   - Nếu `/api/health` trả về hợp lệ (`status: ok`, `database: ok`), pipeline báo xanh và hoàn tất.
+   - Nếu khởi động thất bại hoặc không vượt qua kiểm tra sức khỏe trong thời gian quy định, pipeline báo đỏ (`exit 1`) và cơ chế Zero-Downtime Rollback của Render sẽ giữ nguyên phiên bản cũ đang hoạt động ổn định.
+
+### Cấu hình Secrets trên GitHub Repository
+- `RENDER_DEPLOY_HOOK_URL`: (Bắt buộc) Deploy Hook URL lấy từ Render Dashboard (Settings → Deploy Hook).
+- `STAGING_URL`: (Tùy chọn) URL của dịch vụ Staging (ví dụ `https://agritrace-staging.onrender.com`), dùng để pipeline thăm dò `/api/health`.
+- `RENDER_API_KEY` & `RENDER_SERVICE_ID`: (Tùy chọn) API token và Service ID của Render để theo dõi chi tiết trạng thái deploy.
 
 ## Tài khoản demo
 
