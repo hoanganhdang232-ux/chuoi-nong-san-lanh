@@ -15,7 +15,8 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    const err = new Error(errorData.message || "Yêu cầu không thành công.");
+    const details = Array.isArray(errorData.errors) ? ` ${errorData.errors.join(" ")}` : "";
+    const err = new Error(`${errorData.message || "Yêu cầu không thành công."}${details}`);
     err.error_code = errorData.error_code;
     err.field = errorData.field;
     throw err;
@@ -33,6 +34,11 @@ export const api = {
   getMe: () => request("/auth/me"),
   getDashboard: () => request("/auth/dashboard"),
   getBatches: () => request("/batches"),
+  getActivity: (limit = 100) => request(`/batches/activity?limit=${limit}`),
+  importBatchesCsv: (csvText) => request("/batches/import-csv", {
+    method: "POST",
+    body: JSON.stringify({ csvText }),
+  }),
   getBatch: (batchId) => request(`/batches/${batchId}`),
   getBatchSummary: (batchId) => request(`/batches/${batchId}/summary`),
   getProducts: () => request("/products"),
@@ -105,6 +111,10 @@ export const api = {
     request(`/batches/merge`, {
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+  sellOutBatch: (batchId) =>
+    request(`/v1/distributor/lots/${batchId}/sell-out`, {
+      method: "PATCH",
     }),
   verifyBatchIntegrity: (batchId) => request(`/batches/${batchId}/integrity`),
   simulateSensor: (batchId, payload = {}) =>

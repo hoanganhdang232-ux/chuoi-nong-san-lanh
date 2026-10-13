@@ -45,6 +45,37 @@ Pipeline CI/CD tự động hóa toàn diện triển khai lên môi trường S
 - `STAGING_URL`: (Tùy chọn) URL của dịch vụ Staging (ví dụ `https://agritrace-staging.onrender.com`), dùng để pipeline thăm dò `/api/health`.
 - `RENDER_API_KEY` & `RENDER_SERVICE_ID`: (Tùy chọn) API token và Service ID của Render để theo dõi chi tiết trạng thái deploy.
 
+## CI/CD & Bảo vệ nhánh chính (T-03 & T-04)
+
+### T-03: Pipeline CI chạy build, lint, test trên mỗi push
+Workflow tại `.github/workflows/ci.yml` tự động kích hoạt trên **mỗi sự kiện push** và **pull request**. Các bước bao gồm:
+1. `npm ci`: Cài đặt dependencies chuẩn xác theo `package-lock.json`.
+2. `npm run lint`: Kiểm tra chất lượng mã nguồn backend và frontend qua ESLint.
+3. `npm run build`: Build gói ứng dụng frontend Vite để kiểm tra không có lỗi bundle.
+4. `npm test`: Chạy toàn bộ test suites backend (kiểm thử nghiệp vụ, xác thực, phả hệ, chuỗi hash).
+
+### T-04: Luật bảo vệ nhánh chính (`main`)
+Để đảm bảo chỉ code đạt chuẩn mới được đưa vào nhánh chính (`main`), cấu hình Branch Protection Rule trên GitHub:
+
+**Cách 1: Cấu hình qua giao diện GitHub Web**
+1. Mở trang [Settings > Branches](https://github.com/hoanganhdang232-ux/chuoi-nong-san-lanh/settings/branches) của repository.
+2. Bấm **Add branch protection rule** (hoặc chọn rule cho branch `main`).
+3. Đặt **Branch name pattern**: `main`.
+4. Tích chọn **Require a pull request before merging**:
+   - Tích chọn **Require approvals** và đặt số người duyệt là **1**.
+5. Tích chọn **Require status checks to pass before merging**:
+   - Tích chọn **Require branches to be up to date before merging**.
+   - Tìm và chọn status check: `Lint, test, and build` (từ workflow CI).
+6. Tích chọn **Do not allow force pushes** và **Do not allow deletions**.
+7. Bấm **Create** / **Save changes**.
+
+**Cách 2: Sử dụng script tự động**
+Nếu có GitHub Personal Access Token (`repo` scope):
+```powershell
+$env:GITHUB_TOKEN = "ghp_xxxx..."
+.\scripts\setup-branch-protection.ps1
+```
+
 ## Tài khoản demo
 
 - Auditor: auditor@agritrace.demo / Auditor@123
@@ -77,6 +108,8 @@ npm run db:seed-features --workspace backend
 ```
 
 Lệnh seed bổ sung có tính idempotent và chỉ tạo một lần.
+Đáp án phả hệ đếm tay độc lập để đối chiếu seed nằm tại
+[`backend/src/db/seedFeatures.expected.md`](backend/src/db/seedFeatures.expected.md).
 
 ## Chức năng chính
 

@@ -8,7 +8,7 @@ try {
   console.log("Database migrations completed successfully.");
 } catch (error) {
   console.error("Database migration failed:", error);
-  process.exit(1);
+  process.exitCode = 1;
 } finally {
   const db = getDb();
   if (db && typeof db.close === "function") {

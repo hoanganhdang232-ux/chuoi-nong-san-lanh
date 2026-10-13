@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getDb } from "./database.js";
 
 export function runMigrations() {
@@ -68,7 +70,8 @@ export function runMigrations() {
       remaining_quantity REAL NOT NULL,
       current_location TEXT,
       temperature_c REAL,
-      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled')),
+      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','sold_out')),
+      sold_out_at TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (product_id) REFERENCES products(id),
@@ -258,10 +261,11 @@ export function runMigrations() {
       )
       .get()?.sql || "";
 
-  if (!batchTableSql.includes("pending_confirmation")) {
+  if (!batchTableSql.includes("pending_confirmation") || !batchTableSql.includes("'sold_out'")) {
     db.exec("PRAGMA foreign_keys = OFF;");
     db.exec("BEGIN IMMEDIATE");
     try {
+      db.exec("DROP VIEW IF EXISTS lots;");
       db.exec(`
         CREATE TABLE batches_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -276,7 +280,10 @@ export function runMigrations() {
           remaining_quantity REAL NOT NULL,
           current_location TEXT,
           temperature_c REAL,
-          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled')),
+          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','sold_out')),
+          cold_chain_alert INTEGER NOT NULL DEFAULT 0,
+          consumed_quantity REAL NOT NULL DEFAULT 0,
+          sold_out_at TEXT,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (product_id) REFERENCES products(id),
@@ -287,23 +294,44 @@ export function runMigrations() {
         );
       `);
 
+      const currentBatchCols = db
+        .prepare("PRAGMA table_info(batches)")
+        .all()
+        .map((column) => column.name);
+
+      const possibleCols = [
+        "id",
+        "batch_code",
+        "product_id",
+        "organization_id",
+        "source_farm_id",
+        "parent_batch_id",
+        "root_batch_id",
+        "source_batch_ids",
+        "initial_quantity",
+        "remaining_quantity",
+        "current_location",
+        "temperature_c",
+        "status",
+        "cold_chain_alert",
+        "consumed_quantity",
+        "sold_out_at",
+        "created_at",
+        "updated_at",
+      ];
+      const colsToCopy = possibleCols.filter((col) =>
+        currentBatchCols.includes(col),
+      );
+
       db.exec(`
-        INSERT INTO batches_new (
-          id, batch_code, product_id, organization_id, source_farm_id,
-          parent_batch_id, root_batch_id, source_batch_ids,
-          initial_quantity, remaining_quantity, current_location, temperature_c,
-          status, created_at, updated_at
-        )
-        SELECT
-          id, batch_code, product_id, organization_id, source_farm_id,
-          parent_batch_id, root_batch_id, source_batch_ids,
-          initial_quantity, remaining_quantity, current_location, temperature_c,
-          status, created_at, updated_at
+        INSERT INTO batches_new (${colsToCopy.join(", ")})
+        SELECT ${colsToCopy.join(", ")}
         FROM batches;
       `);
 
       db.exec("DROP TABLE batches;");
       db.exec("ALTER TABLE batches_new RENAME TO batches;");
+      db.exec("CREATE VIEW IF NOT EXISTS lots AS SELECT * FROM batches;");
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -324,6 +352,100 @@ export function runMigrations() {
   if (!transferColumns.includes("overdue_notified_at")) {
     db.exec("ALTER TABLE batch_transfers ADD COLUMN overdue_notified_at TEXT");
   }
+
+  const transferTableSql =
+    db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'batch_transfers'",
+      )
+      .get()?.sql || "";
+
+  if (transferTableSql && !transferTableSql.includes("'cancelled'")) {
+    db.exec("PRAGMA foreign_keys = OFF;");
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE batch_transfers_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          batch_id INTEGER NOT NULL,
+          from_organization_id INTEGER NOT NULL,
+          to_organization_id INTEGER NOT NULL,
+          requester_id INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','rejected','cancelled')),
+          note TEXT,
+          reason TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          overdue_notified_at TEXT,
+          FOREIGN KEY (batch_id) REFERENCES batches(id),
+          FOREIGN KEY (from_organization_id) REFERENCES organizations(id),
+          FOREIGN KEY (to_organization_id) REFERENCES organizations(id),
+          FOREIGN KEY (requester_id) REFERENCES users(id)
+        );
+        INSERT INTO batch_transfers_new (
+          id, batch_id, from_organization_id, to_organization_id, requester_id,
+          status, note, reason, created_at, updated_at, overdue_notified_at
+        )
+        SELECT
+          id, batch_id, from_organization_id, to_organization_id, requester_id,
+          status, note, reason, created_at, updated_at, overdue_notified_at
+        FROM batch_transfers;
+        DROP TABLE batch_transfers;
+        ALTER TABLE batch_transfers_new RENAME TO batch_transfers;
+      `);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    } finally {
+      db.exec("PRAGMA foreign_keys = ON;");
+    }
+  }
+
+  db.exec(`
+    CREATE VIEW IF NOT EXISTS lots AS SELECT * FROM batches;
+    CREATE VIEW IF NOT EXISTS lot_transfers AS
+    SELECT
+      id,
+      batch_id AS lot_id,
+      from_organization_id AS sender_org_id,
+      to_organization_id AS receiver_org_id,
+      CASE
+        WHEN status = 'pending' THEN 'PENDING'
+        WHEN status = 'confirmed' THEN 'APPROVED'
+        WHEN status = 'rejected' THEN 'REJECTED'
+        WHEN status = 'cancelled' THEN 'CANCELLED'
+        ELSE UPPER(status)
+      END AS status,
+      reason AS reject_reason,
+      created_at,
+      updated_at
+    FROM batch_transfers;
+
+    CREATE TABLE IF NOT EXISTS batch_lineage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_batch_id INTEGER NOT NULL,
+      child_batch_id INTEGER NOT NULL,
+      quantity_transferred REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (parent_batch_id) REFERENCES batches(id),
+      FOREIGN KEY (child_batch_id) REFERENCES batches(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_batch_lineage_parent ON batch_lineage(parent_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_batch_lineage_child ON batch_lineage(child_batch_id);
+
+    CREATE VIEW IF NOT EXISTS events AS
+    SELECT
+      id,
+      batch_id,
+      event_type,
+      actor_id,
+      data_json AS payload,
+      previous_hash AS prev_hash,
+      current_hash AS hash,
+      timestamp AS created_at
+    FROM event_logs;
+  `);
   if (!refreshedBatchColumns.includes("cold_chain_alert")) {
     db.exec(
       "ALTER TABLE batches ADD COLUMN cold_chain_alert INTEGER NOT NULL DEFAULT 0",
@@ -332,6 +454,13 @@ export function runMigrations() {
   if (!refreshedBatchColumns.includes("consumed_quantity")) {
     db.exec(
       "ALTER TABLE batches ADD COLUMN consumed_quantity REAL NOT NULL DEFAULT 0",
+    );
+  }
+  
+  // Add sold_out_at column for distributor sell-out feature
+  if (!refreshedBatchColumns.includes("sold_out_at")) {
+    db.exec(
+      "ALTER TABLE batches ADD COLUMN sold_out_at TEXT",
     );
   }
 
@@ -392,4 +521,21 @@ export function runMigrations() {
   db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
     "001_initial_schema",
   );
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+    "002_distributor_sell_out",
+  );
 }
+
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+) {
+  const db = getDb();
+  try {
+    runMigrations();
+    console.log("Database migrations applied successfully.");
+  } finally {
+    db.close();
+  }
+}
+
