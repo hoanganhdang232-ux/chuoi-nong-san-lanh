@@ -6,9 +6,7 @@ import {
   createEventLog,
   getBatchGenealogy,
   getBatchWithEvents,
-  parseBatchIds,
   updateBatchStatus,
-  verifyEventChain,
 } from "../services/batchService.js";
 import {
   createTransferRequest,
