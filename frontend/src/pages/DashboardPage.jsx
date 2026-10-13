@@ -29,6 +29,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 const EVENT_META = {
   batch_harvested:           { label: "Thu hoạch",           color: "bg-emerald-100 text-emerald-700",  icon: Tractor },
+  batch_imported:            { label: "Nhập lô từ CSV",       color: "bg-cyan-100 text-cyan-700",        icon: ClipboardList },
   batch_processed:           { label: "Đã sơ chế",           color: "bg-blue-100 text-blue-700",       icon: ClipboardList },
   batch_in_transit:          { label: "Đang vận chuyển",     color: "bg-amber-100 text-amber-700",    icon: Truck },
   batch_delivered:           { label: "Đã giao",             color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
@@ -124,6 +125,11 @@ const STATUS_META = {
     color: "bg-rose-50 text-rose-800 border-rose-300 ring-1 ring-rose-200",
     dot: "bg-rose-500",
   },
+  consumed: {
+    label: "Đã tiêu thụ",
+    color: "bg-slate-100 text-slate-600 border-slate-200",
+    dot: "bg-slate-400",
+  },
 };
 
 function BatchStatusBadge({ status }) {
@@ -152,8 +158,10 @@ export default function DashboardPage() {
   const [temperatureLogs, setTemperatureLogs] = useState([]);
   const [recallReports, setRecallReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [activity, setActivity] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [genealogy, setGenealogy] = useState(null);
+  const [batchSummary, setBatchSummary] = useState(null);
   const [selectedView, setSelectedView] = useState("Tổng quan");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -173,7 +181,10 @@ export default function DashboardPage() {
   const [productForm, setProductForm] = useState({ name: "", unit: "kg" });
   const [editingProductId, setEditingProductId] = useState(null);
   const [splitBatchId, setSplitBatchId] = useState("");
-  const [splitQuantity, setSplitQuantity] = useState("");
+  const [splitAllocations, setSplitAllocations] = useState([
+    { quantity: "", location: "" },
+    { quantity: "", location: "" },
+  ]);
   const [mergeBatchIds, setMergeBatchIds] = useState([]);
   const [transferForm, setTransferForm] = useState({
     batchId: "",
@@ -192,27 +203,34 @@ export default function DashboardPage() {
   });
 
   const loadData = async () => {
-    const [dashboardData, batchData, transferData] = await Promise.all([
+    const [dashboardData, batchData, transferData, activityData] = await Promise.all([
       api.getDashboard(),
       api.getBatches(),
       api.getTransferRequests(),
+      api.getActivity(),
     ]);
     setDashboard(dashboardData);
     setBatches(batchData);
     setTransferRequests(transferData);
+    setActivity(activityData);
     if (batchData[0]) {
       try {
-        const [fullBatch, batchGenealogy] = await Promise.all([
+        const [fullBatch, batchGenealogy, summary] = await Promise.all([
           api.getBatch(batchData[0].id),
           api.getBatchGenealogy(batchData[0].id),
+          api.getBatchSummary(batchData[0].id),
         ]);
         setSelectedBatch(fullBatch);
         setGenealogy(batchGenealogy);
+        setBatchSummary(summary);
       } catch {
         setSelectedBatch(batchData[0]);
+        setBatchSummary(null);
       }
     } else {
       setSelectedBatch(null);
+      setGenealogy(null);
+      setBatchSummary(null);
     }
   };
 
@@ -285,6 +303,50 @@ export default function DashboardPage() {
       : batches.filter(
           (batch) => batch.organization_id === user?.organizationId,
         );
+
+  const lineageGraph = useMemo(() => {
+    if (!genealogy || !selectedBatch) return { nodes: [], edges: [] };
+    const byId = new Map();
+    for (const node of [
+      ...(genealogy.ancestors || []),
+      ...(genealogy.descendants || []),
+      genealogy.batch,
+      selectedBatch,
+    ]) {
+      if (node?.id !== undefined) byId.set(node.id, node);
+    }
+    const edges = [];
+    const seen = new Set();
+    for (const child of byId.values()) {
+      const parentIds = [...new Set([
+        child.parent_batch_id,
+        ...(Array.isArray(child.source_batch_ids) ? child.source_batch_ids : []),
+      ].filter(Boolean))];
+      for (const parentId of parentIds) {
+        const parent = byId.get(parentId);
+        const edgeKey = `${parentId}:${child.id}`;
+        if (!parent || seen.has(edgeKey)) continue;
+        seen.add(edgeKey);
+        edges.push({ parent, child });
+      }
+    }
+    return { nodes: [...byId.values()], edges };
+  }, [genealogy, selectedBatch]);
+
+  const timelineEvents = useMemo(() => {
+    const currentEvents = (selectedBatch?.events || []).map((event) => ({
+      ...event,
+      batch_code: selectedBatch.batch_code,
+      isAncestorEvent: false,
+    }));
+    const ancestorEvents = (genealogy?.ancestorEvents || []).map((event) => ({
+      ...event,
+      isAncestorEvent: true,
+    }));
+    return [...ancestorEvents, ...currentEvents].sort(
+      (a, b) => new Date(a.timestamp) - new Date(b.timestamp) || a.id - b.id,
+    );
+  }, [genealogy, selectedBatch]);
 
   const pendingIncomingCount = useMemo(() => {
     return transferRequests.filter(
@@ -370,15 +432,18 @@ export default function DashboardPage() {
     const batch = filteredBatches.find((item) => item.id === batchId);
     if (!batch) return;
     try {
-      const [batch, batchGenealogy] = await Promise.all([
+      const [batch, batchGenealogy, summary] = await Promise.all([
         api.getBatch(batchId),
         api.getBatchGenealogy(batchId),
+        api.getBatchSummary(batchId),
       ]);
       setSelectedBatch(batch);
       setGenealogy(batchGenealogy);
+      setBatchSummary(summary);
     } catch (loadError) {
       setSelectedBatch(batch);
       setGenealogy(null);
+      setBatchSummary(null);
       setSubmission({ message: loadError.message, tone: "error" });
     }
   };
@@ -425,11 +490,13 @@ export default function DashboardPage() {
   const handleSplitSubmit = async (event) => {
     event.preventDefault();
     try {
-      const result = await api.splitBatch(Number(splitBatchId), [
-        { quantity: Number(splitQuantity) },
-      ]);
+      const allocations = splitAllocations.map((allocation) => ({
+        quantity: Number(allocation.quantity),
+        ...(allocation.location.trim() ? { location: allocation.location.trim() } : {}),
+      }));
+      const result = await api.splitBatch(Number(splitBatchId), allocations);
       setSplitBatchId("");
-      setSplitQuantity("");
+      setSplitAllocations([{ quantity: "", location: "" }, { quantity: "", location: "" }]);
       await loadData();
       setSubmission({
         message: `Đã tách lô thành ${result.children.length} lô con.`,
@@ -438,6 +505,38 @@ export default function DashboardPage() {
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
     }
+  };
+
+  const handleBatchCsvImport = async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const file = form.elements.namedItem("batchCsv")?.files?.[0];
+    if (!file) return;
+    if (file.size > 900_000) {
+      setSubmission({ message: "File CSV vượt giới hạn 900 KB.", tone: "error" });
+      return;
+    }
+    try {
+      const result = await api.importBatchesCsv(await file.text());
+      form.reset();
+      await loadData();
+      setSubmission({
+        message: `Đã nhập ${result.createdCount} lô từ CSV.`,
+        tone: "success",
+      });
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const downloadBatchCsvTemplate = () => {
+    const content = "productId,quantityKg,currentLocation,harvestedAt,batchCode\n1,100,Kho tiếp nhận,,\n";
+    const url = URL.createObjectURL(new Blob(["\uFEFF", content], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "agritrace-batch-import-template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleMergeSubmit = async (event) => {
@@ -1154,7 +1253,7 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {(selectedView === "L\u00f4 n\u00f4ng s\u1ea3n" || selectedView === "T\u00f2ng quan") &&
+        {["L\u00f4 n\u00f4ng s\u1ea3n", "L\u00f4 ph\u00e2n ph\u1ed1i", "L\u00f4 x\u1eed l\u00fd", "Tổng quan"].includes(selectedView) &&
           ["farm_admin", "processor_admin", "distributor_admin"].includes(user?.role) && (
             <section className="mt-6 grid gap-6 lg:grid-cols-2">
               <form
@@ -1162,7 +1261,7 @@ export default function DashboardPage() {
                 onSubmit={handleSplitSubmit}
               >
                 <h2 className="text-lg font-bold text-slate-900">Tách lô hàng</h2>
-                <p className="mt-2 text-sm text-slate-500">Chọn lô và khối lượng lô con.</p>
+                <p className="mt-2 text-sm text-slate-500">Chọn lô mẹ, sau đó khai báo khối lượng và nơi giữ cho từng lô con.</p>
                 <div className="mt-4 grid gap-3">
                   <select
                     className="rounded-xl border px-3 py-2"
@@ -1176,17 +1275,53 @@ export default function DashboardPage() {
                       </option>
                     ))}
                   </select>
-                  <input
-                    className="rounded-xl border px-3 py-2"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    placeholder="Khối lượng lô con"
-                    value={splitQuantity}
-                    onChange={(event) => setSplitQuantity(event.target.value)}
-                  />
+                  {splitAllocations.map((allocation, index) => (
+                    <div key={index} className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_1fr_auto]">
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        Lô con {index + 1} · khối lượng
+                        <input
+                          className="rounded-lg border px-3 py-2 text-sm"
+                          type="number"
+                          min="0.0001"
+                          step="0.0001"
+                          required
+                          placeholder="Ví dụ: 25"
+                          value={allocation.quantity}
+                          onChange={(event) => setSplitAllocations((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item))}
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        Nơi giữ lô con
+                        <input
+                          className="rounded-lg border px-3 py-2 text-sm"
+                          placeholder="Mặc định theo lô mẹ"
+                          value={allocation.location}
+                          onChange={(event) => setSplitAllocations((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, location: event.target.value } : item))}
+                        />
+                      </label>
+                      <button
+                        className="self-end rounded-lg border px-3 py-2 text-sm text-slate-600 disabled:opacity-40"
+                        type="button"
+                        aria-label={`Xóa lô con ${index + 1}`}
+                        disabled={splitAllocations.length <= 2}
+                        onClick={() => setSplitAllocations((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                    <span>Tổng phân bổ: {splitAllocations.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0).toLocaleString()} kg</span>
+                    <button
+                      className="rounded-lg border border-emerald-200 px-3 py-2 font-semibold text-emerald-700 hover:bg-emerald-50"
+                      type="button"
+                      onClick={() => setSplitAllocations((current) => [...current, { quantity: "", location: "" }])}
+                    >
+                      + Thêm lô con
+                    </button>
+                  </div>
                 </div>
-                <button className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white" type="submit">
+                <button className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white" type="submit" disabled={!splitBatchId || splitAllocations.length < 2 || splitAllocations.some((item) => !(Number(item.quantity) > 0))}>
                   Tách lô
                 </button>
               </form>
@@ -1218,6 +1353,27 @@ export default function DashboardPage() {
                 <button className="mt-4 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white" type="submit" disabled={mergeBatchIds.length < 2}>
                   Gộp lô
                 </button>
+              </form>
+
+              <form
+                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 lg:col-span-2"
+                onSubmit={handleBatchCsvImport}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Nhập lô từ CSV</h2>
+                    <p className="mt-1 text-sm text-slate-500">Mỗi dòng tạo một lô thuộc tổ chức đang đăng nhập và ghi sự kiện nhập vào hash chain.</p>
+                  </div>
+                  <button className="rounded-lg border px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50" type="button" onClick={downloadBatchCsvTemplate}>Tải CSV mẫu</button>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                    Chọn file CSV (tối đa 500 lô mỗi lần)
+                    <input className="rounded-xl border px-3 py-2 text-sm" type="file" name="batchCsv" accept=".csv,text/csv" required />
+                  </label>
+                  <button className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white" type="submit">Nhập lô</button>
+                </div>
+                <p className="mt-2 text-xs text-slate-400">Cột bắt buộc: productId, quantityKg. Cột tùy chọn: currentLocation, harvestedAt, batchCode. Dùng productId trong danh mục sản phẩm của tổ chức.</p>
               </form>
             </section>
           )}
@@ -1971,7 +2127,48 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {selectedBatch && (
+        {selectedView === "Nhật ký thao tác" && (
+          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Nhật ký thao tác</h2>
+                <p className="mt-1 text-sm text-slate-500">Các thay đổi gần đây trên những lô thuộc tổ chức của bạn.</p>
+              </div>
+              <button type="button" className="rounded-lg border px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={async () => {
+                try { setActivity(await api.getActivity()); setSubmission({ message: "Đã làm mới nhật ký.", tone: "success" }); }
+                catch (loadError) { setSubmission({ message: loadError.message, tone: "error" }); }
+              }}>Làm mới</button>
+            </div>
+            {activity.length ? (
+              <ol className="mt-4 divide-y divide-slate-100">
+                {activity.map((event) => {
+                  let payload = {};
+                  try { payload = JSON.parse(event.data_json); } catch { /* ignore malformed legacy payload */ }
+                  return (
+                    <li key={event.id} className="grid gap-2 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <EventBadge eventType={event.event_type} />
+                          <span className="font-mono text-xs font-semibold text-slate-700">{event.batch_code}</span>
+                          <span className="text-xs text-slate-500">{event.product_name}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">{event.actor_name ? `Thực hiện bởi ${event.actor_name}` : "Thao tác hệ thống"}</p>
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                          {Object.entries(payload).slice(0, 5).map(([key, value]) => (
+                            <DataField key={key} label={key.replaceAll("_", " ")} value={Array.isArray(value) ? value.join(", ") : typeof value === "object" && value !== null ? JSON.stringify(value) : value} />
+                          ))}
+                        </div>
+                      </div>
+                      <time className="text-[11px] font-mono text-slate-400">{new Date(event.timestamp).toLocaleString("vi-VN")}</time>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : <p className="py-10 text-center text-sm text-slate-400">Chưa có thao tác được ghi nhận.</p>}
+          </section>
+        )}
+
+        {selectedBatch && selectedView !== "Nhật ký thao tác" && (
           <section className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
             {/* Event Timeline */}
             <div className="rounded-2xl bg-white p-6 card-shadow border border-slate-200/80">
@@ -1980,12 +2177,17 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-bold text-slate-900">Dòng thời gian sự kiện (Hash Chain)</h2>
                     <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
-                      {(selectedBatch.events || []).length} mốc
+                      {timelineEvents.length} mốc
                     </span>
                   </div>
                   <p className="mt-0.5 text-xs text-slate-400">
                     Lô hàng: <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{selectedBatch.batch_code}</span>
                   </p>
+                  {(selectedBatch.events || []).some((event) => event.event_type === "batch_transferred") && (
+                    <p className="mt-2 inline-flex items-center rounded-lg bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-800 ring-1 ring-sky-200">
+                      Nhật ký bao gồm các sự kiện trước và sau khi bàn giao lô.
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -2025,17 +2227,17 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {(selectedBatch.events || []).length === 0 ? (
+              {timelineEvents.length === 0 ? (
                 <div className="mt-12 flex flex-col items-center justify-center py-10 text-slate-400">
                   <ClipboardList size={40} className="opacity-30 mb-2" />
                   <p className="text-sm">Chưa có sự kiện nào cho lô này.</p>
                 </div>
               ) : (
                 <ol className="mt-6 relative border-l-2 border-slate-200 pl-6 space-y-0">
-                  {(selectedBatch.events || []).map((event, index) => {
+                  {timelineEvents.map((event, index) => {
                     let parsedData = {};
                     try { parsedData = JSON.parse(event.data_json); } catch { /* ignore */ }
-                    const isLast = index === (selectedBatch.events.length - 1);
+                    const isLast = index === (timelineEvents.length - 1);
                     const meta = EVENT_META[event.event_type] || {};
                     const dotColor = meta.color?.includes("rose") ? "bg-rose-500" :
                       meta.color?.includes("orange") ? "bg-orange-500" :
@@ -2053,7 +2255,14 @@ export default function DashboardPage() {
                         <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 hover:border-slate-300 hover:bg-white transition-all card-shadow">
                           {/* Event header */}
                           <div className="flex flex-wrap items-start gap-2 justify-between">
-                            <EventBadge eventType={event.event_type} />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <EventBadge eventType={event.event_type} />
+                              {event.isAncestorEvent && (
+                                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-200">
+                                  Lịch sử tổ tiên · {event.batch_code}
+                                </span>
+                              )}
+                            </div>
                             <time className="text-[11px] font-mono text-slate-400 tabular-nums">
                               {new Date(event.timestamp).toLocaleString("vi-VN", {
                                 day: "2-digit", month: "2-digit", year: "numeric",
@@ -2126,9 +2335,15 @@ export default function DashboardPage() {
                     </dd>
                   </div>
                   <div className="flex justify-between items-center gap-4">
+                    <dt className="text-slate-500">Nơi giữ hiện tại</dt>
+                    <dd className="font-semibold text-right text-slate-800">
+                      {selectedBatch.current_location || "Chưa cập nhật"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between items-center gap-4">
                     <dt className="text-slate-500">Khối lượng còn lại</dt>
                     <dd className="font-mono font-bold text-slate-900">
-                      {Number(selectedBatch.remaining_quantity).toLocaleString()} kg
+                      {Number(selectedBatch.remaining_quantity).toLocaleString()} {selectedBatch.product_unit || "kg"}
                     </dd>
                   </div>
                   <div className="flex justify-between items-center gap-4">
@@ -2189,6 +2404,110 @@ export default function DashboardPage() {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    {lineageGraph.edges.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <span className="font-semibold text-slate-700">Sơ đồ quan hệ lô</span>
+                        <div className="mt-2 grid gap-2">
+                          {lineageGraph.edges.map(({ parent, child }) => (
+                            <div key={`${parent.id}-${child.id}`} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <span className="truncate rounded-lg bg-white px-2 py-1 font-mono text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">{parent.batch_code}</span>
+                              <span className="text-emerald-600" aria-label="dẫn đến">→</span>
+                              <span className={`truncate rounded-lg px-2 py-1 font-mono text-[11px] font-semibold ring-1 ${child.id === selectedBatch.id ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-white text-slate-700 ring-slate-200"}`}>{child.batch_code}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
+                      <div>
+                        <span className="font-semibold text-slate-700">Lô cha trực tiếp</span>
+                        {batchSummary?.parentRelations?.length ? (
+                          <ul className="mt-2 space-y-1.5">
+                            {batchSummary.parentRelations.map((relation) => (
+                              <li key={`${relation.parent_batch_id}-${relation.child_batch_id}`} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                                {filteredBatches.some((item) => item.id === relation.parent_batch_id) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectBatch(relation.parent_batch_id)}
+                                    className="font-mono font-semibold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900"
+                                    title="Mở chi tiết lô mẹ"
+                                  >
+                                    {relation.parent_batch_code}
+                                  </button>
+                                ) : (
+                                  <span className="font-mono font-semibold text-slate-700" title="Lịch sử lô mẹ được hiển thị trên dòng thời gian">
+                                    {relation.parent_batch_code}
+                                  </span>
+                                )}
+                                <span className="ml-1 text-slate-500">· {Number(relation.quantity).toLocaleString()} kg · {relation.relation_type}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : <p className="mt-1 text-slate-400">Đây là lô gốc.</p>}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-700">Lô con trực tiếp</span>
+                        {batchSummary?.childRelations?.length ? (
+                          <ul className="mt-2 space-y-1.5">
+                            {batchSummary.childRelations.map((relation) => (
+                              <li key={`${relation.parent_batch_id}-${relation.child_batch_id}`} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                                {filteredBatches.some((item) => item.id === relation.child_batch_id) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectBatch(relation.child_batch_id)}
+                                    className="font-mono font-semibold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900"
+                                    title="Mở chi tiết lô con"
+                                  >
+                                    {relation.child_batch_code}
+                                  </button>
+                                ) : (
+                                  <span className="font-mono font-semibold text-slate-700">{relation.child_batch_code}</span>
+                                )}
+                                <span className="ml-1 text-slate-500">· {Number(relation.quantity).toLocaleString()} kg · {relation.relation_type}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : <p className="mt-1 text-slate-400">Chưa tách thành lô con.</p>}
+                      </div>
+                    </div>
+                    {genealogy.ancestors?.length > 1 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <span className="font-semibold text-slate-700">Đường truy ngược về nguồn gốc</span>
+                        <ol className="mt-2 space-y-1.5">
+                          {genealogy.ancestors.filter((item) => item.id !== selectedBatch.id).map((ancestor, index) => (
+                            <li key={ancestor.id} className="flex items-center gap-2 rounded-lg bg-emerald-50/70 px-2.5 py-2">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-800">{index + 1}</span>
+                              <span className="font-mono font-semibold text-slate-800">{ancestor.batch_code}</span>
+                              <span className="ml-auto text-slate-500">còn {Number(ancestor.remaining_quantity).toLocaleString()} kg</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                    {genealogy.descendants?.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <span className="font-semibold text-slate-700">Các lô hậu duệ</span>
+                        <ul className="mt-2 space-y-1.5">
+                          {genealogy.descendants.map((descendant) => (
+                            <li key={descendant.id} className="grid gap-2 rounded-lg bg-indigo-50/70 px-2.5 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-indigo-500">↳</span>
+                                  <span className="font-mono font-semibold text-slate-800">{descendant.batch_code}</span>
+                                  <BatchStatusBadge status={descendant.status} />
+                                </div>
+                                <p className="mt-1 truncate text-[11px] text-slate-500">
+                                  {descendant.organization_name || "Chưa rõ tổ chức"} · {descendant.current_location || "Chưa cập nhật địa điểm"}
+                                </p>
+                              </div>
+                              <span className="text-xs font-semibold text-slate-700">
+                                Còn {Number(descendant.remaining_quantity).toLocaleString()} kg
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                   </div>

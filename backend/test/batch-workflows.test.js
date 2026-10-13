@@ -22,6 +22,7 @@ function resetDatabase() {
   db.exec("PRAGMA foreign_keys = OFF;");
   db.exec("DELETE FROM event_logs");
   db.exec("DELETE FROM batch_transfers");
+  db.exec("DELETE FROM batch_relations");
   db.exec("DELETE FROM batches");
   db.exec("DELETE FROM products");
   db.exec("DELETE FROM land_plots");
@@ -551,6 +552,74 @@ test("splits one batch into children and exposes genealogy ancestry", async () =
   const genealogy = await genealogyResponse.json();
   assert.ok(genealogy.ancestors.some((item) => item.id === sourceBatch.id));
   assert.ok(genealogy.descendants.length >= 0);
+});
+
+test("SCRUM-92 T-56/T-57: traverses a cyclic 1,000-batch descendant graph once", async () => {
+  const farm = findUserByEmail("farm@agritrace.demo");
+  const product = db
+    .prepare("SELECT id FROM products WHERE organization_id = ? ORDER BY id LIMIT 1")
+    .get(farm.organization_id);
+  const farmOrganization = db
+    .prepare("SELECT name FROM organizations WHERE id = ?")
+    .get(farm.organization_id);
+  const insertBatch = db.prepare(
+    `INSERT INTO batches(
+      batch_code, product_id, organization_id, parent_batch_id, root_batch_id,
+      source_batch_ids, initial_quantity, remaining_quantity, current_location, status
+    ) VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, 'registered')`,
+  );
+
+  db.exec("BEGIN IMMEDIATE");
+  let rootId;
+  let lastBatchId;
+  try {
+    rootId = Number(insertBatch.run(
+      `BATCH-SCRUM92-ROOT-${Date.now()}`,
+      product.id,
+      farm.organization_id,
+      null,
+      null,
+      "[]",
+      "Seed origin",
+    ).lastInsertRowid);
+    db.prepare("UPDATE batches SET root_batch_id = ? WHERE id = ?").run(rootId, rootId);
+    lastBatchId = rootId;
+
+    for (let index = 1; index < 1000; index += 1) {
+      lastBatchId = Number(insertBatch.run(
+        `BATCH-SCRUM92-${String(index).padStart(4, "0")}-${Date.now()}`,
+        product.id,
+        farm.organization_id,
+        lastBatchId,
+        rootId,
+        JSON.stringify([lastBatchId]),
+        `Storage ${index}`,
+      ).lastInsertRowid);
+    }
+
+    // Close a loop from the final node back to the root; traversal must still terminate.
+    db.prepare("UPDATE batches SET remaining_quantity = 0 WHERE id = ?").run(lastBatchId);
+    db.prepare("UPDATE batches SET source_batch_ids = ? WHERE id = ?")
+      .run(JSON.stringify([lastBatchId]), rootId);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  const response = await fetch(`${baseUrl}/api/batches/${rootId}/genealogy`, {
+    headers: { Authorization: `Bearer ${createToken(farm)}` },
+  });
+  assert.equal(response.status, 200);
+  const genealogy = await response.json();
+  assert.equal(genealogy.descendants.length, 999);
+  assert.equal(genealogy.ancestors.length, 1000);
+  assert.equal(genealogy.cycleDetected, true);
+  const lastDescendant = genealogy.descendants.find((batch) => batch.id === lastBatchId);
+  assert.equal(lastDescendant.organization_name, farmOrganization.name);
+  assert.equal(lastDescendant.current_location, "Storage 999");
+  assert.equal(lastDescendant.remaining_quantity, 0);
+  assert.equal(lastDescendant.status, "consumed");
 });
 
 test("merges multiple batches into a new batch and records lineage", async () => {

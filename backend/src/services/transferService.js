@@ -263,17 +263,6 @@ export function getPendingTransfersForOrganization(organizationId) {
 /** Mark pending handovers older than 48 hours and notify both parties once. */
 export function processOverdueTransfers() {
   const db = getDb();
-  const transfers = db
-    .prepare(
-      `SELECT bt.*, b.batch_code
-       FROM batch_transfers bt
-       INNER JOIN batches b ON b.id = bt.batch_id
-       WHERE bt.status = 'pending'
-         AND bt.overdue_notified_at IS NULL
-         AND bt.created_at <= datetime('now', '-48 hours')`,
-    )
-    .all();
-
   const insertNotification = db.prepare(
     `INSERT INTO notifications(user_id, organization_id, kind, title, message)
      SELECT id, organization_id, ?, ?, ?
@@ -286,6 +275,18 @@ export function processOverdueTransfers() {
 
   db.exec("BEGIN IMMEDIATE");
   try {
+    // Select after acquiring the write lock so two app instances cannot both
+    // notify the same organizations before either marks the transfer handled.
+    const transfers = db
+      .prepare(
+        `SELECT bt.*, b.batch_code
+         FROM batch_transfers bt
+         INNER JOIN batches b ON b.id = bt.batch_id
+         WHERE bt.status = 'pending'
+           AND bt.overdue_notified_at IS NULL
+           AND bt.created_at <= datetime('now', '-48 hours')`,
+      )
+      .all();
     for (const transfer of transfers) {
       const title = "Bàn giao quá hạn";
       const message = `Bàn giao lô ${transfer.batch_code} đã chờ quá 48 giờ.`;
@@ -304,13 +305,12 @@ export function processOverdueTransfers() {
       markOverdue.run(transfer.id);
     }
     db.exec("COMMIT");
+    if (transfers.length > 0) {
+      console.info(`[overdue-transfers] processed=${transfers.length}`);
+    }
+    return { processed: transfers.length };
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
   }
-
-  if (transfers.length > 0) {
-    console.info(`[overdue-transfers] processed=${transfers.length}`);
-  }
-  return { processed: transfers.length };
 }

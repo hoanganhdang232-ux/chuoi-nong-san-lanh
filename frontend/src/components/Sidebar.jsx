@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Sprout,
   Users,
+  History,
 } from "lucide-react";
 
 const menuByRole = {
@@ -18,6 +19,7 @@ const menuByRole = {
     { label: "Thu hồi", icon: Siren },
     { label: "Báo cáo kiểm tra", icon: FileDown },
     { label: "Tổ chức", icon: Users },
+    { label: "Nhật ký thao tác", icon: History },
   ],
   processor_admin: [
     { label: "Tổng quan", icon: BarChart3 },
@@ -26,6 +28,7 @@ const menuByRole = {
     { label: "Thu hồi", icon: Siren },
     { label: "Báo cáo kiểm tra", icon: FileDown },
     { label: "Kiểm soát", icon: ShieldCheck },
+    { label: "Nhật ký thao tác", icon: History },
   ],
   distributor_admin: [
     { label: "Tổng quan", icon: BarChart3 },
@@ -34,6 +37,7 @@ const menuByRole = {
     { label: "Thu hồi", icon: Siren },
     { label: "Báo cáo kiểm tra", icon: FileDown },
     { label: "Kiểm tra", icon: ShieldCheck },
+    { label: "Nhật ký thao tác", icon: History },
   ],
   auditor: [
     { label: "Tổng quan", icon: BarChart3 },
@@ -41,6 +45,7 @@ const menuByRole = {
     { label: "Integrity", icon: ShieldCheck },
     { label: "Báo cáo kiểm tra", icon: FileDown },
     { label: "Thu hồi", icon: Siren },
+    { label: "Nhật ký thao tác", icon: History },
   ],
   consumer: [
     { label: "Tổng quan", icon: BarChart3 },

@@ -6,6 +6,7 @@ import {
   createEventLog,
   getBatchGenealogy,
   getBatchWithEvents,
+  parseBatchIds,
   updateBatchStatus,
 } from "../services/batchService.js";
 import {
@@ -13,6 +14,7 @@ import {
   decideTransfer,
 } from "../services/transferService.js";
 import { batchController } from "../controllers/batchController.js";
+import { parseCsv } from "../utils/csv.js";
 
 const router = Router();
 const organizationAdminRoles = [
@@ -63,6 +65,25 @@ router.get("/", (req, res) => {
     return res.json({ items, nextCursor: hasMore ? items[items.length - 1].id : null, hasMore });
   }
   res.json(db.prepare(filteredQuery).all(...params));
+});
+
+router.get("/activity", (req, res) => {
+  const db = getDb();
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+  const isAuditor = req.user.role === "auditor";
+  const rows = db.prepare(
+    `SELECT e.id, e.batch_id, b.batch_code, p.name AS product_name,
+       e.event_type, e.data_json, e.previous_hash, e.current_hash, e.timestamp,
+       u.name AS actor_name
+     FROM event_logs e
+     INNER JOIN batches b ON b.id = e.batch_id
+     INNER JOIN products p ON p.id = b.product_id
+     LEFT JOIN users u ON u.id = e.actor_id
+     WHERE ${isAuditor ? "1 = 1" : "b.organization_id = ? AND (u.id IS NULL OR u.organization_id = ?)"}
+     ORDER BY e.timestamp DESC, e.id DESC
+     LIMIT ?`,
+  ).all(...(isAuditor ? [limit] : [req.user.organization_id, req.user.organization_id, limit]));
+  return res.json(rows);
 });
 
 router.post("/harvest", requireRole("farm_admin"), (req, res) => {
@@ -172,6 +193,99 @@ router.post("/harvest", requireRole("farm_admin"), (req, res) => {
     .status(201)
     .json({ message: "Tạo lô thu hoạch thành công.", batch, event });
 });
+
+router.post(
+  "/import-csv",
+  requireRole("farm_admin", "processor_admin", "distributor_admin"),
+  (req, res) => {
+    let rows;
+    try {
+      rows = parseCsv(req.body?.csvText);
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+    if (!rows.length) {
+      return res.status(400).json({ message: "CSV cần header và ít nhất một dòng dữ liệu." });
+    }
+    if (rows.length > 500) {
+      return res.status(400).json({ message: "Mỗi lần chỉ nhập tối đa 500 lô." });
+    }
+
+    const requiredHeaders = ["productId", "quantityKg"];
+    const headers = Object.keys(rows[0]);
+    if (requiredHeaders.some((header) => !headers.includes(header))) {
+      return res.status(400).json({
+        message: "CSV cần có cột productId, quantityKg; có thể thêm batchCode, currentLocation, harvestedAt.",
+      });
+    }
+
+    const db = getDb();
+    const normalized = [];
+    const errors = [];
+    const seenCodes = new Set();
+    for (const [index, row] of rows.entries()) {
+      const line = index + 2;
+      const productId = Number(row.productId);
+      const quantity = Number(row.quantityKg);
+      const batchCode = row.batchCode?.trim() || null;
+      const location = row.currentLocation?.trim() || "Chưa cập nhật";
+      const harvestedAt = row.harvestedAt?.trim()
+        ? new Date(row.harvestedAt.trim())
+        : new Date();
+      if (!Number.isSafeInteger(productId) || productId <= 0) errors.push(`Dòng ${line}: productId không hợp lệ.`);
+      if (!Number.isFinite(quantity) || quantity <= 0) errors.push(`Dòng ${line}: quantityKg phải lớn hơn 0.`);
+      if (Number.isNaN(harvestedAt.getTime()) || harvestedAt > new Date()) errors.push(`Dòng ${line}: harvestedAt không hợp lệ hoặc ở tương lai.`);
+      if (location.length > 160) errors.push(`Dòng ${line}: currentLocation tối đa 160 ký tự.`);
+      if (batchCode && (batchCode.length > 80 || !/^[A-Za-z0-9._-]+$/.test(batchCode))) errors.push(`Dòng ${line}: batchCode chỉ được gồm chữ, số, dấu chấm, gạch ngang hoặc gạch dưới (tối đa 80 ký tự).`);
+      if (batchCode && seenCodes.has(batchCode)) errors.push(`Dòng ${line}: batchCode bị trùng trong file.`);
+      if (batchCode) seenCodes.add(batchCode);
+      normalized.push({ productId, quantity, batchCode, location, harvestedAt });
+    }
+    for (const [index, item] of normalized.entries()) {
+      if (!Number.isSafeInteger(item.productId) || item.productId <= 0) continue;
+      const product = db.prepare("SELECT id FROM products WHERE id = ? AND organization_id = ?")
+        .get(item.productId, req.user.organization_id);
+      if (!product) errors.push(`Dòng ${index + 2}: sản phẩm không tồn tại trong tổ chức.`);
+      if (item.batchCode && db.prepare("SELECT id FROM batches WHERE batch_code = ?").get(item.batchCode)) {
+        errors.push(`Dòng ${index + 2}: batchCode đã tồn tại.`);
+      }
+    }
+    if (errors.length) return res.status(400).json({ message: "CSV có dữ liệu không hợp lệ.", errors });
+
+    const created = [];
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const item of normalized) {
+        const batchCode = item.batchCode || `BATCH-${randomBytes(5).toString("hex").toUpperCase()}`;
+        const result = db.prepare(
+          `INSERT INTO batches(batch_code, product_id, organization_id, initial_quantity,
+             remaining_quantity, current_location, status)
+           VALUES (?, ?, ?, ?, ?, ?, 'registered')`,
+        ).run(batchCode, item.productId, req.user.organization_id, item.quantity, item.quantity, item.location);
+        const batchId = Number(result.lastInsertRowid);
+        createEventLog({
+          batchId,
+          eventType: "batch_imported",
+          actorId: req.user.id,
+          data: {
+            source: "csv_import",
+            product_id: item.productId,
+            quantity_kg: item.quantity,
+            current_location: item.location,
+            imported_harvested_at: item.harvestedAt.toISOString(),
+          },
+          timestamp: item.harvestedAt.toISOString(),
+        });
+        created.push({ id: batchId, batch_code: batchCode });
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      return res.status(400).json({ message: `Không thể nhập CSV: ${error.message}` });
+    }
+    return res.status(201).json({ createdCount: created.length, batches: created });
+  },
+);
 
 router.get("/products", (req, res) => {
   const rows = getDb()
@@ -361,7 +475,7 @@ router.get("/:id/summary", (req, res) => {
   const db = getDb();
   const batchId = Number(req.params.id);
   const batch = db.prepare(
-    `SELECT b.*, p.name AS product_name, o.name AS organization_name,
+    `SELECT b.*, p.name AS product_name, p.unit AS product_unit, o.name AS organization_name,
        f.name AS farm_name, (SELECT COUNT(*) FROM event_logs e WHERE e.batch_id = b.id) AS events_count
      FROM batches b
      INNER JOIN products p ON p.id = b.product_id
@@ -372,15 +486,61 @@ router.get("/:id/summary", (req, res) => {
   if (!batch || (req.user.role !== "auditor" && batch.organization_id !== req.user.organization_id)) {
     return res.status(404).json({ message: "Không tìm thấy lô hàng." });
   }
-  const relations = db.prepare(
+  const storedRelations = db.prepare(
     `SELECT r.relation_type, r.quantity, r.parent_batch_id, r.child_batch_id,
        p.batch_code AS parent_batch_code, c.batch_code AS child_batch_code
      FROM batch_relations r
      INNER JOIN batches p ON p.id = r.parent_batch_id
      INNER JOIN batches c ON c.id = r.child_batch_id
-     WHERE r.parent_batch_id = ? OR r.child_batch_id = ?`,
-  ).all(batchId, batchId);
-  return res.json({ ...batch, parentRelations: relations.filter((r) => r.child_batch_id === batchId), childRelations: relations.filter((r) => r.parent_batch_id === batchId) });
+     WHERE (r.parent_batch_id = ? OR r.child_batch_id = ?)
+       AND (? = 1 OR (p.organization_id = ? AND c.organization_id = ?))`,
+  ).all(batchId, batchId, req.user.role === "auditor" ? 1 : 0, req.user.organization_id, req.user.organization_id);
+  const allBatches = db.prepare("SELECT * FROM batches ORDER BY id ASC").all();
+  const byId = new Map(allBatches.map((item) => [item.id, item]));
+  const relationByPair = new Map(
+    storedRelations.map((relation) => [
+      `${relation.parent_batch_id}:${relation.child_batch_id}`,
+      relation,
+    ]),
+  );
+  const addRelation = (parentId, childId, relationType = "lineage") => {
+    const parent = byId.get(parentId);
+    const child = byId.get(childId);
+    if (!parent || !child) return;
+    if (
+      req.user.role !== "auditor" &&
+      childId !== batchId &&
+      child.organization_id !== req.user.organization_id
+    ) return;
+    const key = `${parentId}:${childId}`;
+    if (relationByPair.has(key)) return;
+    relationByPair.set(key, {
+      parent_batch_id: parentId,
+      child_batch_id: childId,
+      parent_batch_code: parent.batch_code,
+      child_batch_code: child.batch_code,
+      relation_type: relationType,
+      quantity: child.initial_quantity,
+    });
+  };
+
+  for (const parentId of [batch.parent_batch_id, ...parseBatchIds(batch.source_batch_ids)].filter(Boolean)) {
+    addRelation(parentId, batchId);
+  }
+  for (const child of allBatches) {
+    if (
+      child.parent_batch_id === batchId ||
+      parseBatchIds(child.source_batch_ids).includes(batchId)
+    ) {
+      addRelation(batchId, child.id);
+    }
+  }
+  const relations = [...relationByPair.values()];
+  return res.json({
+    ...batch,
+    parentRelations: relations.filter((relation) => relation.child_batch_id === batchId),
+    childRelations: relations.filter((relation) => relation.parent_batch_id === batchId),
+  });
 });
 
 router.get("/:id/integrity", authenticateToken, (req, res) =>

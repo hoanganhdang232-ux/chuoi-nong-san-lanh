@@ -15,7 +15,8 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Yêu cầu không thành công.");
+    const details = Array.isArray(errorData.errors) ? ` ${errorData.errors.join(" ")}` : "";
+    throw new Error(`${errorData.message || "Yêu cầu không thành công."}${details}`);
   }
 
   return response.status === 204 ? null : response.json();
@@ -31,6 +32,11 @@ export const api = {
   getMe: () => request("/auth/me"),
   getDashboard: () => request("/auth/dashboard"),
   getBatches: () => request("/batches"),
+  getActivity: (limit = 100) => request(`/batches/activity?limit=${limit}`),
+  importBatchesCsv: (csvText) => request("/batches/import-csv", {
+    method: "POST",
+    body: JSON.stringify({ csvText }),
+  }),
   getBatch: (batchId) => request(`/batches/${batchId}`),
   getBatchGenealogy: (batchId) => request(`/batches/${batchId}/genealogy`),
   splitBatch: (batchId, allocations) =>

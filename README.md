@@ -97,6 +97,8 @@ npm run db:seed-features --workspace backend
 ```
 
 Lệnh seed bổ sung có tính idempotent và chỉ tạo một lần.
+Đáp án phả hệ đếm tay độc lập để đối chiếu seed nằm tại
+[`backend/src/db/seedFeatures.expected.md`](backend/src/db/seedFeatures.expected.md).
 
 ## Chức năng chính
 
