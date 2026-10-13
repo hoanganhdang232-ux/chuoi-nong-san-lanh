@@ -4,8 +4,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import authRoutes from "./routes/authRoutes.js";
 import batchRoutes from "./routes/batchRoutes.js";
-import transferRoutes from "./routes/transferRoutes.js";
+import productRoutes from "./routes/productRoutes.js";
+import farmRoutes from "./routes/farmRoutes.js";
+import distributorRoutes from "./routes/distributorRoutes.js";
 import v1TransferRoutes from "./routes/v1TransferRoutes.js";
+import transferRoutes from "./routes/transferRoutes.js";
 import featureRoutes from "./routes/featureRoutes.js";
 import { runMigrations } from "./db/migrations.js";
 import { ensureDemoFarmerAccount } from "./db/seed.js";
@@ -26,6 +29,7 @@ export function createApp() {
   app.get("/api/health", (req, res) => {
     try {
       getDb().prepare("SELECT 1 AS healthy").get();
+      res.setHeader("X-Commit-Sha", process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "development");
       return res.json({ status: "ok", service: "agritrace-backend", database: "ok" });
     } catch (error) {
       console.error("Health check failed", error);
@@ -39,6 +43,9 @@ export function createApp() {
 
   app.use("/api/auth", authRoutes);
   app.use("/api/batches", batchRoutes);
+  app.use("/api/products", productRoutes);
+  app.use("/api/farms", farmRoutes);
+  app.use("/api/v1/distributor", distributorRoutes);
   app.use("/api/v1/transfers", v1TransferRoutes);
   app.use("/api/transfers", transferRoutes);
   app.use("/api/features", featureRoutes);

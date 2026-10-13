@@ -1,6 +1,6 @@
 name: Deploy staging
 
-# Chạy sau khi CI workflow hoàn thành trên nhánh main
+# Tự động chạy khi CI workflow hoàn thành thành công trên nhánh main, hoặc chạy thủ công
 on:
   workflow_run:
     workflows:
@@ -9,33 +9,48 @@ on:
       - completed
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
 jobs:
   deploy:
-    name: Deploy to Render staging
-    # Chỉ deploy khi CI pass VÀ commit thuộc nhánh main
+    name: Deploy & Health Check Staging
+    timeout-minutes: 10
+    # Chỉ deploy khi CI pass VÀ commit thuộc nhánh main (hoặc dispatch thủ công)
     if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main'
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Trigger Render Deploy Hook
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
             echo "::error::RENDER_DEPLOY_HOOK_URL chưa được cấu hình trong GitHub Secrets."
             echo "Hướng dẫn:"
             echo "  1. Vào Render dashboard → chọn service agritrace-staging"
             echo "  2. Settings → Deploy Hook → Copy URL"
-            echo "  3. GitHub repo → Settings → Secrets → Actions → New secret"
+            echo "  3. GitHub repo → Settings → Secrets and variables → Actions → New repository secret"
             echo "  4. Name: RENDER_DEPLOY_HOOK_URL  Value: <URL vừa copy>"
             exit 1
           fi
-          echo "Triggering Render deployment for commit ${{ github.event.workflow_run.head_sha }}..."
+          echo "Triggering Render deployment for commit $HEAD_SHA..."
           RESPONSE=$(curl \
             --fail \
             --silent \
@@ -48,8 +63,19 @@ jobs:
           echo "Response: $BODY"
           echo "HTTP status: $HTTP_CODE"
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ Staging deployment triggered successfully."
+            echo "✅ Staging deployment trigger accepted by Render."
           else
             echo "::error::Deployment trigger failed (HTTP $HTTP_CODE)"
             exit 1
           fi
+
+      - name: Verify Staging Health & Rollback Check
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL || 'https://agritrace-staging.onrender.com' }}
+          TARGET_COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          MAX_WAIT_SECONDS: 500
+          POLL_INTERVAL_SECONDS: 10
+        run: |
+          node scripts/verify-staging-health.js

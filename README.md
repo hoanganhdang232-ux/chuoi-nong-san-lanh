@@ -30,9 +30,20 @@ Mặc định:
 - Backend: http://localhost:3001
 - API health: http://localhost:3001/api/health
 
-## Staging trên Render
+## Staging & Tự động hóa CI/CD
 
-Staging dùng một Render Web Service để phục vụ frontend và API cùng domain, với persistent disk cho SQLite. Tạo service từ `render.yaml` trên Render và kết nối repo này. Trong Settings của service, tạo Deploy Hook rồi lưu URL đó trong GitHub repository secret `RENDER_DEPLOY_HOOK_URL`.
+Pipeline CI/CD tự động hóa toàn diện triển khai lên môi trường Staging (Render):
+
+1. **Auto Deploy**: Ngay khi Pull Request được merge vào nhánh `main`, workflow CI (Lint, Test, Build) tự động kích hoạt. Khi CI vượt qua, workflow `Deploy staging` sẽ tự động trigger deploy lên Render và hoàn tất trong vòng 10 phút mà không cần thao tác tay.
+2. **Database Migration**: Trước khi phiên bản mới khởi động và nhận bất kỳ HTTP request nào, Render tự động thực thi `preDeployCommand: npm run db:migrate --workspace backend`. Nếu migration thất bại, tiến trình deploy bị hủy ngay lập tức và hệ thống giữ nguyên phiên bản cũ.
+3. **Health Check & Rollback**: Sau khi deploy, pipeline liên tục thăm dò endpoint `/api/health` của Staging:
+   - Nếu `/api/health` trả về hợp lệ (`status: ok`, `database: ok`), pipeline báo xanh và hoàn tất.
+   - Nếu khởi động thất bại hoặc không vượt qua kiểm tra sức khỏe trong thời gian quy định, pipeline báo đỏ (`exit 1`) và cơ chế Zero-Downtime Rollback của Render sẽ giữ nguyên phiên bản cũ đang hoạt động ổn định.
+
+### Cấu hình Secrets trên GitHub Repository
+- `RENDER_DEPLOY_HOOK_URL`: (Bắt buộc) Deploy Hook URL lấy từ Render Dashboard (Settings → Deploy Hook).
+- `STAGING_URL`: (Tùy chọn) URL của dịch vụ Staging (ví dụ `https://agritrace-staging.onrender.com`), dùng để pipeline thăm dò `/api/health`.
+- `RENDER_API_KEY` & `RENDER_SERVICE_ID`: (Tùy chọn) API token và Service ID của Render để theo dõi chi tiết trạng thái deploy.
 
 ## CI/CD & Bảo vệ nhánh chính (T-03 & T-04)
 
@@ -41,7 +52,7 @@ Workflow tại `.github/workflows/ci.yml` tự động kích hoạt trên **mỗ
 1. `npm ci`: Cài đặt dependencies chuẩn xác theo `package-lock.json`.
 2. `npm run lint`: Kiểm tra chất lượng mã nguồn backend và frontend qua ESLint.
 3. `npm run build`: Build gói ứng dụng frontend Vite để kiểm tra không có lỗi bundle.
-4. `npm test`: Chạy toàn bộ test suites backend (22 tests kiểm thử nghiệp vụ, xác thực, phả hệ, chuỗi hash).
+4. `npm test`: Chạy toàn bộ test suites backend (kiểm thử nghiệp vụ, xác thực, phả hệ, chuỗi hash).
 
 ### T-04: Luật bảo vệ nhánh chính (`main`)
 Để đảm bảo chỉ code đạt chuẩn mới được đưa vào nhánh chính (`main`), cấu hình Branch Protection Rule trên GitHub:

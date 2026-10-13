@@ -4,6 +4,7 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci && npm run build
+    preDeployCommand: npm run db:migrate --workspace backend
     startCommand: npm run start --workspace backend
     healthCheckPath: /api/health
     autoDeploy: false
@@ -12,3 +13,5 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
+      - key: DATABASE_PATH
+        value: data/agritrace.db
