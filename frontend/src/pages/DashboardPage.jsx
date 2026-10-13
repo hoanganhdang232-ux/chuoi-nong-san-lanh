@@ -44,6 +44,10 @@ const EVENT_META = {
   batch_split_child:         { label: "Lô con (tách)",       color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
   batch_split_parent:        { label: "Lô cha (tách)",       color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
   batch_merge:               { label: "Gộp lô",              color: "bg-teal-100 text-teal-700",      icon: ArrowRightLeft },
+  SPLIT:                     { label: "Tách lô (SPLIT)",     color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
+  SPLIT_CHILD:               { label: "Lô con (SPLIT_CHILD)",color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
+  MERGE:                     { label: "Gộp lô (MERGE)",      color: "bg-teal-100 text-teal-700",      icon: ArrowRightLeft },
+  MERGE_CHILD:               { label: "Lô gộp (MERGE_CHILD)",color: "bg-teal-100 text-teal-700",      icon: ArrowRightLeft },
 };
 
 function EventBadge({ eventType }) {
@@ -601,7 +605,7 @@ export default function DashboardPage() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-emerald-200/80 bg-white px-4 py-2.5 shadow-sm">
+            <div className="rounded-2xl border border-emerald-200/80 bg-white px-4 py-2.5 shadow-xs">
               <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
                 <ShieldCheck className="text-emerald-600" size={18} />
                 <span>Toàn vẹn sự kiện:</span>

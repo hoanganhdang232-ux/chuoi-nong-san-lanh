@@ -403,6 +403,30 @@ export function runMigrations() {
       created_at,
       updated_at
     FROM batch_transfers;
+
+    CREATE TABLE IF NOT EXISTS batch_lineage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_batch_id INTEGER NOT NULL,
+      child_batch_id INTEGER NOT NULL,
+      quantity_transferred REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (parent_batch_id) REFERENCES batches(id),
+      FOREIGN KEY (child_batch_id) REFERENCES batches(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_batch_lineage_parent ON batch_lineage(parent_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_batch_lineage_child ON batch_lineage(child_batch_id);
+
+    CREATE VIEW IF NOT EXISTS events AS
+    SELECT
+      id,
+      batch_id,
+      event_type,
+      actor_id,
+      data_json AS payload,
+      previous_hash AS prev_hash,
+      current_hash AS hash,
+      timestamp AS created_at
+    FROM event_logs;
   `);
   if (!refreshedBatchColumns.includes("cold_chain_alert")) {
     db.exec(

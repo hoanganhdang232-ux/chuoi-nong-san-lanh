@@ -59,7 +59,7 @@ export default function Sidebar({ user, currentView, onSelectView, onLogout }) {
   const items = menuByRole[user?.role] || menuByRole.user;
 
   return (
-    <aside className="flex w-full flex-col bg-slate-950 text-slate-200 lg:w-72">
+    <aside className="flex w-full flex-col bg-slate-950 text-slate-200 lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:overflow-y-auto">
       <div className="flex items-center gap-3 border-b border-white/10 p-6">
         <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-500 text-lg font-bold text-white">
           A
@@ -71,10 +71,20 @@ export default function Sidebar({ user, currentView, onSelectView, onLogout }) {
       </div>
 
       <div className="p-4">
-        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3">
-          <div className="text-xs text-emerald-300">Tài khoản</div>
-          <div className="mt-1 font-semibold text-white">{user?.name}</div>
-          <div className="text-xs text-slate-400">{user?.organizationName}</div>
+        <div className="flex items-center justify-between rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3">
+          <div className="min-w-0 pr-2">
+            <div className="text-xs text-emerald-300">Tài khoản</div>
+            <div className="mt-0.5 truncate font-semibold text-white">{user?.name}</div>
+            <div className="truncate text-xs text-slate-400">{user?.organizationName}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            title="Đăng xuất"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 transition hover:border-rose-500/40 hover:bg-rose-500/20 hover:text-rose-200"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
 
@@ -92,14 +102,6 @@ export default function Sidebar({ user, currentView, onSelectView, onLogout }) {
         ))}
       </nav>
 
-      <button
-        type="button"
-        onClick={onLogout}
-        className="m-4 flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-3 text-sm text-slate-300 hover:border-rose-500/30 hover:text-rose-200"
-      >
-        <LogOut size={18} />
-        Đăng xuất
-      </button>
     </aside>
   );
 }
