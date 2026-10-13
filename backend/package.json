@@ -9,6 +9,7 @@
     "lint": "eslint src test",
     "test": "node --test --test-concurrency=1 --import ./test/setup.js test/**/*.test.js",
     "db:reset": "node src/db/reset.js",
+    "db:migrate": "node src/db/migrate.js",
     "db:seed-features": "node src/db/seedFeatures.js"
   },
   "dependencies": {

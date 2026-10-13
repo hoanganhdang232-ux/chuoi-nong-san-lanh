@@ -90,7 +90,7 @@ export function getBatchWithEvents(batchId, organizationId, isAuditor) {
   const batch = db
     .prepare(
       `
-    SELECT b.*, p.name AS product_name, p.unit AS product_unit, o.name AS organization_name, f.name AS farm_name
+    SELECT b.*, p.name AS product_name, o.name AS organization_name, f.name AS farm_name
     FROM batches b
     INNER JOIN products p ON p.id = b.product_id
     INNER JOIN organizations o ON o.id = b.organization_id
@@ -121,35 +121,6 @@ export function getBatchWithEvents(batchId, organizationId, isAuditor) {
   };
 }
 
-/** Check whether a user's current batch gives them lineage access to a batch's history. */
-export function canViewBatchHistory({
-  targetBatchId,
-  currentBatchId,
-  organizationId,
-  isAuditor,
-  batchById,
-  parents,
-}) {
-  const current = batchById.get(currentBatchId);
-  if (!current || !batchById.has(targetBatchId)) return false;
-  if (isAuditor) return true;
-  if (current.organization_id !== organizationId) return false;
-
-  const visited = new Set([currentBatchId]);
-  const queue = [currentBatchId];
-  while (queue.length) {
-    const currentId = queue.shift();
-    for (const parentId of parents.get(currentId) || []) {
-      if (parentId === targetBatchId) return true;
-      if (!visited.has(parentId) && batchById.has(parentId)) {
-        visited.add(parentId);
-        queue.push(parentId);
-      }
-    }
-  }
-  return targetBatchId === currentBatchId;
-}
-
 export function getBatchGenealogy(batchId, organizationId, isAuditor) {
   const db = getDb();
   const rootBatch = db
@@ -160,17 +131,13 @@ export function getBatchGenealogy(batchId, organizationId, isAuditor) {
 
   if (!rootBatch) return null;
 
-  // The holder of a batch may trace its ancestry across organization
-  // boundaries. Descendant traversal is still scoped below to the holder's
-  // organization so this does not expose downstream partner batches.
-  const allBatches = db
-    .prepare(
-      `SELECT b.*, o.name AS organization_name
-       FROM batches b
-       INNER JOIN organizations o ON o.id = b.organization_id
-       ORDER BY b.id ASC`,
-    )
-    .all();
+  const allBatches = isAuditor
+    ? db.prepare("SELECT * FROM batches ORDER BY id ASC").all()
+    : db
+        .prepare(
+          "SELECT * FROM batches WHERE organization_id = ? ORDER BY id ASC",
+        )
+        .all(organizationId);
   const byId = new Map(allBatches.map((item) => [item.id, item]));
   const relationRows = db
     .prepare("SELECT parent_batch_id, child_batch_id FROM batch_relations")
@@ -191,118 +158,46 @@ export function getBatchGenealogy(batchId, organizationId, isAuditor) {
       if (children.has(parentId)) children.get(parentId).push(childId);
     }
   }
-
-  const hasCycleFrom = (startId, adjacency, isAllowed = () => true) => {
-    const colors = new Map([[startId, 1]]);
-    const stack = [{
-      id: startId,
-      neighbors: (adjacency.get(startId) || []).filter(isAllowed),
-      nextIndex: 0,
-    }];
-    while (stack.length) {
-      const frame = stack[stack.length - 1];
-      if (frame.nextIndex >= frame.neighbors.length) {
-        colors.set(frame.id, 2);
-        stack.pop();
-        continue;
-      }
-      const nextId = frame.neighbors[frame.nextIndex++];
-      if (!byId.has(nextId)) continue;
-      const color = colors.get(nextId) || 0;
-      if (color === 1) return true;
-      if (color === 0) {
-        colors.set(nextId, 1);
-        stack.push({
-          id: nextId,
-          neighbors: (adjacency.get(nextId) || []).filter(isAllowed),
-          nextIndex: 0,
-        });
-      }
-    }
-    return false;
-  };
-
   const toView = (batch) => ({
-    id: batch.id,
-    batch_code: batch.batch_code,
-    product_id: batch.product_id,
-    organization_id: batch.organization_id,
-    organization_name: batch.organization_name,
-    current_location: batch.current_location,
-    status: Number(batch.remaining_quantity) <= 0 ? "consumed" : batch.status,
-    remaining_quantity: batch.remaining_quantity,
-    parent_batch_id: batch.parent_batch_id,
+    id: batch.id, batch_code: batch.batch_code, product_id: batch.product_id,
+    organization_id: batch.organization_id, status: batch.status,
+    remaining_quantity: batch.remaining_quantity, parent_batch_id: batch.parent_batch_id,
     source_batch_ids: parseBatchIds(batch.source_batch_ids),
   });
   const ancestors = [];
   const descendants = [];
-  const cycleDetected =
-    hasCycleFrom(rootBatch.id, parents) ||
-    hasCycleFrom(
-      rootBatch.id,
-      children,
-      (childId) =>
-        isAuditor || byId.get(childId)?.organization_id === organizationId,
-    );
+  let cycleDetected = false;
   const ancestorSeen = new Set([rootBatch.id]);
   ancestors.push(toView(rootBatch));
-  const ancestorQueue = [rootBatch.id];
-  for (let queueIndex = 0; queueIndex < ancestorQueue.length; queueIndex += 1) {
-    const currentId = ancestorQueue[queueIndex];
-    for (const parentId of parents.get(currentId) || []) {
+  const ancestorQueue = [{ id: rootBatch.id, path: new Set([rootBatch.id]) }];
+  while (ancestorQueue.length) {
+    const current = ancestorQueue.shift();
+    for (const parentId of parents.get(current.id) || []) {
+      if (current.path.has(parentId)) { cycleDetected = true; continue; }
       const parent = byId.get(parentId);
       if (!parent) continue;
       if (!ancestorSeen.has(parentId)) {
         ancestorSeen.add(parentId);
         ancestors.push(toView(parent));
-        ancestorQueue.push(parentId);
       }
+      ancestorQueue.push({ id: parentId, path: new Set([...current.path, parentId]) });
     }
   }
   const descendantSeen = new Set([rootBatch.id]);
   const descendantQueue = [rootBatch.id];
-  for (let queueIndex = 0; queueIndex < descendantQueue.length; queueIndex += 1) {
-    const currentId = descendantQueue[queueIndex];
+  while (descendantQueue.length) {
+    const currentId = descendantQueue.shift();
     for (const childId of children.get(currentId) || []) {
-      if (descendantSeen.has(childId)) continue;
-      const child = byId.get(childId);
-      if (!isAuditor && child?.organization_id !== organizationId) continue;
+      if (descendantSeen.has(childId)) { cycleDetected = true; continue; }
       descendantSeen.add(childId);
+      const child = byId.get(childId);
       if (child) { descendants.push(toView(child)); descendantQueue.push(childId); }
     }
   }
 
-  const ancestorIds = ancestors
-    .map((item) => item.id)
-    .filter(
-      (id) =>
-        id !== rootBatch.id &&
-        canViewBatchHistory({
-          targetBatchId: id,
-          currentBatchId: rootBatch.id,
-          organizationId,
-          isAuditor,
-          batchById: byId,
-          parents,
-        }),
-    );
-  const ancestorEvents = ancestorIds.length
-    ? db
-        .prepare(
-          `SELECT e.*, b.batch_code, b.organization_id, u.name AS actor_name
-           FROM event_logs e
-           INNER JOIN batches b ON b.id = e.batch_id
-           LEFT JOIN users u ON u.id = e.actor_id
-           WHERE e.batch_id IN (${ancestorIds.map(() => "?").join(",")})
-           ORDER BY e.timestamp ASC, e.id ASC`,
-        )
-        .all(...ancestorIds)
-    : [];
-
   return {
     batch: getBatchWithEvents(rootBatch.id, organizationId, isAuditor),
     ancestors,
-    ancestorEvents,
     descendants,
     roots: ancestors.filter((item) => (parents.get(item.id) || []).length === 0),
     cycleDetected,
@@ -350,6 +245,55 @@ export function updateBatchStatus({
       ...data,
       previous_status: batch.status,
       new_status: status,
+    },
+  });
+}
+
+export function updateSellOut({
+  batchId,
+  actorId,
+  organizationId,
+  isAuditor,
+}) {
+  const db = getDb();
+  const batch = db.prepare("SELECT * FROM batches WHERE id = ?").get(batchId);
+  if (!batch) throw new Error("Lô hàng không tồn tại.");
+  if (!isAuditor && batch.organization_id !== organizationId)
+    throw new Error("Không có quyền cập nhật lô hàng này.");
+
+  // Check if batch is already sold out or closed
+  if (batch.status === "sold_out") {
+    throw new Error("Lô hàng đã được bán hết trước đó.");
+  }
+  
+  if (batch.status === "recalled") {
+    throw new Error("Lô hàng đã bị thu hồi, không thể thực hiện bán hết.");
+  }
+
+  // Validate that batch is in a distributable state
+  const validStatuses = ["in_transit", "delivered", "processed", "in_stock"];
+  if (!validStatuses.includes(batch.status)) {
+    throw new Error(`Không thể bán hết lô hàng ở trạng thái '${batch.status}'. Trạng thái hợp lệ: ${validStatuses.join(', ')}.`);
+  }
+
+  // Update batch status to sold_out, set remaining quantity to 0, and set sold_out_at timestamp
+  db.prepare(
+    `
+    UPDATE batches
+    SET status = ?, remaining_quantity = 0, sold_out_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `,
+  ).run("sold_out", batchId);
+
+  // Log audit trail
+  return createEventLog({
+    batchId,
+    eventType: "batch_sold_out",
+    actorId,
+    data: {
+      previous_status: batch.status,
+      remaining_quantity: 0,
+      sold_out_at: new Date().toISOString(),
     },
   });
 }

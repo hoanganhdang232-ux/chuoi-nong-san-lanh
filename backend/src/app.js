@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import authRoutes from "./routes/authRoutes.js";
 import batchRoutes from "./routes/batchRoutes.js";
+import distributorRoutes from "./routes/distributorRoutes.js";
 import transferRoutes from "./routes/transferRoutes.js";
 import v1TransferRoutes from "./routes/v1TransferRoutes.js";
 import featureRoutes from "./routes/featureRoutes.js";
@@ -39,6 +40,7 @@ export function createApp() {
 
   app.use("/api/auth", authRoutes);
   app.use("/api/batches", batchRoutes);
+  app.use("/api/v1/distributor", distributorRoutes);
   app.use("/api/v1/transfers", v1TransferRoutes);
   app.use("/api/transfers", transferRoutes);
   app.use("/api/features", featureRoutes);

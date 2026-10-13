@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getDb } from "./database.js";
 
 export function runMigrations() {
@@ -78,7 +80,8 @@ export function runMigrations() {
       remaining_quantity REAL NOT NULL,
       current_location TEXT,
       temperature_c REAL,
-      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled')),
+      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','sold_out')),
+      sold_out_at TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (product_id) REFERENCES products(id),
@@ -268,10 +271,11 @@ export function runMigrations() {
       )
       .get()?.sql || "";
 
-  if (!batchTableSql.includes("pending_confirmation")) {
+  if (!batchTableSql.includes("pending_confirmation") || !batchTableSql.includes("'sold_out'")) {
     db.exec("PRAGMA foreign_keys = OFF;");
     db.exec("BEGIN IMMEDIATE");
     try {
+      db.exec("DROP VIEW IF EXISTS lots;");
       db.exec(`
         CREATE TABLE batches_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -286,7 +290,10 @@ export function runMigrations() {
           remaining_quantity REAL NOT NULL,
           current_location TEXT,
           temperature_c REAL,
-          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled')),
+          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','sold_out')),
+          cold_chain_alert INTEGER NOT NULL DEFAULT 0,
+          consumed_quantity REAL NOT NULL DEFAULT 0,
+          sold_out_at TEXT,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (product_id) REFERENCES products(id),
@@ -297,23 +304,44 @@ export function runMigrations() {
         );
       `);
 
+      const currentBatchCols = db
+        .prepare("PRAGMA table_info(batches)")
+        .all()
+        .map((column) => column.name);
+
+      const possibleCols = [
+        "id",
+        "batch_code",
+        "product_id",
+        "organization_id",
+        "source_farm_id",
+        "parent_batch_id",
+        "root_batch_id",
+        "source_batch_ids",
+        "initial_quantity",
+        "remaining_quantity",
+        "current_location",
+        "temperature_c",
+        "status",
+        "cold_chain_alert",
+        "consumed_quantity",
+        "sold_out_at",
+        "created_at",
+        "updated_at",
+      ];
+      const colsToCopy = possibleCols.filter((col) =>
+        currentBatchCols.includes(col),
+      );
+
       db.exec(`
-        INSERT INTO batches_new (
-          id, batch_code, product_id, organization_id, source_farm_id,
-          parent_batch_id, root_batch_id, source_batch_ids,
-          initial_quantity, remaining_quantity, current_location, temperature_c,
-          status, created_at, updated_at
-        )
-        SELECT
-          id, batch_code, product_id, organization_id, source_farm_id,
-          parent_batch_id, root_batch_id, source_batch_ids,
-          initial_quantity, remaining_quantity, current_location, temperature_c,
-          status, created_at, updated_at
+        INSERT INTO batches_new (${colsToCopy.join(", ")})
+        SELECT ${colsToCopy.join(", ")}
         FROM batches;
       `);
 
       db.exec("DROP TABLE batches;");
       db.exec("ALTER TABLE batches_new RENAME TO batches;");
+      db.exec("CREATE VIEW IF NOT EXISTS lots AS SELECT * FROM batches;");
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -438,6 +466,13 @@ export function runMigrations() {
       "ALTER TABLE batches ADD COLUMN consumed_quantity REAL NOT NULL DEFAULT 0",
     );
   }
+  
+  // Add sold_out_at column for distributor sell-out feature
+  if (!refreshedBatchColumns.includes("sold_out_at")) {
+    db.exec(
+      "ALTER TABLE batches ADD COLUMN sold_out_at TEXT",
+    );
+  }
 
   const batchIndexes = [
     {
@@ -496,4 +531,21 @@ export function runMigrations() {
   db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
     "001_initial_schema",
   );
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+    "002_distributor_sell_out",
+  );
 }
+
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+) {
+  const db = getDb();
+  try {
+    runMigrations();
+    console.log("Database migrations applied successfully.");
+  } finally {
+    db.close();
+  }
+}
+
