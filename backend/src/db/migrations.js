@@ -6,6 +6,11 @@ export function runMigrations() {
   const db = getDb();
 
   db.exec(`
+    DROP VIEW IF EXISTS lot_transfers;
+    DROP VIEW IF EXISTS lots;
+    DROP VIEW IF EXISTS audit_logs;
+    DROP VIEW IF EXISTS events;
+
     CREATE TABLE IF NOT EXISTS organizations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
