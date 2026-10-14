@@ -11,11 +11,18 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 
-export default function LocationsView({ batches = [], onBatchUpdated }) {
+export default function LocationsView({ batches = [], onRefreshBatches, onBatchUpdated }) {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Auto-dismiss success after 3s
+  useEffect(() => {
+    if (!success) return;
+    const t = setTimeout(() => setSuccess(""), 3000);
+    return () => clearTimeout(t);
+  }, [success]);
 
   // Location Form State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -104,7 +111,8 @@ export default function LocationsView({ batches = [], onBatchUpdated }) {
       });
       setSuccess(`Đã điều chuyển lô hàng về "${result.location.name}". Sự kiện đã được ký băm vào chuỗi hash.`);
       setAssignModalOpen(false);
-      if (onBatchUpdated) onBatchUpdated();
+      if (onRefreshBatches) onRefreshBatches();
+      else if (onBatchUpdated) onBatchUpdated();
     } catch (err) {
       setError(err.message);
     } finally {

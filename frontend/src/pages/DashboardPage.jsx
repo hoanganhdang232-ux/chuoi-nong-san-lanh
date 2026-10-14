@@ -213,6 +213,13 @@ export default function DashboardPage() {
   const [consumeModalBatch, setConsumeModalBatch] = useState(null);
   const [lineageModalBatch, setLineageModalBatch] = useState(null);
 
+  // Auto-dismiss toast after 4 seconds
+  useEffect(() => {
+    if (!submission.message) return;
+    const timer = setTimeout(() => setSubmission({ message: "", tone: "" }), 4000);
+    return () => clearTimeout(timer);
+  }, [submission.message]);
+
   const loadData = async () => {
     const [dashboardData, batchData, transferData, activityData] = await Promise.all([
       api.getDashboard(),
@@ -1724,11 +1731,36 @@ export default function DashboardPage() {
           </section>
         )}
 
+        {/* Floating Toast Notification */}
         {!!submission.message && (
           <div
-            className={`mt-5 rounded-xl p-3 text-sm ${submission.tone === "error" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}
+            style={{
+              position: "fixed",
+              top: "1.25rem",
+              right: "1.25rem",
+              zIndex: 9999,
+              minWidth: "280px",
+              maxWidth: "420px",
+              animation: "slideInToast 0.35s cubic-bezier(0.21,1.02,0.73,1) forwards",
+            }}
+            className={`flex items-start gap-3 rounded-2xl shadow-2xl ring-1 px-4 py-3.5 ${
+              submission.tone === "error"
+                ? "bg-rose-600 text-white ring-rose-700"
+                : "bg-emerald-600 text-white ring-emerald-700"
+            }`}
           >
-            {submission.message}
+            <span className="mt-0.5 flex-shrink-0 text-lg">
+              {submission.tone === "error" ? "⚠️" : "✅"}
+            </span>
+            <p className="flex-1 text-sm font-medium leading-snug">{submission.message}</p>
+            <button
+              type="button"
+              onClick={() => setSubmission({ message: "", tone: "" })}
+              className="ml-1 flex-shrink-0 rounded-lg p-1 opacity-70 hover:opacity-100 transition"
+              aria-label="Đóng thông báo"
+            >
+              <X size={15} />
+            </button>
           </div>
         )}
 
