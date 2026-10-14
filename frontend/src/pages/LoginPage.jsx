@@ -2,12 +2,13 @@ import { useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
+  Factory,
   Leaf,
   Lock,
   ShieldAlert,
   ShieldCheck,
-  Sprout,
   ThermometerSun,
+  Truck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 
@@ -239,53 +240,79 @@ export default function LoginPage() {
               </div>
 
               {/* Demo Account Buttons */}
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => {
-                  setEmailError("");
-                  setPasswordError("");
-                  handleLogin("farm@agritrace.demo", "Farm@123");
-                }}
-                className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left transition hover:border-emerald-500 hover:bg-emerald-50/50 disabled:cursor-not-allowed disabled:opacity-60 card-shadow"
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
-                  <ShieldCheck size={20} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-bold text-slate-900">
-                    Quản trị viên Farm (Farm Admin)
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    setEmailError("");
+                    setPasswordError("");
+                    handleLogin("processor@agritrace.demo", "Processor@123");
+                  }}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-blue-200/80 bg-white p-3 text-left transition hover:border-blue-500 hover:bg-blue-50/50 disabled:cursor-not-allowed disabled:opacity-60 card-shadow"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                    <Factory size={18} />
                   </span>
-                  <span className="block text-[11px] text-slate-500 truncate">
-                    farm@agritrace.demo · Quản lý vùng trồng, thửa đất và lô thu hoạch
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-bold text-slate-900">
+                      Cơ sở chế biến (Processor Admin)
+                    </span>
+                    <span className="block text-[11px] text-slate-500 truncate">
+                      processor@agritrace.demo · Sơ chế, đóng gói, tách/gộp lô
+                    </span>
                   </span>
-                </span>
-                <ArrowRight className="shrink-0 text-emerald-700" size={16} />
-              </button>
+                  <ArrowRight className="shrink-0 text-blue-600" size={15} />
+                </button>
 
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => {
-                  setEmailError("");
-                  setPasswordError("");
-                  handleLogin("user@agritrace.demo", "User@123");
-                }}
-                className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left transition hover:border-emerald-500 hover:bg-emerald-50/50 disabled:cursor-not-allowed disabled:opacity-60 card-shadow"
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
-                  <Sprout size={20} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-bold text-slate-900">
-                    Farmer (Nông dân)
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    setEmailError("");
+                    setPasswordError("");
+                    handleLogin("distributor@agritrace.demo", "Distributor@123");
+                  }}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-amber-200/80 bg-white p-3 text-left transition hover:border-amber-500 hover:bg-amber-50/50 disabled:cursor-not-allowed disabled:opacity-60 card-shadow"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                    <Truck size={18} />
                   </span>
-                  <span className="block text-[11px] text-slate-500 truncate">
-                    user@agritrace.demo · Theo dõi lô hàng, chuỗi lạnh và tính toàn vẹn
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-bold text-slate-900">
+                      Nhà phân phối (Distributor Admin)
+                    </span>
+                    <span className="block text-[11px] text-slate-500 truncate">
+                      distributor@agritrace.demo · Phân phối cửa hàng, tiêu thụ lô
+                    </span>
                   </span>
-                </span>
-                <ArrowRight className="shrink-0 text-emerald-700" size={16} />
-              </button>
+                  <ArrowRight className="shrink-0 text-amber-600" size={15} />
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    setEmailError("");
+                    setPasswordError("");
+                    handleLogin("farm@agritrace.demo", "Farm@123");
+                  }}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-500 hover:bg-emerald-50/50 disabled:cursor-not-allowed disabled:opacity-60 card-shadow"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
+                    <ShieldCheck size={18} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-bold text-slate-900">
+                      Quản trị viên Nông trại (Farm Admin)
+                    </span>
+                    <span className="block text-[11px] text-slate-500 truncate">
+                      farm@agritrace.demo · Quản lý vùng trồng, thu hoạch
+                    </span>
+                  </span>
+                  <ArrowRight className="shrink-0 text-emerald-700" size={15} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
