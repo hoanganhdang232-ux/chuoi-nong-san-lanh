@@ -26,6 +26,8 @@ import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { SkeletonCard } from "../components/ui/Skeleton.jsx";
 import { EmptyState } from "../components/ui/EmptyState.jsx";
+import SellOutModal from "../components/SellOutModal.jsx";
+import Toast from "../components/Toast.jsx";
 
 const statusColors = {
   registered: "bg-slate-100 text-slate-800 border-slate-200",
@@ -34,6 +36,8 @@ const statusColors = {
   in_transit: "bg-amber-50 text-amber-800 border-amber-200",
   delivered: "bg-emerald-50 text-emerald-800 border-emerald-200",
   recalled: "bg-rose-50 text-rose-800 border-rose-200",
+  consumed: "bg-slate-100 text-slate-700 border-slate-200",
+  sold_out: "bg-purple-50 text-purple-800 border-purple-200",
 };
 
 const statusLabels = {
@@ -43,6 +47,8 @@ const statusLabels = {
   in_transit: "Đang vận chuyển",
   delivered: "Đã giao nhận",
   recalled: "Đang thu hồi",
+  consumed: "Đã tiêu thụ",
+  sold_out: "Đã bán hết",
 };
 
 const eventLabels = {
@@ -105,6 +111,39 @@ export default function DashboardPage() {
   const [recallForm, setRecallForm] = useState({ batchId: "", reason: "" });
   const [splitForm, setSplitForm] = useState({ batchId: "", parts: [{ quantity: "" }, { quantity: "" }] });
   const [mergeForm, setMergeForm] = useState({ parentBatchIds: [], note: "" });
+  const [sellOutModalOpen, setSellOutModalOpen] = useState(false);
+  const [batchForSellOut, setBatchForSellOut] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const handleSellOutSuccess = (updatedBatch, successMessage) => {
+    setToast({
+      type: "success",
+      message: successMessage || "Xác nhận bán hết lô hàng thành công!",
+    });
+    setBatches((prev) =>
+      prev.map((b) =>
+        b.id === updatedBatch.id
+          ? { ...b, ...updatedBatch, status: "sold_out", remaining_quantity: 0 }
+          : b,
+      ),
+    );
+    if (selectedBatch?.id === updatedBatch.id) {
+      setSelectedBatch((prev) => ({
+        ...prev,
+        ...updatedBatch,
+        status: "sold_out",
+        remaining_quantity: 0,
+      }));
+    }
+    loadData();
+  };
+
+  const handleSellOutError = (errorMessage) => {
+    setToast({
+      type: "error",
+      message: errorMessage,
+    });
+  };
 
   const handleSplitSubmit = async (e) => {
     e.preventDefault();
@@ -1083,6 +1122,18 @@ export default function DashboardPage() {
 
                 {selectedBatch && (
                   <div className="pt-4 border-t border-slate-100 mt-4 flex flex-col gap-2">
+                    {user?.role === "distributor_admin" && selectedBatch.status !== "sold_out" && selectedBatch.status !== "recalled" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBatchForSellOut(selectedBatch);
+                          setSellOutModalOpen(true);
+                        }}
+                        className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <CheckCircle2 size={14} /> Xác nhận bán hết lô hàng
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleSensorSimulation(selectedBatch.id)}
@@ -1208,6 +1259,19 @@ export default function DashboardPage() {
                       </td>
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {user?.role === "distributor_admin" && batch.status !== "sold_out" && batch.status !== "recalled" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBatchForSellOut(batch);
+                                setSellOutModalOpen(true);
+                              }}
+                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-xs font-semibold transition-colors flex items-center gap-1"
+                              title="Xác nhận bán hết lô hàng"
+                            >
+                              <CheckCircle2 size={13} /> Bán hết
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleSelectBatch(batch.id)}
@@ -2073,6 +2137,25 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      <SellOutModal
+        isOpen={sellOutModalOpen}
+        batch={batchForSellOut}
+        onClose={() => {
+          setSellOutModalOpen(false);
+          setBatchForSellOut(null);
+        }}
+        onSuccess={handleSellOutSuccess}
+        onError={handleSellOutError}
+      />
     </div>
   );
 }

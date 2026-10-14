@@ -434,17 +434,24 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_batch_lineage_parent ON batch_lineage(parent_batch_id);
     CREATE INDEX IF NOT EXISTS idx_batch_lineage_child ON batch_lineage(child_batch_id);
 
-    CREATE VIEW IF NOT EXISTS events AS
+    DROP VIEW IF EXISTS events;
+    CREATE VIEW events AS
     SELECT
       id,
       batch_id,
+      batch_id AS lot_id,
       event_type,
       actor_id,
+      json_extract(data_json, '$.actor_role') AS actor_role,
       data_json AS payload,
+      data_json AS details,
       previous_hash AS prev_hash,
       current_hash AS hash,
       timestamp AS created_at
     FROM event_logs;
+
+    DROP VIEW IF EXISTS audit_logs;
+    CREATE VIEW audit_logs AS SELECT * FROM events;
   `);
   if (!refreshedBatchColumns.includes("cold_chain_alert")) {
     db.exec(

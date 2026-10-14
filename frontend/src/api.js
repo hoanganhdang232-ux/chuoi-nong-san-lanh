@@ -17,6 +17,8 @@ async function request(path, options = {}) {
     const errorData = await response.json().catch(() => ({}));
     const details = Array.isArray(errorData.errors) ? ` ${errorData.errors.join(" ")}` : "";
     const err = new Error(`${errorData.message || "Yêu cầu không thành công."}${details}`);
+    err.status = response.status;
+    err.data = errorData;
     err.error_code = errorData.error_code;
     err.field = errorData.field;
     throw err;
@@ -114,6 +116,10 @@ export const api = {
     }),
   sellOutBatch: (batchId) =>
     request(`/v1/distributor/lots/${batchId}/sell-out`, {
+      method: "PATCH",
+    }),
+  sellOutLot: (lotId) =>
+    request(`/v1/distributor/lots/${lotId}/sell-out`, {
       method: "PATCH",
     }),
   verifyBatchIntegrity: (batchId) => request(`/batches/${batchId}/integrity`),
