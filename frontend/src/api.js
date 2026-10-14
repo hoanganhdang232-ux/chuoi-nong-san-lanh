@@ -124,4 +124,46 @@ export const api = {
   getAuditReport: (batchId) => request(`/features/auditor/reports/${batchId}`),
   getPublicTrace: (batchCode) =>
     request(`/features/public/trace/${encodeURIComponent(batchCode)}`),
+  // ─── SPRINT 4 APIs ────────────────────────────────────────────────────────
+  getDescendants: (batchId) => request(`/v1/batches/${batchId}/descendants`),
+  getLineageGraph: (batchId) => request(`/v1/batches/${batchId}/lineage-graph`),
+  consumeBatch: (batchId, payload = {}) =>
+    request(`/v1/batches/${batchId}/consume`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getLocations: () => request("/v1/locations"),
+  createLocation: (payload) =>
+    request("/v1/locations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateLocation: (id, payload) =>
+    request(`/v1/locations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteLocation: (id) =>
+    request(`/v1/locations/${id}`, {
+      method: "DELETE",
+    }),
+  assignBatchLocation: (batchId, payload) =>
+    request(`/v1/batches/${batchId}/assign-location`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getAuditLogs: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return request(`/v1/audit-logs${q ? "?" + q : ""}`);
+  },
+  importProductsCsv: (csvContent) =>
+    request("/v1/import/products", {
+      method: "POST",
+      body: JSON.stringify({ csvContent }),
+    }),
+  importLandPlotsCsv: (csvContent) =>
+    request("/v1/import/land-plots", {
+      method: "POST",
+      body: JSON.stringify({ csvContent }),
+    }),
 };

@@ -9,6 +9,8 @@ import {
   Sprout,
   Users,
   History,
+  MapPin,
+  FileSpreadsheet,
 } from "lucide-react";
 
 const menuByRole = {
@@ -19,6 +21,8 @@ const menuByRole = {
     { label: "Thu hồi", icon: Siren },
     { label: "Báo cáo kiểm tra", icon: FileDown },
     { label: "Tổ chức", icon: Users },
+    { label: "Địa điểm & Cửa hàng", icon: MapPin },
+    { label: "Nhập CSV", icon: FileSpreadsheet },
     { label: "Nhật ký thao tác", icon: History },
   ],
   processor_admin: [
@@ -28,6 +32,8 @@ const menuByRole = {
     { label: "Thu hồi", icon: Siren },
     { label: "Báo cáo kiểm tra", icon: FileDown },
     { label: "Kiểm soát", icon: ShieldCheck },
+    { label: "Địa điểm & Cửa hàng", icon: MapPin },
+    { label: "Nhập CSV", icon: FileSpreadsheet },
     { label: "Nhật ký thao tác", icon: History },
   ],
   distributor_admin: [
@@ -37,6 +43,8 @@ const menuByRole = {
     { label: "Thu hồi", icon: Siren },
     { label: "Báo cáo kiểm tra", icon: FileDown },
     { label: "Kiểm tra", icon: ShieldCheck },
+    { label: "Địa điểm & Cửa hàng", icon: MapPin },
+    { label: "Nhập CSV", icon: FileSpreadsheet },
     { label: "Nhật ký thao tác", icon: History },
   ],
   auditor: [

@@ -7,6 +7,8 @@ import batchRoutes from "./routes/batchRoutes.js";
 import transferRoutes from "./routes/transferRoutes.js";
 import v1TransferRoutes from "./routes/v1TransferRoutes.js";
 import featureRoutes from "./routes/featureRoutes.js";
+import sprint4Routes from "./routes/sprint4Routes.js";
+import { auditLogMiddleware } from "./middleware/auditLog.js";
 import { runMigrations } from "./db/migrations.js";
 import { ensureDemoFarmerAccount } from "./db/seed.js";
 import { processOverdueTransfers } from "./services/transferService.js";
@@ -21,7 +23,8 @@ export function createApp() {
   const app = express();
 
   app.use(cors({ origin: true, credentials: true }));
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({ limit: "5mb" }));
+  app.use(auditLogMiddleware);
 
   app.get("/api/health", (req, res) => {
     try {
@@ -37,11 +40,13 @@ export function createApp() {
     }
   });
 
+  app.use("/api/v1", sprint4Routes);
   app.use("/api/auth", authRoutes);
   app.use("/api/batches", batchRoutes);
   app.use("/api/v1/transfers", v1TransferRoutes);
   app.use("/api/transfers", transferRoutes);
   app.use("/api/features", featureRoutes);
+  app.use("/api", sprint4Routes);
 
   app.use("/api", (req, res) => {
     res.status(404).json({ message: "Không tìm thấy API." });

@@ -68,22 +68,48 @@ export function runMigrations() {
       FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
 
+    CREATE TABLE IF NOT EXISTS locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      organization_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      address TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (organization_id) REFERENCES organizations(id)
+    );
+
     CREATE TABLE IF NOT EXISTS batches (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       batch_code TEXT NOT NULL UNIQUE,
       product_id INTEGER NOT NULL,
       organization_id INTEGER NOT NULL,
       source_farm_id INTEGER,
+      location_id INTEGER,
       initial_quantity REAL NOT NULL,
       remaining_quantity REAL NOT NULL,
       current_location TEXT,
       temperature_c REAL,
-      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled')),
+      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE')),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (product_id) REFERENCES products(id),
       FOREIGN KEY (organization_id) REFERENCES organizations(id),
-      FOREIGN KEY (source_farm_id) REFERENCES farms(id)
+      FOREIGN KEY (source_farm_id) REFERENCES farms(id),
+      FOREIGN KEY (location_id) REFERENCES locations(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      organization_id INTEGER,
+      action TEXT NOT NULL,
+      resource_type TEXT,
+      resource_id TEXT,
+      ip_address TEXT,
+      status_code INTEGER,
+      request_body TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
 
     CREATE TABLE IF NOT EXISTS event_logs (
@@ -268,7 +294,7 @@ export function runMigrations() {
       )
       .get()?.sql || "";
 
-  if (!batchTableSql.includes("pending_confirmation")) {
+  if (!batchTableSql.includes("'consumed'")) {
     db.exec("PRAGMA foreign_keys = OFF;");
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -284,16 +310,20 @@ export function runMigrations() {
           source_batch_ids TEXT,
           initial_quantity REAL NOT NULL,
           remaining_quantity REAL NOT NULL,
+          consumed_quantity REAL NOT NULL DEFAULT 0,
           current_location TEXT,
+          location_id INTEGER,
           temperature_c REAL,
-          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled')),
+          cold_chain_alert INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE')),
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (product_id) REFERENCES products(id),
           FOREIGN KEY (organization_id) REFERENCES organizations(id),
           FOREIGN KEY (source_farm_id) REFERENCES farms(id),
           FOREIGN KEY (parent_batch_id) REFERENCES batches(id),
-          FOREIGN KEY (root_batch_id) REFERENCES batches(id)
+          FOREIGN KEY (root_batch_id) REFERENCES batches(id),
+          FOREIGN KEY (location_id) REFERENCES locations(id)
         );
       `);
 
@@ -312,8 +342,10 @@ export function runMigrations() {
         FROM batches;
       `);
 
+      db.exec("DROP VIEW IF EXISTS lots;");
       db.exec("DROP TABLE batches;");
       db.exec("ALTER TABLE batches_new RENAME TO batches;");
+      db.exec("CREATE VIEW IF NOT EXISTS lots AS SELECT * FROM batches;");
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -438,6 +470,11 @@ export function runMigrations() {
       "ALTER TABLE batches ADD COLUMN consumed_quantity REAL NOT NULL DEFAULT 0",
     );
   }
+  if (!refreshedBatchColumns.includes("location_id")) {
+    db.exec(
+      "ALTER TABLE batches ADD COLUMN location_id INTEGER REFERENCES locations(id)",
+    );
+  }
 
   const batchIndexes = [
     {
@@ -455,6 +492,11 @@ export function runMigrations() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_users_organization_role ON users(organization_id, role);
     CREATE INDEX IF NOT EXISTS idx_batches_organization ON batches(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_batches_location ON batches(location_id);
+    CREATE INDEX IF NOT EXISTS idx_locations_org ON locations(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_org ON audit_logs(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_event_logs_batch ON event_logs(batch_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_batch_transfers_status ON batch_transfers(status);
     CREATE INDEX IF NOT EXISTS idx_temperature_logs_batch_time ON temperature_logs(batch_id, timestamp);
@@ -473,6 +515,18 @@ export function runMigrations() {
     BEFORE DELETE ON event_logs
     BEGIN
       SELECT RAISE(ABORT, 'event_logs are immutable');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS audit_logs_prevent_update
+    BEFORE UPDATE ON audit_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'audit_logs are immutable');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS audit_logs_prevent_delete
+    BEFORE DELETE ON audit_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'audit_logs are immutable');
     END;
   `);
 
@@ -495,5 +549,8 @@ export function runMigrations() {
 
   db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
     "001_initial_schema",
+  );
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+    "004_sprint4_schema",
   );
 }
