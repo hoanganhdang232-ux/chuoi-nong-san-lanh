@@ -261,13 +261,15 @@ export default function DashboardPage() {
         ]);
         setNotifications(notificationData);
         setRecallReports(recallData);
-        if (user?.role === "farm_admin") {
+        try {
           const [plotData, productData] = await Promise.all([
             api.getLandPlots(),
             api.getProducts(),
           ]);
-          setLandPlots(plotData);
-          setProducts(productData);
+          setLandPlots(plotData || []);
+          setProducts(productData || []);
+        } catch {
+          // Keep empty if unauthenticated or error
         }
       } catch (loadError) {
         setError(loadError.message);
@@ -1160,12 +1162,12 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {selectedView === "L\u00f4 n\u00f4ng s\u1ea3n" && user?.role === "farm_admin" && (
+        {(selectedView === "Vị trí thửa đất" || (selectedView === "L\u00f4 n\u00f4ng s\u1ea3n" && user?.role === "farm_admin")) && (
           <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">Danh sách thửa đất</h2>
-                <p className="text-xs text-slate-400 mt-0.5">{landPlots.length} thửa đang quản lý</p>
+                <h2 className="text-lg font-bold text-slate-900">Danh sách thửa đất & Vị trí vùng trồng</h2>
+                <p className="text-xs text-slate-400 mt-0.5">{landPlots.length} thửa đang quản lý trong chuỗi cung ứng</p>
               </div>
             </div>
             {landPlots.length === 0 ? (
@@ -1193,23 +1195,25 @@ export default function DashboardPage() {
                           </p>
                           <h3 className="mt-0.5 text-base font-bold text-slate-900">{plot.name}</h3>
                         </div>
-                        <button
-                          type="button"
-                          title="Chỉnh sửa thửa đất"
-                          className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
-                          onClick={() => {
-                            setEditingLandPlotId(plot.id);
-                            setLandPlotForm({
-                              name: plot.name,
-                              areaHa: String(plot.area_ha),
-                              latitude: plot.latitude ? String(plot.latitude) : "",
-                              longitude: plot.longitude ? String(plot.longitude) : "",
-                            });
-                            window.scrollTo({ top: 0, behavior: "smooth" });
-                          }}
-                        >
-                          <Pencil size={14} />
-                        </button>
+                        {user?.role === "farm_admin" && (
+                          <button
+                            type="button"
+                            title="Chỉnh sửa thửa đất"
+                            className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
+                            onClick={() => {
+                              setEditingLandPlotId(plot.id);
+                              setLandPlotForm({
+                                name: plot.name,
+                                areaHa: String(plot.area_ha),
+                                latitude: plot.latitude ? String(plot.latitude) : "",
+                                longitude: plot.longitude ? String(plot.longitude) : "",
+                              });
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        )}
                       </div>
 
                       {/* Stats row */}
