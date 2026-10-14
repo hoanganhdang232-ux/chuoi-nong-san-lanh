@@ -39,12 +39,11 @@ export default function AuditLogsView() {
     setLoading(true);
     setError(null);
     try {
-      const offset = (page - 1) * limit;
       const res = await api.getAuditLogs({
+        page,
         limit,
-        offset,
         action: actionFilter || undefined,
-        resource_type: resourceFilter || undefined,
+        resourceType: resourceFilter || undefined,
       });
       setLogs(res.data || []);
       setTotal(res.pagination?.total || 0);
@@ -63,11 +62,13 @@ export default function AuditLogsView() {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
-      (log.resource_id && log.resource_id.toLowerCase().includes(q)) ||
-      (log.resource_type && log.resource_type.toLowerCase().includes(q)) ||
-      (log.action && log.action.toLowerCase().includes(q)) ||
-      (log.user_id && log.user_id.toLowerCase().includes(q)) ||
-      (log.ip_address && log.ip_address.includes(q))
+      String(log.resource_id || "").toLowerCase().includes(q) ||
+      String(log.resource_type || "").toLowerCase().includes(q) ||
+      String(log.action || "").toLowerCase().includes(q) ||
+      String(log.user_id || "").toLowerCase().includes(q) ||
+      String(log.user_name || "").toLowerCase().includes(q) ||
+      String(log.user_email || "").toLowerCase().includes(q) ||
+      String(log.ip_address || "").includes(q)
     );
   });
 
@@ -200,8 +201,9 @@ export default function AuditLogsView() {
                 </tr>
               ) : (
                 filteredLogs.map((log) => {
+                  const actionMethod = String(log.action || "").split(" ")[0];
                   const actionColor =
-                    ACTION_COLORS[log.action] ||
+                    ACTION_COLORS[actionMethod] ||
                     "bg-slate-100 text-slate-700 border-slate-200";
                   const isSuccess =
                     log.status_code >= 200 && log.status_code < 300;
@@ -235,7 +237,7 @@ export default function AuditLogsView() {
                         )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-mono text-[11px] text-slate-600">
-                        {log.user_id ? log.user_id.slice(0, 12) : "System"}
+                        {log.user_name || log.user_email || (log.user_id ? `#${log.user_id}` : "System")}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-mono text-[11px] text-slate-400">
                         {log.ip_address || "127.0.0.1"}

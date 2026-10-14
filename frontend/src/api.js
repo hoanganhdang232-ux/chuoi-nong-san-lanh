@@ -133,6 +133,11 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getLocations: () => request("/v1/locations"),
+  distributeBatchToStores: (batchId, allocations) =>
+    request("/v1/locations/distribute-batch", {
+      method: "POST",
+      body: JSON.stringify({ batchId, allocations }),
+    }),
   createLocation: (payload) =>
     request("/v1/locations", {
       method: "POST",
@@ -153,7 +158,10 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getAuditLogs: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
     return request(`/v1/audit-logs${q ? "?" + q : ""}`);
   },
   importProductsCsv: (csvContent) =>

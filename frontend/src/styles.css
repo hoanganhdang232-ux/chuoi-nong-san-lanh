@@ -74,18 +74,6 @@ pre,
   background: #94a3b8;
 }
 
-/* Toast slide-in animation */
-@keyframes slideInToast {
-  from {
-    opacity: 0;
-    transform: translateX(calc(100% + 1.5rem));
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
 .login-bg {
   background-image:
     radial-gradient(

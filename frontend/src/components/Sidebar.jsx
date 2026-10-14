@@ -17,7 +17,6 @@ const menuByRole = {
   farm_admin: [
     { label: "Tổng quan", icon: BarChart3 },
     { label: "Lô nông sản", icon: Boxes },
-    { label: "Vị trí thửa đất", icon: MapPin },
     { label: "Chuỗi lạnh", icon: ClipboardCheck },
     { label: "Thu hồi", icon: Siren },
     { label: "Báo cáo kiểm tra", icon: FileDown },
@@ -29,7 +28,6 @@ const menuByRole = {
   processor_admin: [
     { label: "Tổng quan", icon: BarChart3 },
     { label: "Lô xử lý", icon: Boxes },
-    { label: "Vị trí thửa đất", icon: MapPin },
     { label: "Chuỗi lạnh", icon: ClipboardCheck },
     { label: "Thu hồi", icon: Siren },
     { label: "Báo cáo kiểm tra", icon: FileDown },
@@ -41,7 +39,6 @@ const menuByRole = {
   distributor_admin: [
     { label: "Tổng quan", icon: BarChart3 },
     { label: "Lô phân phối", icon: Boxes },
-    { label: "Vị trí thửa đất", icon: MapPin },
     { label: "Chuỗi lạnh", icon: ClipboardCheck },
     { label: "Thu hồi", icon: Siren },
     { label: "Báo cáo kiểm tra", icon: FileDown },
@@ -53,7 +50,6 @@ const menuByRole = {
   auditor: [
     { label: "Tổng quan", icon: BarChart3 },
     { label: "Toàn bộ lô", icon: Boxes },
-    { label: "Vị trí thửa đất", icon: MapPin },
     { label: "Integrity", icon: ShieldCheck },
     { label: "Báo cáo kiểm tra", icon: FileDown },
     { label: "Thu hồi", icon: Siren },
@@ -61,14 +57,12 @@ const menuByRole = {
   ],
   consumer: [
     { label: "Tổng quan", icon: BarChart3 },
-    { label: "Vị trí thửa đất", icon: MapPin },
     { label: "Truy xuất", icon: Sprout },
     { label: "An toàn", icon: ShieldCheck },
   ],
   user: [
     { label: "Tổng quan", icon: BarChart3 },
     { label: "Lô hàng", icon: Boxes },
-    { label: "Vị trí thửa đất", icon: MapPin },
     { label: "Chuỗi lạnh", icon: ClipboardCheck },
     { label: "Integrity", icon: ShieldCheck },
   ],

@@ -8,15 +8,25 @@ import { getDb } from "../db/database.js";
 
 const SENSITIVE_KEYS = new Set([
   "password",
-  "password_hash",
+  "passwordhash",
   "token",
   "authorization",
   "secret",
   "jwt",
   "cookie",
-  "refresh_token",
-  "access_token",
 ]);
+
+function isSensitiveKey(key) {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return (
+    SENSITIVE_KEYS.has(normalized) ||
+    normalized.includes("password") ||
+    normalized.includes("token") ||
+    normalized.includes("secret") ||
+    normalized.includes("authorization") ||
+    normalized.includes("cookie")
+  );
+}
 
 /**
  * Đệ quy lọc bỏ dữ liệu nhạy cảm khỏi payload
@@ -28,7 +38,7 @@ export function sanitizePayload(obj) {
   }
   const result = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (SENSITIVE_KEYS.has(key.toLowerCase())) {
+    if (isSensitiveKey(key)) {
       result[key] = "[REDACTED]";
     } else if (typeof value === "object" && value !== null) {
       result[key] = sanitizePayload(value);

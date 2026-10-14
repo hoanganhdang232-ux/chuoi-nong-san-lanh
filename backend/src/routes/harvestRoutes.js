@@ -14,32 +14,16 @@ function buildBatchCode() {
   return `BATCH-${randomBytes(5).toString("hex").toUpperCase()}`;
 }
 
-router.get("/land-plots", (req, res) => {
-  const farm = getDb()
-    .prepare("SELECT id FROM farms WHERE organization_id = ? LIMIT 1")
-    .get(req.user.organization_id);
-
-  if (farm && req.user.role === "farm_admin") {
-    const rows = getDb()
-      .prepare(
-        `SELECT lp.*, f.name AS farm_name
-         FROM land_plots lp
-         INNER JOIN farms f ON f.id = lp.farm_id
-         WHERE f.organization_id = ?
-         ORDER BY lp.id DESC`,
-      )
-      .all(req.user.organization_id);
-    return res.json(rows);
-  }
-
+router.get("/land-plots", requireRole("farm_admin"), (req, res) => {
   const rows = getDb()
     .prepare(
       `SELECT lp.*, f.name AS farm_name
        FROM land_plots lp
        INNER JOIN farms f ON f.id = lp.farm_id
+       WHERE f.organization_id = ?
        ORDER BY lp.id DESC`,
     )
-    .all();
+    .all(req.user.organization_id);
   res.json(rows);
 });
 

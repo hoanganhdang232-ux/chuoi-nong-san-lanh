@@ -125,13 +125,27 @@ export class BatchSplitMergeService {
         for (const alloc of allocations) {
           const qty = Number(alloc.quantity);
           const childCode = `BATCH-${randomBytes(5).toString("hex").toUpperCase()}`;
-          const childLocation = alloc.location || parent.current_location;
+          let destination = null;
+          if (alloc.locationId !== undefined && alloc.locationId !== null && alloc.locationId !== "") {
+            const locationId = Number(alloc.locationId);
+            if (!Number.isSafeInteger(locationId) || locationId <= 0) {
+              throw new ValidationError("ID cửa hàng không hợp lệ.");
+            }
+            destination = db
+              .prepare("SELECT id, name FROM locations WHERE id = ? AND organization_id = ?")
+              .get(locationId, parent.organization_id);
+            if (!destination) {
+              throw new ValidationError("Cửa hàng phải thuộc tổ chức đang giữ lô.");
+            }
+          }
+          const childLocation = destination?.name || alloc.location || parent.current_location;
 
           const childBatch = this.batchRepo.createBatch({
             batchCode: childCode,
             productId: parent.product_id,
             organizationId: parent.organization_id,
             sourceFarmId: parent.source_farm_id,
+            locationId: destination?.id ?? null,
             parentBatchId: parent.id,
             rootBatchId: parentRootId,
             sourceBatchIds: [parent.id],
@@ -161,6 +175,7 @@ export class BatchSplitMergeService {
               source_batch_id: parent.id,
               quantity: qty,
               location: childLocation,
+              location_id: destination?.id ?? null,
             },
           });
 

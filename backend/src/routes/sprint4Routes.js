@@ -13,6 +13,7 @@ import {
   deleteLocation,
   assignBatchToLocation,
 } from "../services/locationService.js";
+import { batchSplitMergeService } from "../services/batchSplitMergeService.js";
 import { listAuditLogs } from "../services/auditLogService.js";
 import {
   importProductsFromCSV,
@@ -186,6 +187,40 @@ router.delete("/locations/:id", requireRole(...adminRoles), (req, res) => {
     return res.json({ message: "Xóa địa điểm thành công.", ...result });
   } catch (err) {
     return res.status(err.statusCode || 400).json({ message: err.message });
+  }
+});
+
+/** Split a distributor batch into child lots assigned to its own stores. */
+router.post("/locations/distribute-batch", requireRole("distributor_admin"), async (req, res) => {
+  const batchId = Number(req.body?.batchId ?? req.body?.batch_id);
+  const allocations = req.body?.allocations;
+  if (!Number.isSafeInteger(batchId) || batchId <= 0) {
+    return res.status(400).json({ message: "ID lô hàng không hợp lệ." });
+  }
+  if (!Array.isArray(allocations) || allocations.length < 2) {
+    return res.status(400).json({ message: "Hãy phân bổ lô cho ít nhất hai cửa hàng." });
+  }
+  const locationIds = allocations.map((item) => Number(item?.locationId));
+  if (
+    locationIds.some((id) => !Number.isSafeInteger(id) || id <= 0) ||
+    new Set(locationIds).size !== locationIds.length
+  ) {
+    return res.status(400).json({ message: "Mỗi cửa hàng chỉ được chọn một lần trong đợt chia lô." });
+  }
+
+  try {
+    const result = await batchSplitMergeService.splitBatch({
+      parentBatchId: batchId,
+      allocations,
+      actorId: req.user.id,
+      organizationId: req.user.organization_id,
+    });
+    return res.json({
+      message: `Đã chia lô cho ${result.children.length} cửa hàng.`,
+      ...result,
+    });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ message: err.message });
   }
 });
 

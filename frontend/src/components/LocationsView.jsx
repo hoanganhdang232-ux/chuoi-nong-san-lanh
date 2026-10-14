@@ -11,18 +11,11 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 
-export default function LocationsView({ batches = [], onRefreshBatches, onBatchUpdated }) {
+export default function LocationsView({ batches = [], onBatchUpdated }) {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-
-  // Auto-dismiss success after 3s
-  useEffect(() => {
-    if (!success) return;
-    const t = setTimeout(() => setSuccess(""), 3000);
-    return () => clearTimeout(t);
-  }, [success]);
 
   // Location Form State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -33,8 +26,16 @@ export default function LocationsView({ batches = [], onRefreshBatches, onBatchU
   // Assign Location Modal State
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState("");
-  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [distributionAllocations, setDistributionAllocations] = useState([
+    { locationId: "", quantity: "" },
+    { locationId: "", quantity: "" },
+  ]);
   const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const selectedBatch = batches.find((batch) => String(batch.id) === selectedBatchId);
+  const totalDistribution = distributionAllocations.reduce(
+    (total, allocation) => total + (Number(allocation.quantity) || 0),
+    0,
+  );
 
   const fetchLocations = async () => {
     try {
@@ -101,18 +102,24 @@ export default function LocationsView({ batches = [], onRefreshBatches, onBatchU
 
   const handleAssignLocation = async (e) => {
     e.preventDefault();
-    if (!selectedBatchId || !selectedLocationId) return;
+    if (!selectedBatchId || distributionAllocations.length < 2) return;
     setAssignSubmitting(true);
     setError("");
     setSuccess("");
     try {
-      const result = await api.assignBatchLocation(Number(selectedBatchId), {
-        locationId: Number(selectedLocationId),
-      });
-      setSuccess(`Đã điều chuyển lô hàng về "${result.location.name}". Sự kiện đã được ký băm vào chuỗi hash.`);
+      const allocations = distributionAllocations.map((allocation) => ({
+        locationId: Number(allocation.locationId),
+        quantity: Number(allocation.quantity),
+      }));
+      const result = await api.distributeBatchToStores(Number(selectedBatchId), allocations);
+      setSuccess(result.message || `Đã chia lô cho ${allocations.length} cửa hàng.`);
       setAssignModalOpen(false);
-      if (onRefreshBatches) onRefreshBatches();
-      else if (onBatchUpdated) onBatchUpdated();
+      setSelectedBatchId("");
+      setDistributionAllocations([
+        { locationId: "", quantity: "" },
+        { locationId: "", quantity: "" },
+      ]);
+      if (onBatchUpdated) onBatchUpdated();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -239,154 +246,64 @@ export default function LocationsView({ batches = [], onRefreshBatches, onBatchU
         </div>
       </div>
 
-      {/* Modal: Thêm / Sửa Địa điểm */}
+      {/* Create or edit an internal location */}
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-base">
-                {editingId ? "Cập nhật Địa điểm" : "Thêm Địa điểm mới"}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsFormOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
-              >
-                <X size={18} />
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">{editingId ? "Cập nhật cửa hàng" : "Thêm cửa hàng mới"}</h3>
+              <button type="button" onClick={() => setIsFormOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
-
             <form onSubmit={handleSubmit} className="mt-4 space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Tên địa điểm / Cửa hàng <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ví dụ: Cửa hàng Cầu Giấy, Kho Lạnh Hoàng Mai"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 p-2.5 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Địa chỉ chi tiết
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: 123 Đường Xuân Thủy, Cầu Giấy, Hà Nội"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 p-2.5 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsFormOpen(false)}
-                  className="rounded-xl px-4 py-2 font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700 transition disabled:opacity-50"
-                >
-                  {submitting ? "Đang lưu..." : editingId ? "Lưu thay đổi" : "Tạo địa điểm"}
-                </button>
+              <label className="block font-semibold text-slate-700">Tên cửa hàng *<input required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 font-normal" /></label>
+              <label className="block font-semibold text-slate-700">Địa chỉ<input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 font-normal" /></label>
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+                <button type="button" onClick={() => setIsFormOpen(false)} className="rounded-xl px-4 py-2 font-semibold text-slate-600 hover:bg-slate-100">Hủy</button>
+                <button type="submit" disabled={submitting} className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white disabled:opacity-50">{submitting ? "Đang lưu..." : "Lưu cửa hàng"}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Modal: Điều chuyển Lô về Địa điểm */}
+      {/* Split a batch between the distributor's own stores */}
       {assignModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-base">
-                Điều chuyển nội bộ về Cửa hàng (S-30)
-              </h3>
-              <button
-                type="button"
-                onClick={() => setAssignModalOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
-              >
-                <X size={18} />
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">Chia lô đến các cửa hàng</h3>
+              <button type="button" onClick={() => setAssignModalOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
-
             <form onSubmit={handleAssignLocation} className="mt-4 space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Chọn Lô hàng cần điều chuyển <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  value={selectedBatchId}
-                  onChange={(e) => setSelectedBatchId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 p-2.5 text-xs focus:border-emerald-500 focus:outline-none"
-                >
+              <label className="block font-semibold text-slate-700">Lô nguồn *
+                <select required value={selectedBatchId} onChange={(e) => setSelectedBatchId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 font-normal">
                   <option value="">-- Chọn lô hàng --</option>
-                  {batches
-                    .filter((b) => Number(b.remaining_quantity) > 0 && b.status !== "consumed")
-                    .map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.batch_code} ({b.product_name} - Còn {Number(b.remaining_quantity).toLocaleString()} kg)
-                      </option>
-                    ))}
+                  {batches.filter((batch) => Number(batch.remaining_quantity) > 0 && batch.status !== "consumed").map((batch) => <option key={batch.id} value={batch.id}>{batch.batch_code} ({batch.product_name} — còn {Number(batch.remaining_quantity).toLocaleString()} kg)</option>)}
                 </select>
+              </label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between"><span className="font-semibold text-slate-700">Phân bổ số lượng đến cửa hàng *</span><span className="text-slate-500">{totalDistribution.toLocaleString()} / {Number(selectedBatch?.remaining_quantity || 0).toLocaleString()} kg</span></div>
+                {distributionAllocations.map((allocation, index) => {
+                  const usedIds = distributionAllocations.filter((_, rowIndex) => rowIndex !== index).map((row) => String(row.locationId));
+                  return <div key={index} className="flex gap-2">
+                    <select required value={allocation.locationId} onChange={(e) => setDistributionAllocations((rows) => rows.map((row, i) => i === index ? { ...row, locationId: e.target.value } : row))} className="min-w-0 flex-1 rounded-xl border border-slate-200 p-2.5">
+                      <option value="">-- Chọn cửa hàng --</option>
+                      {locations.map((location) => <option key={location.id} value={location.id} disabled={usedIds.includes(String(location.id))}>{location.name}{location.address ? ` (${location.address})` : ""}</option>)}
+                    </select>
+                    <input required type="number" min="0.001" step="any" value={allocation.quantity} onChange={(e) => setDistributionAllocations((rows) => rows.map((row, i) => i === index ? { ...row, quantity: e.target.value } : row))} placeholder="Số kg" className="w-24 rounded-xl border border-slate-200 p-2.5" />
+                    {distributionAllocations.length > 2 && <button type="button" aria-label="Xóa phân bổ" onClick={() => setDistributionAllocations((rows) => rows.filter((_, i) => i !== index))} className="rounded-lg p-2 text-slate-500 hover:text-rose-600"><Trash2 size={16} /></button>}
+                  </div>;
+                })}
+                <button type="button" onClick={() => setDistributionAllocations((rows) => [...rows, { locationId: "", quantity: "" }])} disabled={distributionAllocations.length >= locations.length} className="font-semibold text-emerald-700 disabled:opacity-50">+ Thêm cửa hàng</button>
               </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Chọn Cửa hàng / Điểm bán đến <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  value={selectedLocationId}
-                  onChange={(e) => setSelectedLocationId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 p-2.5 text-xs focus:border-emerald-500 focus:outline-none"
-                >
-                  <option value="">-- Chọn địa điểm đến --</option>
-                  {locations.map((loc) => (
-                    <option key={loc.id} value={loc.id}>
-                      {loc.name} {loc.address ? `(${loc.address})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="rounded-xl bg-slate-50 p-3 text-[11px] text-slate-500 border border-slate-200/80">
-                Lưu ý: Vì đây là điều chuyển nội bộ trong cùng tổ chức nên không cần quy trình xác nhận 2 bên. Sự kiện <code>LOCATION_ASSIGNED</code> sẽ được ghi tiếp vào chuỗi Hash của lô hàng.
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setAssignModalOpen(false)}
-                  className="rounded-xl px-4 py-2 font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={assignSubmitting || !selectedBatchId || !selectedLocationId}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700 transition disabled:opacity-50"
-                >
-                  {assignSubmitting ? "Đang xử lý..." : "Xác nhận chuyển lô"}
-                </button>
+              <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600">Mỗi cửa hàng nhận một lô con riêng. Tổng phân bổ không vượt khối lượng còn lại; phần chưa phân bổ vẫn ở lô nguồn.</p>
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+                <button type="button" onClick={() => setAssignModalOpen(false)} className="rounded-xl px-4 py-2 font-semibold text-slate-600 hover:bg-slate-100">Hủy</button>
+                <button type="submit" disabled={assignSubmitting || !selectedBatchId || locations.length < 2 || distributionAllocations.some((row) => !row.locationId || !(Number(row.quantity) > 0)) || new Set(distributionAllocations.map((row) => row.locationId)).size !== distributionAllocations.length || totalDistribution > Number(selectedBatch?.remaining_quantity || 0)} className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white disabled:opacity-50">{assignSubmitting ? "Đang chia lô..." : "Xác nhận chia lô"}</button>
               </div>
             </form>
           </div>
         </div>
-      )}
-    </div>
+      )}    </div>
   );
 }

@@ -20,6 +20,10 @@ export function auditLogMiddleware(req, res, next) {
   // Intercept res.end để ghi log khi request kết thúc
   const originalEnd = res.end.bind(res);
   res.end = function (...args) {
+    if (req._auditWritten) {
+      return originalEnd(...args);
+    }
+    req._auditWritten = true;
     // URL path parsing
     const urlParts = (req.originalUrl || req.path || "")
       .replace(/^\/api(\/v1)?\/?/, "")
@@ -28,26 +32,19 @@ export function auditLogMiddleware(req, res, next) {
 
     const resourceType = urlParts[0] || "system";
     const resourceId = urlParts[1] && /^\d+$/.test(urlParts[1]) ? urlParts[1] : null;
-    const action = `${req.method} ${req.originalUrl || req.path}`;
+    const action = `${req.method} ${req.path}`;
+    // req.ip respects Express trusted-proxy configuration; raw forwarded headers can be forged.
+    const ipAddress = req.ip || req.socket?.remoteAddress || null;
 
-    const ipAddress =
-      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-      req.socket?.remoteAddress ||
-      req.ip ||
-      null;
-
-    // Run asynchronously to not block response
-    setImmediate(() => {
-      recordAuditLog({
-        userId: req.user?.id || null,
-        organizationId: req.user?.organization_id || null,
-        action,
-        resourceType,
-        resourceId,
-        ipAddress,
-        statusCode: res.statusCode,
-        requestBody: req.body,
-      });
+    recordAuditLog({
+      userId: req.user?.id || null,
+      organizationId: req.user?.organization_id || null,
+      action,
+      resourceType,
+      resourceId,
+      ipAddress,
+      statusCode: res.statusCode,
+      requestBody: req.body,
     });
 
     return originalEnd(...args);
