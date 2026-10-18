@@ -22,6 +22,7 @@ import {
   ClipboardList,
   ShoppingCart,
   Network,
+  Boxes,
   X,
   XCircle,
   Sun,
@@ -180,6 +181,35 @@ const HARVEST_PREVIEW_SCHEMA = [
   },
 ];
 
+const PLOT_PREVIEW_SCHEMA = [
+  { key: "name", label: "Tên thửa đất", icon: MapPin },
+  { key: "areaHa", label: "Diện tích canh tác", format: (val) => `${val} ha` },
+  { key: "coordinates", label: "Tọa độ GPS" },
+];
+
+const PRODUCT_PREVIEW_SCHEMA = [
+  { key: "name", label: "Tên nông sản", icon: Box },
+  { key: "unit", label: "Đơn vị tính", format: (val) => val || "kg" },
+];
+
+const TRANSFER_PREVIEW_SCHEMA = [
+  { key: "batchCode", label: "Mã lô hàng bàn giao", icon: Box },
+  { key: "targetOrgName", label: "Đơn vị tiếp nhận", icon: Truck },
+  { key: "note", label: "Ghi chú bàn giao", format: (val) => val || "Không có ghi chú" },
+];
+
+const SPLIT_PREVIEW_SCHEMA = [
+  { key: "parentBatchCode", label: "Lô nguồn phân tách", icon: Box },
+  { key: "childCount", label: "Số lượng lô con dự kiến", icon: ArrowRightLeft },
+  { key: "totalQuantity", label: "Tổng khối lượng tách", format: (val) => `${Number(val).toLocaleString()} kg` },
+];
+
+const MERGE_PREVIEW_SCHEMA = [
+  { key: "batchCodes", label: "Các lô nông sản được gộp", icon: Box },
+  { key: "productName", label: "Loại sản phẩm nông sản", icon: Box },
+  { key: "batchCount", label: "Tổng số lô gộp", icon: ArrowRightLeft },
+];
+
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const toast = useToast();
@@ -250,6 +280,32 @@ export default function DashboardPage() {
   const [distributeBatchId, setDistributeBatchId] = useState(null);
   const [lineageModalBatch, setLineageModalBatch] = useState(null);
   const [confirmHarvestModal, setConfirmHarvestModal] = useState({
+    open: false,
+    data: null,
+    submitting: false,
+  });
+  const [confirmPlotModal, setConfirmPlotModal] = useState({
+    open: false,
+    data: null,
+    submitting: false,
+  });
+  const [confirmProductModal, setConfirmProductModal] = useState({
+    open: false,
+    data: null,
+    submitting: false,
+  });
+  const [confirmTransferModal, setConfirmTransferModal] = useState({
+    open: false,
+    data: null,
+    submitting: false,
+  });
+  const [confirmSplitModal, setConfirmSplitModal] = useState({
+    open: false,
+    data: null,
+    allocations: null,
+    submitting: false,
+  });
+  const [confirmMergeModal, setConfirmMergeModal] = useState({
     open: false,
     data: null,
     submitting: false,
@@ -502,8 +558,28 @@ export default function DashboardPage() {
     }
   };
 
-  const handleLandPlotSubmit = async (event) => {
+  const handleLandPlotSubmit = (event) => {
     event.preventDefault();
+    if (!landPlotForm.name?.trim()) {
+      toast.error("Vui lòng nhập tên thửa đất.");
+      return;
+    }
+    setConfirmPlotModal({
+      open: true,
+      data: {
+        ...landPlotForm,
+        coordinates:
+          landPlotForm.latitude && landPlotForm.longitude
+            ? `${landPlotForm.latitude}, ${landPlotForm.longitude}`
+            : "Chưa cấu hình tọa độ GPS",
+      },
+      submitting: false,
+    });
+  };
+
+  const handleConfirmPlotSave = async () => {
+    if (!confirmPlotModal.data) return;
+    setConfirmPlotModal((prev) => ({ ...prev, submitting: true }));
     setSubmission({ message: "", tone: "" });
     try {
       if (editingLandPlotId) {
@@ -515,14 +591,33 @@ export default function DashboardPage() {
       setEditingLandPlotId(null);
       const nextPlots = await api.getLandPlots();
       setLandPlots(nextPlots);
-      setSubmission({ message: "Đã khai báo thửa đất mới.", tone: "success" });
+      setConfirmPlotModal({ open: false, data: null, submitting: false });
+      setSubmission({
+        message: editingLandPlotId ? "Đã cập nhật thửa đất." : "Đã khai báo thửa đất mới.",
+        tone: "success",
+      });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
+      setConfirmPlotModal((prev) => ({ ...prev, submitting: false }));
     }
   };
 
-  const handleProductSubmit = async (event) => {
+  const handleProductSubmit = (event) => {
     event.preventDefault();
+    if (!productForm.name?.trim()) {
+      toast.error("Vui lòng nhập tên sản phẩm.");
+      return;
+    }
+    setConfirmProductModal({
+      open: true,
+      data: { ...productForm },
+      submitting: false,
+    });
+  };
+
+  const handleConfirmProductSave = async () => {
+    if (!confirmProductModal.data) return;
+    setConfirmProductModal((prev) => ({ ...prev, submitting: true }));
     try {
       if (editingProductId) {
         await api.updateProduct(editingProductId, productForm);
@@ -532,25 +627,53 @@ export default function DashboardPage() {
       setProductForm({ name: "", unit: "kg" });
       setEditingProductId(null);
       setProducts(await api.getProducts());
+      setConfirmProductModal({ open: false, data: null, submitting: false });
       setSubmission({
-        message: editingProductId ? "Đã cập nhật sản phẩm." : "Đã thêm sản phẩm.",
+        message: editingProductId ? "Đã cập nhật sản phẩm." : "Đã thêm sản phẩm mới.",
         tone: "success",
       });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
+      setConfirmProductModal((prev) => ({ ...prev, submitting: false }));
     }
   };
 
-  const handleSplitSubmit = async (event) => {
+  const handleSplitSubmit = (event) => {
     event.preventDefault();
-    try {
-      const allocations = splitAllocations.map((allocation) => ({
+    if (!splitBatchId) {
+      toast.error("Vui lòng chọn lô cần tách.");
+      return;
+    }
+    const sourceBatch = filteredBatches.find((b) => b.id === Number(splitBatchId));
+    const validAllocations = splitAllocations.filter((a) => Number(a.quantity) > 0);
+    if (validAllocations.length < 2) {
+      toast.error("Cần ít nhất 2 lô con hợp lệ với số lượng lớn hơn 0.");
+      return;
+    }
+    const totalAllocated = validAllocations.reduce((sum, a) => sum + Number(a.quantity), 0);
+    setConfirmSplitModal({
+      open: true,
+      data: {
+        parentBatchCode: sourceBatch?.batch_code || sourceBatch?.code || `Lô #${splitBatchId}`,
+        childCount: `${validAllocations.length} lô con`,
+        totalQuantity: totalAllocated,
+      },
+      allocations: validAllocations.map((allocation) => ({
         quantity: Number(allocation.quantity),
         ...(allocation.location.trim() ? { location: allocation.location.trim() } : {}),
-      }));
-      const result = await api.splitBatch(Number(splitBatchId), allocations);
+      })),
+      submitting: false,
+    });
+  };
+
+  const handleConfirmSplitSave = async () => {
+    if (!confirmSplitModal.allocations) return;
+    setConfirmSplitModal((prev) => ({ ...prev, submitting: true }));
+    try {
+      const result = await api.splitBatch(Number(splitBatchId), confirmSplitModal.allocations);
       setSplitBatchId("");
       setSplitAllocations([{ quantity: "", location: "" }, { quantity: "", location: "" }]);
+      setConfirmSplitModal({ open: false, data: null, allocations: null, submitting: false });
       await loadData();
       setSubmission({
         message: `Đã tách lô thành ${result.children.length} lô con.`,
@@ -558,6 +681,7 @@ export default function DashboardPage() {
       });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
+      setConfirmSplitModal((prev) => ({ ...prev, submitting: false }));
     }
   };
 
@@ -593,18 +717,40 @@ export default function DashboardPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleMergeSubmit = async (event) => {
+  const handleMergeSubmit = (event) => {
     event.preventDefault();
+    if (mergeBatchIds.length < 2) {
+      toast.error("Cần chọn ít nhất 2 lô cùng sản phẩm để gộp.");
+      return;
+    }
+    const selectedBatchObjects = filteredBatches.filter((b) => mergeBatchIds.map(Number).includes(b.id));
+    const firstProduct = selectedBatchObjects[0];
+    const batchCodes = selectedBatchObjects.map((b) => b.batch_code || b.code).join(", ");
+    setConfirmMergeModal({
+      open: true,
+      data: {
+        batchCodes,
+        productName: firstProduct?.product_name || "Nông sản",
+        batchCount: `${selectedBatchObjects.length} lô`,
+      },
+      submitting: false,
+    });
+  };
+
+  const handleConfirmMergeSave = async () => {
+    setConfirmMergeModal((prev) => ({ ...prev, submitting: true }));
     try {
       const result = await api.mergeBatches(
         mergeBatchIds.map(Number),
         filteredBatches.find((batch) => batch.id === Number(mergeBatchIds[0]))?.product_id,
       );
       setMergeBatchIds([]);
+      setConfirmMergeModal({ open: false, data: null, submitting: false });
       await loadData();
       setSubmission({ message: `Đã tạo lô gộp ${result.newBatch.batch_code}.`, tone: "success" });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
+      setConfirmMergeModal((prev) => ({ ...prev, submitting: false }));
     }
   };
 
@@ -655,14 +801,40 @@ export default function DashboardPage() {
     }
   };
 
-  const handleTransferSubmit = async (event) => {
+  const handleTransferSubmit = (event) => {
     event.preventDefault();
+    if (!transferForm.batchId || !transferForm.toOrganizationId) {
+      toast.error("Vui lòng chọn lô hàng và tổ chức tiếp nhận.");
+      return;
+    }
+    const selectedBatchItem = batches.find((b) => String(b.id) === String(transferForm.batchId));
+    const targetOrgName =
+      transferForm.toOrganizationId === "2"
+        ? "HTX Sơ chế Hà Nội"
+        : transferForm.toOrganizationId === "3"
+        ? "Cửa hàng Organic Market"
+        : `Tổ chức #${transferForm.toOrganizationId}`;
+
+    setConfirmTransferModal({
+      open: true,
+      data: {
+        batchCode: selectedBatchItem?.batch_code || selectedBatchItem?.code || `Lô #${transferForm.batchId}`,
+        targetOrgName,
+        note: transferForm.note || "",
+      },
+      submitting: false,
+    });
+  };
+
+  const handleConfirmTransferSave = async () => {
+    setConfirmTransferModal((prev) => ({ ...prev, submitting: true }));
     try {
       await api.createTransferRequest(transferForm.batchId, {
         toOrganizationId: Number(transferForm.toOrganizationId),
         note: transferForm.note,
       });
       setTransferForm({ batchId: "", toOrganizationId: "", note: "" });
+      setConfirmTransferModal({ open: false, data: null, submitting: false });
       await loadData();
       setSubmission({
         message: "Đã gửi yêu cầu bàn giao cho tổ chức nhận.",
@@ -670,6 +842,7 @@ export default function DashboardPage() {
       });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
+      setConfirmTransferModal((prev) => ({ ...prev, submitting: false }));
     }
   };
 
@@ -2071,16 +2244,16 @@ export default function DashboardPage() {
 
         {/* Modal xác nhận hoặc từ chối bàn giao kèm lý do */}
         {decisionModal.open && decisionModal.transfer && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 gaussian-backdrop animate-fade-in">
+            <div className="animate-modal-in modal-card-glow w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl">
               {/* Modal Header */}
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div
                     className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
                       decisionModal.decision === "confirmed"
-                        ? "bg-emerald-100 text-emerald-600"
-                        : "bg-rose-100 text-rose-600"
+                        ? "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400"
+                        : "bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400"
                     }`}
                   >
                     {decisionModal.decision === "confirmed" ? (
@@ -2090,12 +2263,12 @@ export default function DashboardPage() {
                     )}
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                       {decisionModal.decision === "confirmed"
                         ? "Xác nhận nhận bàn giao lô hàng"
                         : "Từ chối nhận bàn giao lô hàng"}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       {decisionModal.decision === "confirmed"
                         ? "Lô hàng sẽ được chuyển quyền sở hữu sang tổ chức của bạn."
                         : "Lô hàng sẽ được hoàn trả về trạng thái của bên gửi."}
@@ -2106,43 +2279,43 @@ export default function DashboardPage() {
                   type="button"
                   onClick={closeDecisionModal}
                   disabled={decisionModal.submitting}
-                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
 
               {/* Transfer Summary */}
-              <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/90 p-4 space-y-2 text-xs">
+              <div className="mt-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-950/70 p-4 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Mã lô hàng:</span>
-                  <span className="font-mono font-bold text-slate-800">
+                  <span className="text-slate-500 dark:text-slate-400">Mã lô hàng:</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
                     {decisionModal.transfer.batch_code}
                   </span>
                 </div>
                 {decisionModal.transfer.product_name && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Sản phẩm:</span>
-                    <span className="font-semibold text-slate-800">
+                    <span className="text-slate-500 dark:text-slate-400">Sản phẩm:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
                       {decisionModal.transfer.product_name} ({decisionModal.transfer.remaining_quantity || decisionModal.transfer.initial_quantity || 0} {decisionModal.transfer.product_unit || "kg"})
                     </span>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Bên chuyển giao:</span>
-                  <span className="font-medium text-slate-700">
+                  <span className="text-slate-500 dark:text-slate-400">Bên chuyển giao:</span>
+                  <span className="font-medium text-slate-700 dark:text-slate-300">
                     {decisionModal.transfer.from_organization_name}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Bên nhận (Tổ chức của bạn):</span>
-                  <span className="font-medium text-emerald-700">
+                  <span className="text-slate-500 dark:text-slate-400">Bên nhận (Tổ chức của bạn):</span>
+                  <span className="font-medium text-emerald-700 dark:text-emerald-400">
                     {decisionModal.transfer.to_organization_name}
                   </span>
                 </div>
                 {decisionModal.transfer.note && (
-                  <div className="pt-2 border-t border-slate-200/60 text-slate-600">
-                    <span className="font-semibold text-slate-700">Ghi chú từ bên gửi: </span>
+                  <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 text-slate-600 dark:text-slate-400">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">Ghi chú từ bên gửi: </span>
                     <span className="italic">{decisionModal.transfer.note}</span>
                   </div>
                 )}
@@ -2150,7 +2323,7 @@ export default function DashboardPage() {
 
               {/* Preset suggestion chips */}
               <div className="mt-4">
-                <label className="text-xs font-semibold text-slate-700 block mb-2">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-2">
                   Gợi ý lý do nhanh:
                 </label>
                 <div className="flex flex-wrap gap-1.5">
@@ -2174,7 +2347,7 @@ export default function DashboardPage() {
                       onClick={() =>
                         setDecisionModal((prev) => ({ ...prev, reason: preset }))
                       }
-                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 hover:border-slate-400 hover:bg-slate-50 transition"
+                      className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-[11px] text-slate-600 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer"
                     >
                       {preset}
                     </button>
@@ -2185,7 +2358,7 @@ export default function DashboardPage() {
               {/* Reason Form */}
               <form onSubmit={handleSubmitDecisionModal} className="mt-4 space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-800">
+                  <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
                     {decisionModal.decision === "confirmed" ? (
                       <>
                         Ghi chú / Nhận xét tiếp nhận <span className="text-slate-400 font-normal">(Không bắt buộc)</span>
@@ -2199,7 +2372,7 @@ export default function DashboardPage() {
                   <textarea
                     rows={3}
                     required={decisionModal.decision === "rejected"}
-                    className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-3 text-sm text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                     placeholder={
                       decisionModal.decision === "confirmed"
                         ? "Có thể để trống hoặc ghi chú thêm nếu muốn..."
@@ -2217,7 +2390,7 @@ export default function DashboardPage() {
                     type="button"
                     disabled={decisionModal.submitting}
                     onClick={closeDecisionModal}
-                    className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                    className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
@@ -2228,7 +2401,7 @@ export default function DashboardPage() {
                       (decisionModal.decision === "rejected" &&
                         decisionModal.reason.trim().length < 10)
                     }
-                    className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:opacity-50 ${
+                    className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:opacity-50 cursor-pointer ${
                       decisionModal.decision === "confirmed"
                         ? "bg-emerald-600 hover:bg-emerald-700"
                         : "bg-rose-600 hover:bg-rose-700"
@@ -2675,12 +2848,12 @@ export default function DashboardPage() {
         )}
 
         {lineageModalBatch && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-            <div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl bg-slate-50 p-6 shadow-2xl ring-1 ring-slate-900/10">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 gaussian-backdrop animate-fade-in">
+            <div className="animate-modal-in modal-card-glow relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl">
               <button
                 type="button"
                 onClick={() => setLineageModalBatch(null)}
-                className="absolute right-4 top-4 rounded-xl p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition"
+                className="absolute right-4 top-4 rounded-xl p-2 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
               >
                 <X size={20} />
               </button>
@@ -2692,6 +2865,7 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Modal xác nhận lưu lô thu hoạch */}
         {confirmHarvestModal.open && (
           <ConfirmSaveModal
             isOpen={confirmHarvestModal.open}
@@ -2699,12 +2873,113 @@ export default function DashboardPage() {
             subtitle="Vui lòng kiểm tra lại thông tin lô nông sản trước khi tạo chuỗi hash"
             data={confirmHarvestModal.data}
             schema={HARVEST_PREVIEW_SCHEMA}
+            icon={Tractor}
             isLoading={confirmHarvestModal.submitting}
             onClose={() =>
               !confirmHarvestModal.submitting &&
               setConfirmHarvestModal({ open: false, data: null, submitting: false })
             }
             onConfirm={handleConfirmHarvestSave}
+          />
+        )}
+
+        {/* Modal xác nhận lưu thông tin thửa đất */}
+        {confirmPlotModal.open && (
+          <ConfirmSaveModal
+            isOpen={confirmPlotModal.open}
+            title={editingLandPlotId ? "Xác nhận cập nhật thông tin thửa đất" : "Xác nhận khai báo thửa đất mới"}
+            subtitle="Kiểm tra tên thửa đất, diện tích và tọa độ GPS định vị vùng trồng"
+            data={confirmPlotModal.data}
+            schema={PLOT_PREVIEW_SCHEMA}
+            icon={MapPin}
+            isLoading={confirmPlotModal.submitting}
+            confirmText={editingLandPlotId ? "Xác nhận cập nhật" : "Xác nhận lưu thửa đất"}
+            noticeText="Thông tin vùng trồng sẽ được liên kết định danh trong các đợt thu hoạch."
+            onClose={() =>
+              !confirmPlotModal.submitting &&
+              setConfirmPlotModal({ open: false, data: null, submitting: false })
+            }
+            onConfirm={handleConfirmPlotSave}
+          />
+        )}
+
+        {/* Modal xác nhận lưu thông tin sản phẩm */}
+        {confirmProductModal.open && (
+          <ConfirmSaveModal
+            isOpen={confirmProductModal.open}
+            title={editingProductId ? "Xác nhận cập nhật thông tin sản phẩm" : "Xác nhận thêm sản phẩm mới"}
+            subtitle="Kiểm tra tên sản phẩm nông sản và quy cách đơn vị đo lường"
+            data={confirmProductModal.data}
+            schema={PRODUCT_PREVIEW_SCHEMA}
+            icon={Box}
+            isLoading={confirmProductModal.submitting}
+            confirmText={editingProductId ? "Xác nhận cập nhật" : "Xác nhận thêm sản phẩm"}
+            noticeText="Sản phẩm mới sẽ sẵn sàng trong danh mục lựa chọn khi nông dân thu hoạch."
+            onClose={() =>
+              !confirmProductModal.submitting &&
+              setConfirmProductModal({ open: false, data: null, submitting: false })
+            }
+            onConfirm={handleConfirmProductSave}
+          />
+        )}
+
+        {/* Modal xác nhận gửi yêu cầu bàn giao */}
+        {confirmTransferModal.open && (
+          <ConfirmSaveModal
+            isOpen={confirmTransferModal.open}
+            title="Xác nhận gửi yêu cầu bàn giao lô hàng"
+            subtitle="Kiểm tra mã lô nông sản và đơn vị đối tác tiếp nhận bàn giao"
+            data={confirmTransferModal.data}
+            schema={TRANSFER_PREVIEW_SCHEMA}
+            icon={Truck}
+            isLoading={confirmTransferModal.submitting}
+            confirmText="Gửi yêu cầu bàn giao"
+            noticeText="Một yêu cầu bàn giao mới sẽ được chuyển tới tổ chức nhận để họ xác nhận."
+            onClose={() =>
+              !confirmTransferModal.submitting &&
+              setConfirmTransferModal({ open: false, data: null, submitting: false })
+            }
+            onConfirm={handleConfirmTransferSave}
+          />
+        )}
+
+        {/* Modal xác nhận phân tách lô hàng */}
+        {confirmSplitModal.open && (
+          <ConfirmSaveModal
+            isOpen={confirmSplitModal.open}
+            title="Xác nhận thực hiện phân tách lô hàng"
+            subtitle="Kiểm tra số lượng và tổng khối lượng các lô con dự kiến tách"
+            data={confirmSplitModal.data}
+            schema={SPLIT_PREVIEW_SCHEMA}
+            icon={ArrowRightLeft}
+            isLoading={confirmSplitModal.submitting}
+            confirmText="Xác nhận tách lô"
+            noticeText="Hệ thống sẽ sinh mã lô con mới và ghi nhận liên kết phả hệ cha-con bất biến."
+            onClose={() =>
+              !confirmSplitModal.submitting &&
+              setConfirmSplitModal({ open: false, data: null, allocations: null, submitting: false })
+            }
+            onConfirm={handleConfirmSplitSave}
+          />
+        )}
+
+        {/* Modal xác nhận gộp các lô hàng */}
+        {confirmMergeModal.open && (
+          <ConfirmSaveModal
+            isOpen={confirmMergeModal.open}
+            title="Xác nhận gộp các lô nông sản"
+            subtitle="Kiểm tra danh sách các mã lô được gộp thành một lô lớn thống nhất"
+            data={confirmMergeModal.data}
+            schema={MERGE_PREVIEW_SCHEMA}
+            icon={Boxes}
+            isLoading={confirmMergeModal.submitting}
+            confirmText="Xác nhận gộp lô"
+            noticeText="Các lô thành phần sẽ được liên kết vào lô gộp mới và lưu vết trên chuỗi Hash."
+            onClose={() =>
+              !confirmMergeModal.submitting &&
+              setConfirmMergeModal({ open: false, data: null, submitting: false })
+            }
+            onConfirm={handleConfirmMergeSave}
           />
         )}
       </main>
