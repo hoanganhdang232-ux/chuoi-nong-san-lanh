@@ -126,8 +126,9 @@ export class BatchSplitMergeService {
           const qty = Number(alloc.quantity);
           const childCode = `BATCH-${randomBytes(5).toString("hex").toUpperCase()}`;
           let destination = null;
-          if (alloc.locationId !== undefined && alloc.locationId !== null && alloc.locationId !== "") {
-            const locationId = Number(alloc.locationId);
+          const targetLocId = alloc.locationId ?? alloc.location_id;
+          if (targetLocId !== undefined && targetLocId !== null && targetLocId !== "") {
+            const locationId = Number(targetLocId);
             if (!Number.isSafeInteger(locationId) || locationId <= 0) {
               throw new ValidationError("ID cửa hàng không hợp lệ.");
             }

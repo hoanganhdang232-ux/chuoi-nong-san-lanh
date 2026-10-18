@@ -8,7 +8,14 @@ import { createEventLog } from "./batchService.js";
 export function listLocations(organizationId) {
   return getDb()
     .prepare(
-      "SELECT id, organization_id, name, address, created_at FROM locations WHERE organization_id = ? ORDER BY id DESC",
+      `SELECT l.id, l.organization_id, l.name, l.address, l.created_at,
+              COUNT(b.id) AS batch_count,
+              COALESCE(SUM(CASE WHEN b.remaining_quantity > 0 AND b.status != 'consumed' THEN b.remaining_quantity ELSE 0 END), 0) AS total_inventory
+       FROM locations l
+       LEFT JOIN batches b ON b.location_id = l.id
+       WHERE l.organization_id = ?
+       GROUP BY l.id
+       ORDER BY l.id DESC`,
     )
     .all(organizationId);
 }

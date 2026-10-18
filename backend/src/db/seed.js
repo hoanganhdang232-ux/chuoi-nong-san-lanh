@@ -237,23 +237,25 @@ export function seedDemoData() {
       consumedQuantity = 0,
       status,
       location,
+      locationId = null,
       actorId,
       eventType,
     }) => {
       const result = db
         .prepare(
           `INSERT INTO batches(
-          batch_code, product_id, organization_id, source_farm_id,
+          batch_code, product_id, organization_id, source_farm_id, location_id,
           parent_batch_id, root_batch_id, source_batch_ids,
           initial_quantity, remaining_quantity, consumed_quantity,
           current_location, temperature_c, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 4.5, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 4.5, ?)`,
         )
         .run(
           code,
           productId.lastInsertRowid,
           organizationId,
           farmId,
+          locationId,
           parentId,
           rootBatchId,
           JSON.stringify(sourceIds),
@@ -273,6 +275,7 @@ export function seedDemoData() {
           initial_quantity: initialQuantity,
           remaining_quantity: remainingQuantity,
           location,
+          location_id: locationId,
         },
       });
       return id;
@@ -322,30 +325,47 @@ export function seedDemoData() {
       }),
     );
 
+    // Khởi tạo các điểm bán / cửa hàng nội bộ cho nhà phân phối
+    const distributorStores = [
+      { name: "Cửa hàng Ba Đình", address: "12 Kim Mã, Ba Đình, Hà Nội" },
+      { name: "Cửa hàng Cầu Giấy", address: "88 Cầu Giấy, Cầu Giấy, Hà Nội" },
+      { name: "Cửa hàng Hoàn Kiếm", address: "36 Tràng Tiền, Hoàn Kiếm, Hà Nội" },
+    ];
+    const storeIds = distributorStores.map((store) => {
+      const res = db
+        .prepare("INSERT INTO locations(organization_id, name, address) VALUES (?, ?, ?)")
+        .run(organizationIds.distributor, store.name, store.address);
+      return Number(res.lastInsertRowid);
+    });
+
     const leafSpecs = [
       {
         quantity: 120,
         remaining: 100,
         owner: "distributor",
-        location: "Cửa hàng Organic Market",
+        location: distributorStores[0].name,
+        locationId: storeIds[0],
       },
       {
         quantity: 130,
         remaining: 110,
         owner: "distributor",
-        location: "Kho bán lẻ Hà Nội",
+        location: distributorStores[1].name,
+        locationId: storeIds[1],
       },
       {
         quantity: 100,
         remaining: 80,
         owner: "processor",
         location: "Kho lạnh HTX",
+        locationId: null,
       },
       {
         quantity: 150,
         remaining: 130,
         owner: "distributor",
-        location: "Cửa hàng Organic Market",
+        location: distributorStores[2].name,
+        locationId: storeIds[2],
       },
     ];
     const leaves = leafSpecs.map((entry, index) =>
@@ -359,6 +379,7 @@ export function seedDemoData() {
         consumedQuantity: entry.quantity - entry.remaining,
         status: index === 0 ? "delivered" : "in_transit",
         location: entry.location,
+        locationId: entry.locationId,
         actorId:
           entry.owner === "processor" ? processorAdminId : distributorAdminId,
         eventType: "batch_split_child",

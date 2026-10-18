@@ -40,10 +40,17 @@ function AppRoutes() {
   );
 }
 
+import { ThemeProvider } from "./context/ThemeContext.jsx";
+import { ToastProvider } from "./context/ToastContext.jsx";
+
 export default function App() {
   return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }

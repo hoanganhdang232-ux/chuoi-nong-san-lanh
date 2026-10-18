@@ -453,6 +453,257 @@ test("S-30: assign batch to location records LOCATION_ASSIGNED in hash chain", a
   assert.equal(eventData.new_location_id, locationId);
 });
 
+test("S-30: distributor splits batch into its stores with location_id, lineage and hash chain", async () => {
+  const distributor = findUserByEmail("distributor@agritrace.demo");
+  const token = createToken(distributor);
+  const farm = findUserByEmail("farm@agritrace.demo");
+  const product = db
+    .prepare("SELECT id FROM products WHERE organization_id = ? LIMIT 1")
+    .get(farm.organization_id);
+
+  // Tạo 3 cửa hàng nội bộ cho nhà phân phối
+  const createStore = async (name, address) => {
+    const res = await fetch(`${baseUrl}/api/v1/locations`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name, address }),
+    });
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    return data.location;
+  };
+
+  const storeA = await createStore(`Cửa hàng Quận 1 - ${Date.now()}`, "123 Lê Lợi, Q.1");
+  const storeB = await createStore(`Cửa hàng Quận 3 - ${Date.now()}`, "456 Nam Kỳ Khởi Nghĩa, Q.3");
+  const storeC = await createStore(`Cửa hàng Thủ Đức - ${Date.now()}`, "789 Võ Văn Ngân, Thủ Đức");
+
+  // Tạo lô mẹ thuộc nhà phân phối có 100 kg
+  const insert = db.prepare(
+    `INSERT INTO batches(batch_code, product_id, organization_id, initial_quantity, remaining_quantity, status, current_location)
+     VALUES (?, ?, ?, 100, 100, 'delivered', 'Tổng kho phân phối TP.HCM')`,
+  );
+  const parentBatchId = Number(
+    insert.run(`BATCH-DIST-SPLIT-${Date.now()}`, product.id, distributor.organization_id).lastInsertRowid,
+  );
+  const { createEventLog } = await import("../src/services/batchService.js");
+  createEventLog({
+    batchId: parentBatchId,
+    eventType: "batch_registered",
+    actorId: distributor.id,
+    data: { initial_quantity: 100, location: "Tổng kho phân phối TP.HCM" },
+  });
+
+  // Nhà phân phối chia lô về 3 cửa hàng của mình: 40kg, 35kg, 25kg (tổng 100kg)
+  const distributeRes = await fetch(`${baseUrl}/api/v1/locations/distribute-batch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      batchId: parentBatchId,
+      allocations: [
+        { locationId: storeA.id, quantity: 40 },
+        { locationId: storeB.id, quantity: 35 },
+        { locationId: storeC.id, quantity: 25 },
+      ],
+    }),
+  });
+  assert.equal(distributeRes.status, 200, "distribute-batch should return HTTP 200");
+  const distributeData = await distributeRes.json();
+  assert.equal(distributeData.children.length, 3, "Phải sinh ra đúng 3 lô con");
+
+  const [childA, childB, childC] = distributeData.children;
+
+  // Kiểm tra thông tin các lô con gán đúng cửa hàng
+  assert.equal(childA.location_id, storeA.id);
+  assert.equal(childA.current_location, storeA.name);
+  assert.equal(childA.initial_quantity, 40);
+  assert.equal(childA.remaining_quantity, 40);
+  assert.equal(childA.organization_id, distributor.organization_id);
+
+  assert.equal(childB.location_id, storeB.id);
+  assert.equal(childB.current_location, storeB.name);
+  assert.equal(childB.initial_quantity, 35);
+  assert.equal(childB.remaining_quantity, 35);
+
+  assert.equal(childC.location_id, storeC.id);
+  assert.equal(childC.current_location, storeC.name);
+  assert.equal(childC.initial_quantity, 25);
+  assert.equal(childC.remaining_quantity, 25);
+
+  // Khối lượng lô mẹ giảm về 0
+  const updatedParent = db.prepare("SELECT * FROM batches WHERE id = ?").get(parentBatchId);
+  assert.equal(Number(updatedParent.remaining_quantity), 0, "Lô mẹ đã phân bổ hết");
+
+  // Kiểm tra sự kiện SPLIT trên lô mẹ
+  const splitEvent = db
+    .prepare("SELECT * FROM event_logs WHERE batch_id = ? AND event_type = 'SPLIT'")
+    .get(parentBatchId);
+  assert.ok(splitEvent, "Lô mẹ phải có sự kiện SPLIT");
+  const splitPayload = JSON.parse(splitEvent.data_json);
+  assert.equal(splitPayload.total_quantity_allocated, 100);
+
+  // Kiểm tra sự kiện SPLIT_CHILD trên từng lô con (chứa location_id)
+  for (const child of [childA, childB, childC]) {
+    const childEvent = db
+      .prepare("SELECT * FROM event_logs WHERE batch_id = ? AND event_type = 'SPLIT_CHILD'")
+      .get(child.id);
+    assert.ok(childEvent, `Lô con ${child.id} phải có sự kiện SPLIT_CHILD`);
+    const childPayload = JSON.parse(childEvent.data_json);
+    assert.equal(childPayload.parent_batch_id, parentBatchId);
+    assert.ok(childPayload.location_id, "Payload phải lưu location_id của cửa hàng");
+
+    // Kiểm tra tính toàn vẹn chuỗi Hash của từng lô con
+    const integrityRes = await fetch(`${baseUrl}/api/batches/${child.id}/integrity`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(integrityRes.status, 200);
+    const integrity = await integrityRes.json();
+    assert.equal(integrity.valid, true, `Chuỗi hash lô con ${child.id} phải toàn vẹn`);
+  }
+
+  // Danh sách địa điểm trả về tồn kho và số lượng lô tương ứng
+  const locListRes = await fetch(`${baseUrl}/api/v1/locations`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const locList = await locListRes.json();
+  const foundA = locList.find((l) => l.id === storeA.id);
+  assert.ok(foundA);
+  assert.ok(foundA.batch_count >= 1, "Cửa hàng A phải có ít nhất 1 lô");
+  assert.ok(foundA.total_inventory >= 40, "Tồn kho cửa hàng A phải khớp");
+});
+
+test("S-30: distribute-batch enforces validation rules (roles, store counts, duplicate stores, over-allocation)", async () => {
+  const farm = findUserByEmail("farm@agritrace.demo");
+  const farmToken = createToken(farm);
+  const distributor = findUserByEmail("distributor@agritrace.demo");
+  const token = createToken(distributor);
+
+  // 1. Chỉ distributor_admin được gọi distribute-batch, farm_admin bị 403
+  const forbiddenRes = await fetch(`${baseUrl}/api/v1/locations/distribute-batch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${farmToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ batchId: 1, allocations: [{ locationId: 1, quantity: 10 }, { locationId: 2, quantity: 10 }] }),
+  });
+  assert.equal(forbiddenRes.status, 403, "Farm admin không được gọi distribute-batch");
+
+  // Tạo 2 cửa hàng cho distributor
+  const locA = (
+    await (
+      await fetch(`${baseUrl}/api/v1/locations`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `CH Test A ${Date.now()}` }),
+      })
+    ).json()
+  ).location;
+
+  const locB = (
+    await (
+      await fetch(`${baseUrl}/api/v1/locations`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `CH Test B ${Date.now()}` }),
+      })
+    ).json()
+  ).location;
+
+  // Tạo lô 50kg cho distributor
+  const product = db
+    .prepare("SELECT id FROM products WHERE organization_id = ? LIMIT 1")
+    .get(farm.organization_id);
+  const batchId = Number(
+    db
+      .prepare(
+        `INSERT INTO batches(batch_code, product_id, organization_id, initial_quantity, remaining_quantity, status)
+         VALUES (?, ?, ?, 50, 50, 'delivered')`,
+      )
+      .run(`BATCH-VAL-${Date.now()}`, product.id, distributor.organization_id).lastInsertRowid,
+  );
+  const { createEventLog } = await import("../src/services/batchService.js");
+  createEventLog({
+    batchId,
+    eventType: "batch_registered",
+    actorId: distributor.id,
+    data: { initial_quantity: 50 },
+  });
+
+  // 2. Phân bổ cho < 2 cửa hàng bị 400
+  const singleStoreRes = await fetch(`${baseUrl}/api/v1/locations/distribute-batch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      batchId,
+      allocations: [{ locationId: locA.id, quantity: 20 }],
+    }),
+  });
+  assert.equal(singleStoreRes.status, 400, "Ít hơn 2 cửa hàng phải bị 400");
+
+  // 3. Trùng cửa hàng bị 400
+  const duplicateStoreRes = await fetch(`${baseUrl}/api/v1/locations/distribute-batch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      batchId,
+      allocations: [
+        { locationId: locA.id, quantity: 20 },
+        { locationId: locA.id, quantity: 20 },
+      ],
+    }),
+  });
+  assert.equal(duplicateStoreRes.status, 400, "Trùng cửa hàng phải bị 400");
+
+  // 4. Vượt quá khối lượng còn lại của lô (50kg mà chia 60kg) bị 400
+  const overAllocRes = await fetch(`${baseUrl}/api/v1/locations/distribute-batch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      batchId,
+      allocations: [
+        { locationId: locA.id, quantity: 30 },
+        { locationId: locB.id, quantity: 30 },
+      ],
+    }),
+  });
+  assert.equal(overAllocRes.status, 400, "Vượt quá khối lượng còn lại phải bị 400");
+
+  // 5. Khối lượng <= 0 bị 400
+  const negativeQtyRes = await fetch(`${baseUrl}/api/v1/locations/distribute-batch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      batchId,
+      allocations: [
+        { locationId: locA.id, quantity: -10 },
+        { locationId: locB.id, quantity: 20 },
+      ],
+    }),
+  });
+  assert.equal(negativeQtyRes.status, 400, "Khối lượng âm phải bị 400");
+
+  // 6. Cửa hàng không thuộc tổ chức bị 400
+  const farmLocation = (
+    await (
+      await fetch(`${baseUrl}/api/v1/locations`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${farmToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `Kho Farm Khác ${Date.now()}` }),
+      })
+    ).json()
+  ).location;
+
+  const alienStoreRes = await fetch(`${baseUrl}/api/v1/locations/distribute-batch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      batchId,
+      allocations: [
+        { locationId: locA.id, quantity: 15 },
+        { locationId: farmLocation.id, quantity: 15 },
+      ],
+    }),
+  });
+  assert.equal(alienStoreRes.status, 400, "Cửa hàng không thuộc tổ chức phải bị 400");
+});
+
 // ─── STORY 5: S-31 (Nhật ký thao tác - Audit Log) ────────────────────────────
 
 test("S-31: audit logs are automatically recorded for write operations and can be queried", async () => {

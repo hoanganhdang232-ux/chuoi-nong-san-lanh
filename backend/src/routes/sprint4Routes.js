@@ -200,7 +200,7 @@ router.post("/locations/distribute-batch", requireRole("distributor_admin"), asy
   if (!Array.isArray(allocations) || allocations.length < 2) {
     return res.status(400).json({ message: "Hãy phân bổ lô cho ít nhất hai cửa hàng." });
   }
-  const locationIds = allocations.map((item) => Number(item?.locationId));
+  const locationIds = allocations.map((item) => Number(item?.locationId ?? item?.location_id));
   if (
     locationIds.some((id) => !Number.isSafeInteger(id) || id <= 0) ||
     new Set(locationIds).size !== locationIds.length
