@@ -7,7 +7,6 @@ import {
   Boxes,
   X,
   CheckCircle2,
-  ArrowRight,
   Layers,
 } from "lucide-react";
 import { api } from "../api.js";

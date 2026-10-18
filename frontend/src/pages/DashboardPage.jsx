@@ -31,8 +31,6 @@ import {
   FileSpreadsheet,
   GitBranch,
   Layers,
-  Sparkles,
-  CornerDownRight,
   ArrowDown,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
@@ -434,35 +432,6 @@ export default function DashboardPage() {
       : batches.filter(
           (batch) => batch.organization_id === user?.organizationId,
         );
-
-  const lineageGraph = useMemo(() => {
-    if (!genealogy || !selectedBatch) return { nodes: [], edges: [] };
-    const byId = new Map();
-    for (const node of [
-      ...(genealogy.ancestors || []),
-      ...(genealogy.descendants || []),
-      genealogy.batch,
-      selectedBatch,
-    ]) {
-      if (node?.id !== undefined) byId.set(node.id, node);
-    }
-    const edges = [];
-    const seen = new Set();
-    for (const child of byId.values()) {
-      const parentIds = [...new Set([
-        child.parent_batch_id,
-        ...(Array.isArray(child.source_batch_ids) ? child.source_batch_ids : []),
-      ].filter(Boolean))];
-      for (const parentId of parentIds) {
-        const parent = byId.get(parentId);
-        const edgeKey = `${parentId}:${child.id}`;
-        if (!parent || seen.has(edgeKey)) continue;
-        seen.add(edgeKey);
-        edges.push({ parent, child });
-      }
-    }
-    return { nodes: [...byId.values()], edges };
-  }, [genealogy, selectedBatch]);
 
   const timelineEvents = useMemo(() => {
     const currentEvents = (selectedBatch?.events || []).map((event) => ({
