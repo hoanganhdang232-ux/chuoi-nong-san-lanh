@@ -29,6 +29,11 @@ import {
   Moon,
   Upload,
   FileSpreadsheet,
+  GitBranch,
+  Layers,
+  Sparkles,
+  CornerDownRight,
+  ArrowDown,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import LineageGraphView from "../components/LineageGraphView.jsx";
@@ -228,6 +233,16 @@ export default function DashboardPage() {
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [genealogy, setGenealogy] = useState(null);
   const [batchSummary, setBatchSummary] = useState(null);
+  const [genealogyTab, setGenealogyTab] = useState("family"); // 'family' (Lô Mẹ - Lô Con) | 'lineage' (Toàn chuỗi)
+  const [splitMergeResultModal, setSplitMergeResultModal] = useState({
+    open: false,
+    type: "", // 'split' | 'merge'
+    title: "",
+    parent: null,
+    children: [],
+    newBatch: null,
+    sourceBatches: [],
+  });
   const [selectedView, setSelectedView] = useState("Tổng quan");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -676,13 +691,31 @@ export default function DashboardPage() {
     if (!confirmSplitModal.allocations) return;
     setConfirmSplitModal((prev) => ({ ...prev, submitting: true }));
     try {
-      const result = await api.splitBatch(Number(splitBatchId), confirmSplitModal.allocations);
+      const sourceId = Number(splitBatchId);
+      const result = await api.splitBatch(sourceId, confirmSplitModal.allocations);
       setSplitBatchId("");
       setSplitAllocations([{ quantity: "", location: "" }, { quantity: "", location: "" }]);
       setConfirmSplitModal({ open: false, data: null, allocations: null, submitting: false });
       await loadData();
+      
+      // Mở modal kết quả chi tiết hiển thị các lô con vừa chia
+      setSplitMergeResultModal({
+        open: true,
+        type: "split",
+        title: "Tách lô nông sản thành công!",
+        parent: result.parent || filteredBatches.find((b) => b.id === sourceId),
+        children: result.children || [],
+        newBatch: null,
+        sourceBatches: [],
+      });
+
+      // Tự động chọn lô mẹ để cập nhật bảng phả hệ các lô con
+      if (result.parent?.id) {
+        handleSelectBatch(result.parent.id);
+      }
+
       setSubmission({
-        message: `Đã tách lô thành ${result.children.length} lô con.`,
+        message: `Đã tách lô thành công thành ${result.children?.length || 0} lô con mới.`,
         tone: "success",
       });
     } catch (submitError) {
@@ -792,14 +825,33 @@ export default function DashboardPage() {
   const handleConfirmMergeSave = async () => {
     setConfirmMergeModal((prev) => ({ ...prev, submitting: true }));
     try {
+      const sourceIds = mergeBatchIds.map(Number);
+      const sources = filteredBatches.filter((b) => sourceIds.includes(b.id));
       const result = await api.mergeBatches(
-        mergeBatchIds.map(Number),
+        sourceIds,
         filteredBatches.find((batch) => batch.id === Number(mergeBatchIds[0]))?.product_id,
       );
       setMergeBatchIds([]);
       setConfirmMergeModal({ open: false, data: null, submitting: false });
       await loadData();
-      setSubmission({ message: `Đã tạo lô gộp ${result.newBatch.batch_code}.`, tone: "success" });
+
+      // Mở modal kết quả chi tiết hiển thị lô gộp mới và các lô thành phần
+      setSplitMergeResultModal({
+        open: true,
+        type: "merge",
+        title: "Gộp lô nông sản thành công!",
+        parent: null,
+        children: [],
+        newBatch: result.newBatch,
+        sourceBatches: sources,
+      });
+
+      // Tự động chọn lô gộp mới vừa tạo để xem phả hệ
+      if (result.newBatch?.id) {
+        handleSelectBatch(result.newBatch.id);
+      }
+
+      setSubmission({ message: `Đã tạo thành công lô gộp mới: ${result.newBatch.batch_code}.`, tone: "success" });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
       setConfirmMergeModal((prev) => ({ ...prev, submitting: false }));
@@ -2877,150 +2929,358 @@ export default function DashboardPage() {
               </div>
 
               {/* Genealogy Card */}
-              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className="rounded-2xl bg-white dark:bg-slate-900 p-5 card-shadow border border-slate-200/80 dark:border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div>
-                    <h3 className="text-base font-bold text-slate-900">Nguồn gốc phả hệ (Genealogy)</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white">Nguồn gốc phả hệ & Phân cấp Lô</h3>
+                      <span className="rounded-md bg-emerald-100 dark:bg-emerald-950/80 px-2 py-0.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                        Mẹ ➔ Con
+                      </span>
+                    </div>
                     <p className="mt-0.5 text-xs text-slate-400">
-                      Truy nguyên lô gốc và quan hệ tách/gộp qua các công đoạn.
+                      Chi tiết quan hệ phân cấp: Lô Mẹ sinh ra lô này và các Lô Con được phân chia.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setLineageModalBatch(selectedBatch)}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 transition"
                   >
                     <Network size={14} /> Sơ đồ cây phả hệ (S-28)
                   </button>
                 </div>
+
+                {/* Tab Switcher: Lô Mẹ/Con trực tiếp vs Toàn bộ dòng họ */}
+                <div className="mt-3 flex items-center gap-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setGenealogyTab("family")}
+                    className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-bold transition ${
+                      genealogyTab === "family"
+                        ? "bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    <GitBranch size={13} />
+                    <span>Lô Mẹ & Các Lô Con (Chi tiết)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGenealogyTab("lineage")}
+                    className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-bold transition ${
+                      genealogyTab === "lineage"
+                        ? "bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    <Layers size={13} />
+                    <span>Toàn chuỗi & Lịch sử dòng họ</span>
+                  </button>
+                </div>
+
                 {genealogy ? (
-                  <div className="mt-4 space-y-3 text-xs">
-                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                      <span className="text-slate-500 font-medium">Lô tổ tiên (Ancestors):</span>
-                      <span className="font-bold text-slate-800">{genealogy.ancestors?.length || 0} lô</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                      <span className="text-slate-500 font-medium">Lô con cháu (Descendants):</span>
-                      <span className="font-bold text-slate-800">{genealogy.descendants?.length || 0} lô</span>
-                    </div>
-                    {genealogy.roots?.length > 0 && (
-                      <div className="pt-2">
-                        <span className="font-semibold text-slate-700 block mb-2">Lô gốc ban đầu (Roots):</span>
-                        <div className="space-y-1.5">
-                          {genealogy.roots.map((root) => (
-                            <div key={root.id} className="font-mono text-xs font-bold text-slate-800 bg-emerald-50/80 px-3 py-1.5 rounded-lg border border-emerald-200 flex items-center justify-between">
-                              <span>{root.batch_code}</span>
-                              <span className="text-[10px] text-emerald-700 font-normal">Lô gốc</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {lineageGraph.edges.length > 0 && (
-                      <div className="border-t border-slate-100 pt-3">
-                        <span className="font-semibold text-slate-700">Sơ đồ quan hệ lô</span>
-                        <div className="mt-2 grid gap-2">
-                          {lineageGraph.edges.map(({ parent, child }) => (
-                            <div key={`${parent.id}-${child.id}`} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <span className="truncate rounded-lg bg-white px-2 py-1 font-mono text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">{parent.batch_code}</span>
-                              <span className="text-emerald-600" aria-label="dẫn đến">→</span>
-                              <span className={`truncate rounded-lg px-2 py-1 font-mono text-[11px] font-semibold ring-1 ${child.id === selectedBatch.id ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-white text-slate-700 ring-slate-200"}`}>{child.batch_code}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div className="grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
+                  genealogyTab === "family" ? (
+                    /* TAB 1: 3-TIER HIERARCHY: MOTHER -> CURRENT -> CHILDREN */
+                    <div className="mt-4 space-y-3 text-xs">
+                      {/* TẦNG 1: LÔ MẸ (PARENT BATCH) */}
                       <div>
-                        <span className="font-semibold text-slate-700">Lô cha trực tiếp</span>
-                        {batchSummary?.parentRelations?.length ? (
-                          <ul className="mt-2 space-y-1.5">
-                            {batchSummary.parentRelations.map((relation) => (
-                              <li key={`${relation.parent_batch_id}-${relation.child_batch_id}`} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
-                                {filteredBatches.some((item) => item.id === relation.parent_batch_id) ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSelectBatch(relation.parent_batch_id)}
-                                    className="font-mono font-semibold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900"
-                                    title="Mở chi tiết lô mẹ"
-                                  >
-                                    {relation.parent_batch_code}
-                                  </button>
-                                ) : (
-                                  <span className="font-mono font-semibold text-slate-700" title="Lịch sử lô mẹ được hiển thị trên dòng thời gian">
-                                    {relation.parent_batch_code}
-                                  </span>
-                                )}
-                                <span className="ml-1 text-slate-500">· {Number(relation.quantity).toLocaleString()} kg · {relation.relation_type}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : <p className="mt-1 text-slate-400">Đây là lô gốc.</p>}
-                      </div>
-                      <div>
-                        <span className="font-semibold text-slate-700">Lô con trực tiếp</span>
-                        {batchSummary?.childRelations?.length ? (
-                          <ul className="mt-2 space-y-1.5">
-                            {batchSummary.childRelations.map((relation) => (
-                              <li key={`${relation.parent_batch_id}-${relation.child_batch_id}`} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
-                                {filteredBatches.some((item) => item.id === relation.child_batch_id) ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSelectBatch(relation.child_batch_id)}
-                                    className="font-mono font-semibold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900"
-                                    title="Mở chi tiết lô con"
-                                  >
-                                    {relation.child_batch_code}
-                                  </button>
-                                ) : (
-                                  <span className="font-mono font-semibold text-slate-700">{relation.child_batch_code}</span>
-                                )}
-                                <span className="ml-1 text-slate-500">· {Number(relation.quantity).toLocaleString()} kg · {relation.relation_type}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : <p className="mt-1 text-slate-400">Chưa tách thành lô con.</p>}
-                      </div>
-                    </div>
-                    {genealogy.ancestors?.length > 1 && (
-                      <div className="border-t border-slate-100 pt-3">
-                        <span className="font-semibold text-slate-700">Đường truy ngược về nguồn gốc</span>
-                        <ol className="mt-2 space-y-1.5">
-                          {genealogy.ancestors.filter((item) => item.id !== selectedBatch.id).map((ancestor, index) => (
-                            <li key={ancestor.id} className="flex items-center gap-2 rounded-lg bg-emerald-50/70 px-2.5 py-2">
-                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-800">{index + 1}</span>
-                              <span className="font-mono font-semibold text-slate-800">{ancestor.batch_code}</span>
-                              <span className="ml-auto text-slate-500">còn {Number(ancestor.remaining_quantity).toLocaleString()} kg</span>
-                            </li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
-                    {genealogy.descendants?.length > 0 && (
-                      <div className="border-t border-slate-100 pt-3">
-                        <span className="font-semibold text-slate-700">Các lô hậu duệ</span>
-                        <ul className="mt-2 space-y-1.5">
-                          {genealogy.descendants.map((descendant) => (
-                            <li key={descendant.id} className="grid gap-2 rounded-lg bg-indigo-50/70 px-2.5 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-indigo-500">↳</span>
-                                  <span className="font-mono font-semibold text-slate-800">{descendant.batch_code}</span>
-                                  <BatchStatusBadge status={descendant.status} />
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                            🌱 Tầng 1: Lô Mẹ (Nguồn gốc trực tiếp)
+                          </span>
+                          {batchSummary?.parentRelations?.length > 0 && (
+                            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                              {batchSummary.parentRelations.length} lô mẹ
+                            </span>
+                          )}
+                        </div>
+
+                        {batchSummary?.parentRelations?.length > 0 ? (
+                          <div className="space-y-2">
+                            {batchSummary.parentRelations.map((rel) => {
+                              const pBatch = filteredBatches.find((b) => b.id === rel.parent_batch_id) || batches.find((b) => b.id === rel.parent_batch_id);
+                              return (
+                                <div
+                                  key={`${rel.parent_batch_id}-${rel.child_batch_id}`}
+                                  className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 p-3.5 transition hover:border-emerald-300 dark:hover:border-emerald-700 hover:shadow-xs"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 dark:bg-emerald-950/80 px-2 py-0.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                                        🌱 Lô Mẹ
+                                      </span>
+                                      <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                                        {rel.parent_batch_code}
+                                      </span>
+                                      {pBatch?.status && <BatchStatusBadge status={pBatch.status} />}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectBatch(rel.parent_batch_id)}
+                                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900 transition"
+                                    >
+                                      Xem Lô Mẹ <ArrowRight size={12} />
+                                    </button>
+                                  </div>
+                                  <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                                    <div>
+                                      <span className="text-slate-400 dark:text-slate-500 block">Số lượng đã chuyển:</span>
+                                      <span className="font-bold text-slate-800 dark:text-slate-200">{Number(rel.quantity).toLocaleString()} kg</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-slate-400 dark:text-slate-500 block">Hình thức tạo lô:</span>
+                                      <span className="font-medium text-slate-800 dark:text-slate-200 capitalize">
+                                        {rel.relation_type === "split" ? "Tách lô (Split)" : rel.relation_type === "merge" ? "Gộp lô (Merge)" : rel.relation_type}
+                                      </span>
+                                    </div>
+                                    <div className="col-span-2 sm:col-span-1">
+                                      <span className="text-slate-400 dark:text-slate-500 block">Đơn vị / Kho lưu:</span>
+                                      <span className="font-medium text-slate-800 dark:text-slate-200 truncate block">
+                                        {pBatch?.organization_name || pBatch?.current_location || "N/A"}
+                                      </span>
+                                    </div>
+                                  </div>
                                 </div>
-                                <p className="mt-1 truncate text-[11px] text-slate-500">
-                                  {descendant.organization_name || "Chưa rõ tổ chức"} · {descendant.current_location || "Chưa cập nhật địa điểm"}
-                                </p>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-emerald-300 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 p-3.5 flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 font-bold text-sm">
+                              🌱
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                                  Lô gốc ban đầu (Root Batch)
+                                </span>
+                                <span className="rounded bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300">
+                                  Khởi điểm chuỗi
+                                </span>
                               </div>
-                              <span className="text-xs font-semibold text-slate-700">
-                                Còn {Number(descendant.remaining_quantity).toLocaleString()} kg
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
+                              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                Đây là lô gốc ban đầu được tạo từ đợt thu hoạch nông trại hoặc nhập khẩu, không có lô mẹ trước đó.
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+
+                      {/* MŨI TÊN KẾT NỐI TẦNG 1 ➔ TẦNG 2 */}
+                      <div className="flex items-center justify-center py-0.5">
+                        <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                          <ArrowDown size={11} className="text-emerald-600" />
+                          <span>Chuyển giao phả hệ</span>
+                        </div>
+                      </div>
+
+                      {/* TẦNG 2: LÔ ĐANG CHỌN (CURRENT BATCH) */}
+                      <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/30 p-4 shadow-xs ring-4 ring-emerald-500/10">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-[11px] font-bold text-white shadow-xs">
+                              📍 Lô Đang Xem
+                            </span>
+                            <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                              {selectedBatch.batch_code}
+                            </span>
+                          </div>
+                          <BatchStatusBadge status={selectedBatch.status} />
+                        </div>
+                        <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-2 border-t border-emerald-200/60 dark:border-emerald-800/60">
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Sản phẩm:</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200 truncate block">{selectedBatch.product_name}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Khối lượng ban đầu:</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{Number(selectedBatch.initial_quantity).toLocaleString()} kg</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Hiện còn lại:</span>
+                            <span className="font-bold text-emerald-700 dark:text-emerald-400">{Number(selectedBatch.remaining_quantity).toLocaleString()} kg</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Nơi lưu trữ:</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300 truncate block">{selectedBatch.current_location || "N/A"}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* MŨI TÊN KẾT NỐI TẦNG 2 ➔ TẦNG 3 */}
+                      <div className="flex items-center justify-center py-0.5">
+                        <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                          <ArrowDown size={11} className="text-indigo-600" />
+                          <span>{batchSummary?.childRelations?.length > 0 ? `Đã tách thành ${batchSummary.childRelations.length} lô con` : "Chưa chia tách"}</span>
+                        </div>
+                      </div>
+
+                      {/* TẦNG 3: CÁC LÔ CON ĐÃ CHIA (CHILDREN BATCHES) */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                            <Layers size={13} className="text-indigo-600" />
+                            Tầng 3: Các Lô Con Được Phân Chia ({batchSummary?.childRelations?.length || 0} lô)
+                          </span>
+                          {batchSummary?.childRelations?.length > 0 && (
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                              Tổng xuất: <strong className="text-slate-800 dark:text-slate-200">{batchSummary.childRelations.reduce((sum, r) => sum + Number(r.quantity), 0).toLocaleString()} kg</strong>
+                            </span>
+                          )}
+                        </div>
+
+                        {batchSummary?.childRelations?.length > 0 ? (
+                          <div className="space-y-2">
+                            {batchSummary.childRelations.map((rel, idx) => {
+                              const cBatch = filteredBatches.find((b) => b.id === rel.child_batch_id) || batches.find((b) => b.id === rel.child_batch_id);
+                              const totalInit = Number(selectedBatch.initial_quantity) || 1;
+                              const sharePercent = Math.min(100, Math.round((Number(rel.quantity) / totalInit) * 100));
+
+                              return (
+                                <div
+                                  key={`${rel.parent_batch_id}-${rel.child_batch_id}`}
+                                  className="rounded-2xl border border-indigo-100 dark:border-indigo-900/50 bg-gradient-to-br from-indigo-50/30 via-white to-slate-50 dark:from-indigo-950/20 dark:via-slate-900/50 dark:to-slate-800/40 p-3.5 transition hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-xs"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900 text-[10px] font-bold text-indigo-700 dark:text-indigo-300">
+                                        {idx + 1}
+                                      </span>
+                                      <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                                        {rel.child_batch_code}
+                                      </span>
+                                      {cBatch?.status && <BatchStatusBadge status={cBatch.status} />}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectBatch(rel.child_batch_id)}
+                                      className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900 transition"
+                                    >
+                                      Xem Lô Con <ArrowRight size={12} />
+                                    </button>
+                                  </div>
+
+                                  {/* Progress bar tỷ lệ phân bổ */}
+                                  <div className="mt-2.5">
+                                    <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
+                                      <span>Tỷ lệ so với lô mẹ: <strong>{sharePercent}%</strong></span>
+                                      <span>Số lượng nhận: <strong className="text-slate-800 dark:text-slate-200">{Number(rel.quantity).toLocaleString()} kg</strong></span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                                        style={{ width: `${sharePercent}%` }}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Thông tin chi tiết lô con */}
+                                  <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                                    <div>
+                                      <span className="text-slate-400 dark:text-slate-500 block">Hiện còn trong kho:</span>
+                                      <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                                        {cBatch ? `${Number(cBatch.remaining_quantity).toLocaleString()} kg` : "N/A"}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-slate-400 dark:text-slate-500 block">Kiểu phân chia:</span>
+                                      <span className="font-medium text-slate-800 dark:text-slate-200 capitalize">
+                                        {rel.relation_type === "split" ? "Tách lô" : rel.relation_type === "merge" ? "Gộp lô" : rel.relation_type}
+                                      </span>
+                                    </div>
+                                    <div className="col-span-2 sm:col-span-1">
+                                      <span className="text-slate-400 dark:text-slate-500 block">Nơi lưu trữ / Cửa hàng:</span>
+                                      <span className="font-medium text-slate-800 dark:text-slate-200 truncate block">
+                                        {cBatch?.current_location || cBatch?.organization_name || "Kho trung tâm"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 p-4 text-center">
+                            <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                              Lô này hiện chưa được chia tách thành lô con nào.
+                            </p>
+                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                              Toàn bộ {Number(selectedBatch.remaining_quantity).toLocaleString()} kg nông sản đang được lưu trữ nguyên vẹn tại {selectedBatch.current_location || "kho"}.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* TAB 2: TOÀN BỘ CHUỖI & DÒNG HỌ NGUỒN GỐC (FULL LINEAGE) */
+                    <div className="mt-4 space-y-3 text-xs">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">Lô tổ tiên (Ancestors):</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">{genealogy.ancestors?.length || 0} lô</span>
+                        </div>
+                        <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">Lô con cháu (Descendants):</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">{genealogy.descendants?.length || 0} lô</span>
+                        </div>
+                      </div>
+
+                      {genealogy.roots?.length > 0 && (
+                        <div className="pt-1">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">Lô gốc ban đầu (Roots):</span>
+                          <div className="space-y-1.5">
+                            {genealogy.roots.map((root) => (
+                              <div key={root.id} className="font-mono text-xs font-bold text-slate-800 dark:text-slate-100 bg-emerald-50/80 dark:bg-emerald-950/40 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 flex items-center justify-between">
+                                <span>{root.batch_code}</span>
+                                <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-normal">Lô gốc</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {genealogy.ancestors?.length > 1 && (
+                        <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">Đường truy ngược về nguồn gốc (Root Lineage)</span>
+                          <ol className="mt-2 space-y-1.5">
+                            {genealogy.ancestors.filter((item) => item.id !== selectedBatch.id).map((ancestor, index) => (
+                              <li key={ancestor.id} className="flex items-center gap-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 px-2.5 py-2">
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900 text-[10px] font-bold text-emerald-800 dark:text-emerald-300">{index + 1}</span>
+                                <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{ancestor.batch_code}</span>
+                                <span className="ml-auto text-slate-500 dark:text-slate-400">còn {Number(ancestor.remaining_quantity).toLocaleString()} kg</span>
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+                      )}
+
+                      {genealogy.descendants?.length > 0 && (
+                        <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">Tất cả các lô hậu duệ</span>
+                          <ul className="mt-2 space-y-1.5">
+                            {genealogy.descendants.map((descendant) => (
+                              <li key={descendant.id} className="grid gap-2 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/30 px-2.5 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-indigo-500">↳</span>
+                                    <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{descendant.batch_code}</span>
+                                    <BatchStatusBadge status={descendant.status} />
+                                  </div>
+                                  <p className="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                    {descendant.organization_name || "Chưa rõ tổ chức"} · {descendant.current_location || "Chưa cập nhật địa điểm"}
+                                  </p>
+                                </div>
+                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                  Còn {Number(descendant.remaining_quantity).toLocaleString()} kg
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )
                 ) : (
                   <p className="mt-3 text-xs text-slate-400 italic">
                     Chọn một lô để tải cây phả hệ nguồn gốc.
@@ -3179,6 +3439,229 @@ export default function DashboardPage() {
             }
             onConfirm={handleConfirmMergeSave}
           />
+        )}
+
+        {/* Modal kết quả chi tiết sau khi Tách lô hoặc Gộp lô (S-30) */}
+        {splitMergeResultModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 gaussian-backdrop animate-fade-in">
+            <div className="animate-modal-in modal-card-glow w-full max-w-2xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-2xl">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
+                      splitMergeResultModal.type === "split"
+                        ? "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400"
+                        : "bg-teal-100 dark:bg-teal-950/80 text-teal-600 dark:text-teal-400"
+                    } shadow-xs`}
+                  >
+                    <CheckCircle2 size={28} />
+                  </div>
+                  <div>
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wider ${
+                        splitMergeResultModal.type === "split"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-teal-600 dark:text-teal-400"
+                      }`}
+                    >
+                      {splitMergeResultModal.type === "split" ? "Hoàn tất phân tách lô" : "Hoàn tất gộp lô"}
+                    </span>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                      {splitMergeResultModal.title}
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSplitMergeResultModal((prev) => ({ ...prev, open: false }))}
+                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 transition"
+                  aria-label="Đóng"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Body */}
+              {splitMergeResultModal.type === "split" ? (
+                <div className="mt-5 space-y-4">
+                  {/* Lô Mẹ thông tin */}
+                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4 border border-slate-200/80 dark:border-slate-700">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1">
+                      🌱 Lô Mẹ (Nguồn):
+                    </span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-mono text-sm font-bold text-slate-900 dark:text-white">
+                        {splitMergeResultModal.parent?.batch_code || "Lô mẹ"}
+                      </span>
+                      <span className="text-xs text-slate-600 dark:text-slate-300">
+                        Khối lượng còn lại sau tách:{" "}
+                        <strong className="text-emerald-600 dark:text-emerald-400 font-bold">
+                          {Number(splitMergeResultModal.parent?.remaining_quantity || 0).toLocaleString()} kg
+                        </strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Danh sách các Lô Con vừa tạo */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Layers size={14} className="text-emerald-600" />
+                        Danh sách {splitMergeResultModal.children?.length || 0} Lô Con Đã Phân Chia:
+                      </span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Tổng xuất:{" "}
+                        <strong className="text-slate-800 dark:text-slate-200">
+                          {splitMergeResultModal.children
+                            ?.reduce((s, c) => s + Number(c.initial_quantity || c.remaining_quantity || 0), 0)
+                            .toLocaleString()}{" "}
+                          kg
+                        </strong>
+                      </span>
+                    </div>
+
+                    <div className="max-h-72 overflow-y-auto space-y-2.5 pr-1">
+                      {splitMergeResultModal.children?.map((child, idx) => (
+                        <div
+                          key={child.id || idx}
+                          className="rounded-2xl border border-emerald-100 dark:border-emerald-900/50 bg-gradient-to-br from-emerald-50/40 via-white to-slate-50 dark:from-emerald-950/20 dark:via-slate-900/40 dark:to-slate-800/40 p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xs"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-xs">
+                              {idx + 1}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                                  {child.batch_code}
+                                </span>
+                                <span className="rounded bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300">
+                                  Lô con mới
+                                </span>
+                                {child.status && <BatchStatusBadge status={child.status} />}
+                              </div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                <span>
+                                  Khối lượng:{" "}
+                                  <strong className="text-slate-800 dark:text-slate-200">
+                                    {Number(child.initial_quantity || child.remaining_quantity).toLocaleString()} kg
+                                  </strong>
+                                </span>
+                                {child.current_location && (
+                                  <span>
+                                    Điểm đến:{" "}
+                                    <strong className="text-slate-700 dark:text-slate-300">
+                                      {child.current_location}
+                                    </strong>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSplitMergeResultModal((prev) => ({ ...prev, open: false }));
+                              if (child.id) handleSelectBatch(child.id);
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs"
+                          >
+                            Xem lô con này <ArrowRight size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Gộp lô (Merge) */
+                <div className="mt-5 space-y-4">
+                  <div className="rounded-2xl bg-teal-50 dark:bg-teal-950/40 p-4 border border-teal-200 dark:border-teal-800">
+                    <span className="text-[11px] font-bold text-teal-800 dark:text-teal-300 uppercase tracking-wider block mb-1">
+                      📦 Lô Gộp Mới Sinh Ra:
+                    </span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-mono text-base font-bold text-teal-950 dark:text-teal-100">
+                        {splitMergeResultModal.newBatch?.batch_code}
+                      </span>
+                      <span className="text-xs font-bold text-teal-800 dark:text-teal-300">
+                        Tổng khối lượng:{" "}
+                        {Number(
+                          splitMergeResultModal.newBatch?.initial_quantity ||
+                            splitMergeResultModal.newBatch?.remaining_quantity ||
+                            0
+                        ).toLocaleString()}{" "}
+                        kg
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-teal-700 dark:text-teal-400">
+                      Vị trí lưu kho: {splitMergeResultModal.newBatch?.current_location || "Kho trung tâm"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-2">
+                      Được gộp từ {splitMergeResultModal.sourceBatches?.length || 0} lô thành phần:
+                    </span>
+                    <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                      {splitMergeResultModal.sourceBatches?.map((src) => (
+                        <div
+                          key={src.id}
+                          className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-2.5 flex items-center justify-between text-xs"
+                        >
+                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {src.batch_code}
+                          </span>
+                          <span className="text-slate-500 dark:text-slate-400">
+                            Đã gộp: {Number(src.remaining_quantity || src.initial_quantity).toLocaleString()} kg
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="mt-6 flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSplitMergeResultModal((prev) => ({ ...prev, open: false }))}
+                  className="rounded-xl bg-slate-100 dark:bg-slate-800 px-5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                >
+                  Đóng cửa sổ
+                </button>
+                {splitMergeResultModal.type === "split" && splitMergeResultModal.parent?.id && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parentId = splitMergeResultModal.parent.id;
+                      setSplitMergeResultModal((prev) => ({ ...prev, open: false }));
+                      handleSelectBatch(parentId);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-5 py-2.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900 transition"
+                  >
+                    Xem Lô Mẹ ({splitMergeResultModal.parent?.batch_code}) <ArrowRight size={14} />
+                  </button>
+                )}
+                {splitMergeResultModal.type === "merge" && splitMergeResultModal.newBatch?.id && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newId = splitMergeResultModal.newBatch.id;
+                      setSplitMergeResultModal((prev) => ({ ...prev, open: false }));
+                      handleSelectBatch(newId);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-teal-700 transition shadow-sm"
+                  >
+                    Mở Xem Lô Gộp Mới <ArrowRight size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>

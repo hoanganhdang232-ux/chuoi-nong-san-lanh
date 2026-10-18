@@ -6,6 +6,9 @@ import {
   Trash2,
   Boxes,
   X,
+  CheckCircle2,
+  ArrowRight,
+  Layers,
 } from "lucide-react";
 import { api } from "../api.js";
 import { useToast } from "../context/ToastContext.jsx";
@@ -36,6 +39,11 @@ export default function LocationsView({
     { locationId: "", quantity: "" },
   ]);
   const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const [distributeResultModal, setDistributeResultModal] = useState({
+    open: false,
+    parentBatch: null,
+    children: [],
+  });
   const selectedBatch = batches.find((batch) => String(batch.id) === selectedBatchId);
   const totalDistribution = distributionAllocations.reduce(
     (total, allocation) => total + (Number(allocation.quantity) || 0),
@@ -117,8 +125,17 @@ export default function LocationsView({
         locationId: Number(allocation.locationId),
         quantity: Number(allocation.quantity),
       }));
+      const currentBatchObj = batches.find((batch) => String(batch.id) === selectedBatchId);
       const result = await api.distributeBatchToStores(Number(selectedBatchId), allocations);
       toast.success(result.message || `Đã chia lô cho ${allocations.length} cửa hàng.`);
+      
+      // Hiển thị modal chi tiết các lô con đã chia cho từng cửa hàng
+      setDistributeResultModal({
+        open: true,
+        parentBatch: currentBatchObj,
+        children: result.children || [],
+      });
+
       setAssignModalOpen(false);
       setSelectedBatchId("");
       setDistributionAllocations([
@@ -462,6 +479,129 @@ export default function LocationsView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal kết quả chi tiết các lô con đã chia về từng cửa hàng */}
+      {distributeResultModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 gaussian-backdrop animate-fade-in">
+          <div className="animate-modal-in modal-card-glow w-full max-w-2xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-2xl">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 shadow-xs">
+                  <CheckCircle2 size={28} />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    Phân Phối Thành Công (S-30)
+                  </span>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Đã chia lô về từng cửa hàng
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDistributeResultModal((prev) => ({ ...prev, open: false }))}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 transition"
+                aria-label="Đóng"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="mt-5 space-y-4">
+              {/* Lô Mẹ nguồn */}
+              <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4 border border-slate-200/80 dark:border-slate-700">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1">
+                  🌱 Lô Mẹ Phân Phối:
+                </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-mono text-sm font-bold text-slate-900 dark:text-white">
+                    {distributeResultModal.parentBatch?.batch_code || "Lô nguồn"}
+                  </span>
+                  <span className="text-xs text-slate-600 dark:text-slate-300">
+                    Sản phẩm: <strong className="text-slate-800 dark:text-slate-200">{distributeResultModal.parentBatch?.product_name || "Nông sản"}</strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* Danh sách các lô con đã gửi về từng cửa hàng */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Layers size={14} className="text-emerald-600" />
+                    Danh sách {distributeResultModal.children?.length || 0} Lô Con Đã Tạo Mới:
+                  </span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Tổng xuất:{" "}
+                    <strong className="text-slate-800 dark:text-slate-200">
+                      {distributeResultModal.children
+                        ?.reduce((s, c) => s + Number(c.initial_quantity || c.remaining_quantity || 0), 0)
+                        .toLocaleString()}{" "}
+                      kg
+                    </strong>
+                  </span>
+                </div>
+
+                <div className="max-h-72 overflow-y-auto space-y-2.5 pr-1">
+                  {distributeResultModal.children?.map((child, idx) => (
+                    <div
+                      key={child.id || idx}
+                      className="rounded-2xl border border-emerald-100 dark:border-emerald-900/50 bg-gradient-to-br from-emerald-50/40 via-white to-slate-50 dark:from-emerald-950/20 dark:via-slate-900/40 dark:to-slate-800/40 p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-xs">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                              {child.batch_code}
+                            </span>
+                            <span className="rounded bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300">
+                              Lô con mới
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                            <span>
+                              Khối lượng:{" "}
+                              <strong className="text-slate-800 dark:text-slate-200">
+                                {Number(child.initial_quantity || child.remaining_quantity).toLocaleString()} kg
+                              </strong>
+                            </span>
+                            <span>
+                              Cửa hàng tiếp nhận:{" "}
+                              <strong className="text-emerald-700 dark:text-emerald-300">
+                                {child.current_location || "Cửa hàng chi nhánh"}
+                              </strong>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                        Đã sẵn sàng bán
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-6 flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDistributeResultModal((prev) => ({ ...prev, open: false }))}
+                className="rounded-xl bg-emerald-600 px-6 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-sm"
+              >
+                Đã hiểu & Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
