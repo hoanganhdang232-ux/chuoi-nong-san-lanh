@@ -12,12 +12,9 @@ import {
   History,
   MapPin,
   FileSpreadsheet,
-  Moon,
-  Sun,
   Menu,
   X,
 } from "lucide-react";
-import { useTheme } from "../context/ThemeContext.jsx";
 
 const menuByRole = {
   farm_admin: [
@@ -76,7 +73,6 @@ const menuByRole = {
 
 export default function Sidebar({ user, currentView, onSelectView, onLogout }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { isDark, toggleTheme } = useTheme();
   const items = menuByRole[user?.role] || menuByRole.user;
 
   const handleSelect = (label) => {
@@ -137,16 +133,6 @@ export default function Sidebar({ user, currentView, onSelectView, onLogout }) {
             </div>
 
             <div className="flex items-center gap-1.5">
-              {/* Light / Dark Mode Toggle */}
-              <button
-                type="button"
-                onClick={toggleTheme}
-                title={isDark ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối"}
-                className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer active:scale-95"
-              >
-                {isDark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-slate-700" />}
-              </button>
-
               {/* Logout Button */}
               <button
                 type="button"
@@ -226,14 +212,6 @@ export default function Sidebar({ user, currentView, onSelectView, onLogout }) {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
-            title="Đổi giao diện"
-          >
-            {isDark ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}
-          </button>
           <button
             type="button"
             onClick={() => setMobileOpen(true)}

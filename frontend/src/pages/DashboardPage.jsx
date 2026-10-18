@@ -25,8 +25,6 @@ import {
   Boxes,
   X,
   XCircle,
-  Sun,
-  Moon,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import LineageGraphView from "../components/LineageGraphView.jsx";
@@ -38,7 +36,6 @@ import ConfirmSaveModal from "../components/ConfirmSaveModal.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
-import { useTheme } from "../context/ThemeContext.jsx";
 
 const EVENT_META = {
   batch_harvested:           { label: "Thu hoạch",           color: "bg-emerald-100 text-emerald-700",  icon: Tractor },
@@ -213,7 +210,6 @@ const MERGE_PREVIEW_SCHEMA = [
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const toast = useToast();
-  const { isDark, toggleTheme } = useTheme();
   const [dashboard, setDashboard] = useState(null);
   const [batches, setBatches] = useState([]);
   const [transferRequests, setTransferRequests] = useState([]);
@@ -763,6 +759,22 @@ export default function DashboardPage() {
       });
       return;
     }
+
+    // Kiểm tra và ngăn chặn chọn ngày giờ thu hoạch trong tương lai
+    if (harvestForm.harvestedAt) {
+      const todayStr = new Date().toISOString().split("T")[0];
+      const selectedDate = new Date(harvestForm.harvestedAt);
+      const now = new Date();
+      if (harvestForm.harvestedAt > todayStr || selectedDate > now) {
+        toast.error("Ngày thu hoạch không được đặt trong tương lai. Vui lòng chọn ngày hôm nay hoặc trước đó.");
+        setSubmission({
+          message: "Ngày thu hoạch không hợp lệ: Không được chọn ngày trong tương lai.",
+          tone: "error",
+        });
+        return;
+      }
+    }
+
     const selectedPlot = landPlots.find((p) => String(p.id) === String(harvestForm.landPlotId));
     const selectedProduct = products.find((p) => String(p.id) === String(harvestForm.productId));
     setConfirmHarvestModal({
@@ -990,26 +1002,6 @@ export default function DashboardPage() {
                 </span>
               </div>
             </div>
-
-            {/* Prominent Theme Toggle Button in Header */}
-            <button
-              type="button"
-              onClick={toggleTheme}
-              title={isDark ? "Chuyển sang giao diện Sáng" : "Chuyển sang giao diện Tối"}
-              className="flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer active:scale-95"
-            >
-              {isDark ? (
-                <>
-                  <Sun size={15} className="text-amber-400" />
-                  <span>Giao diện Sáng</span>
-                </>
-              ) : (
-                <>
-                  <Moon size={15} className="text-slate-700 dark:text-slate-300" />
-                  <span>Giao diện Tối</span>
-                </>
-              )}
-            </button>
           </div>
         </header>
 
@@ -1172,45 +1164,49 @@ export default function DashboardPage() {
               <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-bold text-slate-900">
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                       Giám sát chuỗi lạnh
                     </h2>
                     {selectedBatch && (
-                      <span className="font-mono text-xs text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-md">
+                      <span className="font-mono text-xs text-slate-600 dark:text-slate-300 font-semibold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
                         {selectedBatch.batch_code}
                       </span>
                     )}
                   </div>
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between rounded-xl bg-emerald-50/80 p-4 border border-emerald-100">
+                    <div className="flex items-center justify-between rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 p-4 border border-emerald-200/80 dark:border-emerald-800/60 shadow-2xs">
                       <div className="flex items-center gap-3">
-                        <Thermometer className="text-emerald-600" size={20} />
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+                          <Thermometer size={20} />
+                        </div>
                         <div>
-                          <p className="text-xs text-slate-500">Nhiệt độ hiện tại</p>
-                          <p className="font-bold text-slate-800">Cảm biến thời gian thực</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Nhiệt độ hiện tại</p>
+                          <p className="font-bold text-slate-800 dark:text-slate-100">Cảm biến thời gian thực</p>
                         </div>
                       </div>
-                      <span className="font-mono text-2xl font-black text-emerald-700">
+                      <span className="font-mono text-2xl font-black text-emerald-700 dark:text-emerald-400">
                         {selectedBatch?.temperature_c ?? 9}°C
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between rounded-xl bg-amber-50/80 p-4 border border-amber-100">
+                    <div className="flex items-center justify-between rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 p-4 border border-amber-200/80 dark:border-amber-800/60 shadow-2xs">
                       <div className="flex items-center gap-3">
-                        <AlertTriangle className="text-amber-600" size={20} />
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">
+                          <AlertTriangle size={20} />
+                        </div>
                         <div>
-                          <p className="text-xs text-slate-500">Ngưỡng chuẩn quy định</p>
-                          <p className="font-bold text-slate-800">Tiêu chuẩn bảo quản lạnh</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Ngưỡng chuẩn quy định</p>
+                          <p className="font-bold text-slate-800 dark:text-slate-100">Tiêu chuẩn bảo quản lạnh</p>
                         </div>
                       </div>
-                      <span className="font-mono text-xl font-bold text-amber-700">≤ 8°C</span>
+                      <span className="font-mono text-xl font-bold text-amber-700 dark:text-amber-400">≤ 8°C</span>
                     </div>
 
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-                        <MapPin size={15} /> Vị trí lưu kho / hiện tại
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 p-4">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        <MapPin size={15} className="text-emerald-600 dark:text-emerald-400" /> Vị trí lưu kho / hiện tại
                       </div>
-                      <p className="mt-1.5 font-bold text-slate-800">
+                      <p className="mt-1.5 font-bold text-slate-800 dark:text-slate-100">
                         {selectedBatch?.current_location || "Chưa cập nhật"}
                       </p>
                     </div>
@@ -1218,13 +1214,13 @@ export default function DashboardPage() {
                 </div>
 
                 {selectedBatch?.cold_chain_alert ? (
-                  <div className="mt-4 rounded-xl bg-rose-50 p-3 border border-rose-200 flex items-center gap-2 text-xs text-rose-800 font-semibold">
-                    <AlertTriangle size={16} className="text-rose-600 flex-shrink-0" />
+                  <div className="mt-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 p-3.5 border border-rose-200 dark:border-rose-800/60 flex items-center gap-2.5 text-xs text-rose-800 dark:text-rose-300 font-semibold">
+                    <AlertTriangle size={18} className="text-rose-600 dark:text-rose-400 flex-shrink-0" />
                     <span>Lô hàng này có vi phạm chuỗi lạnh trong lịch sử!</span>
                   </div>
                 ) : (
-                  <div className="mt-4 rounded-xl bg-emerald-50/60 p-3 border border-emerald-100 flex items-center gap-2 text-xs text-emerald-800 font-medium">
-                    <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
+                  <div className="mt-4 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 p-3.5 border border-emerald-200/80 dark:border-emerald-800/60 flex items-center gap-2.5 text-xs text-emerald-800 dark:text-emerald-300 font-medium">
+                    <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                     <span>Chuỗi lạnh duy trì đạt chuẩn an toàn.</span>
                   </div>
                 )}
@@ -1365,17 +1361,29 @@ export default function DashboardPage() {
                     })
                   }
                 />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="date"
-                  value={harvestForm.harvestedAt}
-                  onChange={(event) =>
-                    setHarvestForm({
-                      ...harvestForm,
-                      harvestedAt: event.target.value,
-                    })
-                  }
-                />
+                <div className="flex flex-col">
+                  <input
+                    className={`rounded-xl border px-3 py-2 ${
+                      harvestForm.harvestedAt && harvestForm.harvestedAt > new Date().toISOString().split("T")[0]
+                        ? "border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    type="date"
+                    max={new Date().toISOString().split("T")[0]}
+                    value={harvestForm.harvestedAt}
+                    onChange={(event) =>
+                      setHarvestForm({
+                        ...harvestForm,
+                        harvestedAt: event.target.value,
+                      })
+                    }
+                  />
+                  {harvestForm.harvestedAt && harvestForm.harvestedAt > new Date().toISOString().split("T")[0] && (
+                    <span className="mt-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                      ⚠️ Không được đặt ngày trong tương lai.
+                    </span>
+                  )}
+                </div>
               </div>
               <button
                 className="mt-4 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white"
@@ -2242,10 +2250,10 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* Modal xác nhận hoặc từ chối bàn giao kèm lý do */}
+        {/* Modal xác nhận hoặc từ chối bàn giao kèm lý do (Mở rộng max-w-2xl) */}
         {decisionModal.open && decisionModal.transfer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 gaussian-backdrop animate-fade-in">
-            <div className="animate-modal-in modal-card-glow w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl">
+            <div className="animate-modal-in modal-card-glow w-full max-w-2xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-7 shadow-2xl">
               {/* Modal Header */}
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">

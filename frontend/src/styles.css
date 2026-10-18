@@ -319,13 +319,13 @@ pre,
    transition seamlessly to sleek SaaS Dark Mode when toggled.
    ======================================================== */
 .dark body {
-  background-color: #090d16 !important;
+  background-color: #0b1120 !important;
   color: #f8fafc !important;
 }
 
 /* Card surfaces */
 .dark .bg-white {
-  background-color: #0f172a !important;
+  background-color: #151f32 !important;
 }
 
 .dark .bg-slate-50,
@@ -334,16 +334,16 @@ pre,
 .dark .bg-slate-50\/70,
 .dark .bg-slate-50\/80,
 .dark .bg-slate-50\/90 {
-  background-color: #141c2e !important;
+  background-color: #1a263c !important;
 }
 
 .dark .bg-slate-100 {
-  background-color: #1e293b !important;
+  background-color: #1f2d47 !important;
 }
 
 /* Text colors */
 .dark .text-slate-900 {
-  color: #f8fafc !important;
+  color: #ffffff !important;
 }
 
 .dark .text-slate-800 {
@@ -370,26 +370,26 @@ pre,
 .dark .border-slate-200\/90,
 .dark .border-slate-100,
 .dark .border-slate-300 {
-  border-color: #243049 !important;
+  border-color: #273752 !important;
 }
 
 .dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
 .dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
-  border-color: #243049 !important;
+  border-color: #273752 !important;
 }
 
 .dark .ring-slate-200,
 .dark .ring-slate-900\/10 {
-  --tw-ring-color: #243049 !important;
+  --tw-ring-color: #273752 !important;
 }
 
 /* Form Controls */
 .dark input:not([type="checkbox"]):not([type="radio"]),
 .dark select,
 .dark textarea {
-  background-color: #0b1120 !important;
+  background-color: #0e1626 !important;
   color: #f8fafc !important;
-  border-color: #334155 !important;
+  border-color: #334668 !important;
 }
 
 .dark input:not([type="checkbox"]):not([type="radio"]):focus,
@@ -406,29 +406,37 @@ pre,
 
 /* Tables in dark mode */
 .dark thead {
-  background-color: #0b1120 !important;
+  background-color: #111a2b !important;
   color: #cbd5e1 !important;
-  border-color: #243049 !important;
+  border-color: #273752 !important;
 }
 
 .dark thead th {
-  background-color: #0b1120 !important;
+  background-color: #111a2b !important;
   color: #94a3b8 !important;
-  border-color: #243049 !important;
+  border-color: #273752 !important;
+}
+
+.dark tbody tr {
+  background-color: #151f32;
+}
+
+.dark tbody tr:nth-child(even) {
+  background-color: #182338;
 }
 
 .dark tbody tr:hover {
-  background-color: rgba(16, 185, 129, 0.12) !important;
+  background-color: rgba(16, 185, 129, 0.14) !important;
 }
 
 /* Shadows in dark mode */
 .dark .card-shadow {
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5) !important;
-  border-color: #243049 !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.6) !important;
+  border-color: #273752 !important;
 }
 
 .dark .card-shadow-hover:hover {
-  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.7) !important;
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.75) !important;
   border-color: rgba(16, 185, 129, 0.5) !important;
 }
 
