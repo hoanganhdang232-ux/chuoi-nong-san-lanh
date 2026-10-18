@@ -25,6 +25,8 @@ import {
   Boxes,
   X,
   XCircle,
+  Sun,
+  Moon,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import LineageGraphView from "../components/LineageGraphView.jsx";
@@ -36,6 +38,7 @@ import ConfirmSaveModal from "../components/ConfirmSaveModal.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
+import { useTheme } from "../context/ThemeContext.jsx";
 
 const EVENT_META = {
   batch_harvested:           { label: "Thu hoạch",           color: "bg-emerald-100 text-emerald-700",  icon: Tractor },
@@ -210,6 +213,7 @@ const MERGE_PREVIEW_SCHEMA = [
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const toast = useToast();
+  const { isDark, toggleTheme } = useTheme();
   const [dashboard, setDashboard] = useState(null);
   const [batches, setBatches] = useState([]);
   const [transferRequests, setTransferRequests] = useState([]);
@@ -1002,6 +1006,26 @@ export default function DashboardPage() {
                 </span>
               </div>
             </div>
+
+            {/* Nút chuyển đổi giao diện Sáng / Tối chính thức của hệ thống */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              title={isDark ? "Chuyển sang giao diện Sáng" : "Chuyển sang giao diện Tối"}
+              className="flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer active:scale-95"
+            >
+              {isDark ? (
+                <>
+                  <Sun size={15} className="text-amber-400" />
+                  <span>Sáng</span>
+                </>
+              ) : (
+                <>
+                  <Moon size={15} className="text-slate-600" />
+                  <span>Tối</span>
+                </>
+              )}
+            </button>
           </div>
         </header>
 
@@ -2250,13 +2274,13 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* Modal xác nhận hoặc từ chối bàn giao kèm lý do (Mở rộng max-w-2xl) */}
+        {/* Modal xác nhận hoặc từ chối bàn giao kèm lý do (Mở rộng max-w-3xl) */}
         {decisionModal.open && decisionModal.transfer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 gaussian-backdrop animate-fade-in">
-            <div className="animate-modal-in modal-card-glow w-full max-w-2xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-7 shadow-2xl">
+            <div className="animate-modal-in modal-card-glow w-full max-w-3xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 shadow-2xl">
               {/* Modal Header */}
               <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                   <div
                     className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
                       decisionModal.decision === "confirmed"
@@ -2271,12 +2295,12 @@ export default function DashboardPage() {
                     )}
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">
                       {decisionModal.decision === "confirmed"
                         ? "Xác nhận nhận bàn giao lô hàng"
                         : "Từ chối nhận bàn giao lô hàng"}
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                       {decisionModal.decision === "confirmed"
                         ? "Lô hàng sẽ được chuyển quyền sở hữu sang tổ chức của bạn."
                         : "Lô hàng sẽ được hoàn trả về trạng thái của bên gửi."}
@@ -2287,9 +2311,9 @@ export default function DashboardPage() {
                   type="button"
                   onClick={closeDecisionModal}
                   disabled={decisionModal.submitting}
-                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition cursor-pointer"
+                  className="rounded-xl p-2.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition cursor-pointer"
                 >
-                  <X size={18} />
+                  <X size={20} />
                 </button>
               </div>
 
@@ -2393,12 +2417,12 @@ export default function DashboardPage() {
                   />
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-2">
+                <div className="flex items-center justify-end gap-4 pt-3">
                   <button
                     type="button"
                     disabled={decisionModal.submitting}
                     onClick={closeDecisionModal}
-                    className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer"
+                    className="min-w-[120px] rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 py-3.5 text-sm sm:text-base font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
@@ -2409,22 +2433,22 @@ export default function DashboardPage() {
                       (decisionModal.decision === "rejected" &&
                         decisionModal.reason.trim().length < 10)
                     }
-                    className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:opacity-50 cursor-pointer ${
+                    className={`min-w-[210px] flex items-center justify-center gap-2.5 rounded-2xl px-8 py-3.5 text-sm sm:text-base font-bold text-white shadow-lg transition disabled:opacity-50 cursor-pointer ${
                       decisionModal.decision === "confirmed"
-                        ? "bg-emerald-600 hover:bg-emerald-700"
-                        : "bg-rose-600 hover:bg-rose-700"
+                        ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-700/30"
+                        : "bg-rose-600 hover:bg-rose-700 shadow-rose-700/30"
                     }`}
                   >
                     {decisionModal.submitting ? (
                       <span>Đang xử lý...</span>
                     ) : decisionModal.decision === "confirmed" ? (
                       <>
-                        <CheckCircle2 size={16} />
+                        <CheckCircle2 size={18} />
                         <span>Xác nhận tiếp nhận</span>
                       </>
                     ) : (
                       <>
-                        <XCircle size={16} />
+                        <XCircle size={18} />
                         <span>Từ chối tiếp nhận</span>
                       </>
                     )}
