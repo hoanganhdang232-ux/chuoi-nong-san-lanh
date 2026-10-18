@@ -27,6 +27,16 @@ export function runMigrations() {
       FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
 
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
     CREATE TABLE IF NOT EXISTS farms (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       organization_id INTEGER NOT NULL,
@@ -58,22 +68,48 @@ export function runMigrations() {
       FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
 
+    CREATE TABLE IF NOT EXISTS locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      organization_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      address TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (organization_id) REFERENCES organizations(id)
+    );
+
     CREATE TABLE IF NOT EXISTS batches (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       batch_code TEXT NOT NULL UNIQUE,
       product_id INTEGER NOT NULL,
       organization_id INTEGER NOT NULL,
       source_farm_id INTEGER,
+      location_id INTEGER,
       initial_quantity REAL NOT NULL,
       remaining_quantity REAL NOT NULL,
       current_location TEXT,
       temperature_c REAL,
-      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled')),
+      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE')),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (product_id) REFERENCES products(id),
       FOREIGN KEY (organization_id) REFERENCES organizations(id),
-      FOREIGN KEY (source_farm_id) REFERENCES farms(id)
+      FOREIGN KEY (source_farm_id) REFERENCES farms(id),
+      FOREIGN KEY (location_id) REFERENCES locations(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      organization_id INTEGER,
+      action TEXT NOT NULL,
+      resource_type TEXT,
+      resource_id TEXT,
+      ip_address TEXT,
+      status_code INTEGER,
+      request_body TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
 
     CREATE TABLE IF NOT EXISTS event_logs (
@@ -95,7 +131,7 @@ export function runMigrations() {
       from_organization_id INTEGER NOT NULL,
       to_organization_id INTEGER NOT NULL,
       requester_id INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','rejected')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','rejected','cancelled')),
       note TEXT,
       reason TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -258,7 +294,7 @@ export function runMigrations() {
       )
       .get()?.sql || "";
 
-  if (!batchTableSql.includes("pending_confirmation")) {
+  if (!batchTableSql.includes("'consumed'")) {
     db.exec("PRAGMA foreign_keys = OFF;");
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -274,16 +310,20 @@ export function runMigrations() {
           source_batch_ids TEXT,
           initial_quantity REAL NOT NULL,
           remaining_quantity REAL NOT NULL,
+          consumed_quantity REAL NOT NULL DEFAULT 0,
           current_location TEXT,
+          location_id INTEGER,
           temperature_c REAL,
-          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled')),
+          cold_chain_alert INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE')),
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (product_id) REFERENCES products(id),
           FOREIGN KEY (organization_id) REFERENCES organizations(id),
           FOREIGN KEY (source_farm_id) REFERENCES farms(id),
           FOREIGN KEY (parent_batch_id) REFERENCES batches(id),
-          FOREIGN KEY (root_batch_id) REFERENCES batches(id)
+          FOREIGN KEY (root_batch_id) REFERENCES batches(id),
+          FOREIGN KEY (location_id) REFERENCES locations(id)
         );
       `);
 
@@ -302,8 +342,10 @@ export function runMigrations() {
         FROM batches;
       `);
 
+      db.exec("DROP VIEW IF EXISTS lots;");
       db.exec("DROP TABLE batches;");
       db.exec("ALTER TABLE batches_new RENAME TO batches;");
+      db.exec("CREATE VIEW IF NOT EXISTS lots AS SELECT * FROM batches;");
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -324,6 +366,100 @@ export function runMigrations() {
   if (!transferColumns.includes("overdue_notified_at")) {
     db.exec("ALTER TABLE batch_transfers ADD COLUMN overdue_notified_at TEXT");
   }
+
+  const transferTableSql =
+    db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'batch_transfers'",
+      )
+      .get()?.sql || "";
+
+  if (transferTableSql && !transferTableSql.includes("'cancelled'")) {
+    db.exec("PRAGMA foreign_keys = OFF;");
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE batch_transfers_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          batch_id INTEGER NOT NULL,
+          from_organization_id INTEGER NOT NULL,
+          to_organization_id INTEGER NOT NULL,
+          requester_id INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','rejected','cancelled')),
+          note TEXT,
+          reason TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          overdue_notified_at TEXT,
+          FOREIGN KEY (batch_id) REFERENCES batches(id),
+          FOREIGN KEY (from_organization_id) REFERENCES organizations(id),
+          FOREIGN KEY (to_organization_id) REFERENCES organizations(id),
+          FOREIGN KEY (requester_id) REFERENCES users(id)
+        );
+        INSERT INTO batch_transfers_new (
+          id, batch_id, from_organization_id, to_organization_id, requester_id,
+          status, note, reason, created_at, updated_at, overdue_notified_at
+        )
+        SELECT
+          id, batch_id, from_organization_id, to_organization_id, requester_id,
+          status, note, reason, created_at, updated_at, overdue_notified_at
+        FROM batch_transfers;
+        DROP TABLE batch_transfers;
+        ALTER TABLE batch_transfers_new RENAME TO batch_transfers;
+      `);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    } finally {
+      db.exec("PRAGMA foreign_keys = ON;");
+    }
+  }
+
+  db.exec(`
+    CREATE VIEW IF NOT EXISTS lots AS SELECT * FROM batches;
+    CREATE VIEW IF NOT EXISTS lot_transfers AS
+    SELECT
+      id,
+      batch_id AS lot_id,
+      from_organization_id AS sender_org_id,
+      to_organization_id AS receiver_org_id,
+      CASE
+        WHEN status = 'pending' THEN 'PENDING'
+        WHEN status = 'confirmed' THEN 'APPROVED'
+        WHEN status = 'rejected' THEN 'REJECTED'
+        WHEN status = 'cancelled' THEN 'CANCELLED'
+        ELSE UPPER(status)
+      END AS status,
+      reason AS reject_reason,
+      created_at,
+      updated_at
+    FROM batch_transfers;
+
+    CREATE TABLE IF NOT EXISTS batch_lineage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_batch_id INTEGER NOT NULL,
+      child_batch_id INTEGER NOT NULL,
+      quantity_transferred REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (parent_batch_id) REFERENCES batches(id),
+      FOREIGN KEY (child_batch_id) REFERENCES batches(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_batch_lineage_parent ON batch_lineage(parent_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_batch_lineage_child ON batch_lineage(child_batch_id);
+
+    CREATE VIEW IF NOT EXISTS events AS
+    SELECT
+      id,
+      batch_id,
+      event_type,
+      actor_id,
+      data_json AS payload,
+      previous_hash AS prev_hash,
+      current_hash AS hash,
+      timestamp AS created_at
+    FROM event_logs;
+  `);
   if (!refreshedBatchColumns.includes("cold_chain_alert")) {
     db.exec(
       "ALTER TABLE batches ADD COLUMN cold_chain_alert INTEGER NOT NULL DEFAULT 0",
@@ -332,6 +468,11 @@ export function runMigrations() {
   if (!refreshedBatchColumns.includes("consumed_quantity")) {
     db.exec(
       "ALTER TABLE batches ADD COLUMN consumed_quantity REAL NOT NULL DEFAULT 0",
+    );
+  }
+  if (!refreshedBatchColumns.includes("location_id")) {
+    db.exec(
+      "ALTER TABLE batches ADD COLUMN location_id INTEGER REFERENCES locations(id)",
     );
   }
 
@@ -351,6 +492,11 @@ export function runMigrations() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_users_organization_role ON users(organization_id, role);
     CREATE INDEX IF NOT EXISTS idx_batches_organization ON batches(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_batches_location ON batches(location_id);
+    CREATE INDEX IF NOT EXISTS idx_locations_org ON locations(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_org ON audit_logs(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_event_logs_batch ON event_logs(batch_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_batch_transfers_status ON batch_transfers(status);
     CREATE INDEX IF NOT EXISTS idx_temperature_logs_batch_time ON temperature_logs(batch_id, timestamp);
@@ -369,6 +515,18 @@ export function runMigrations() {
     BEFORE DELETE ON event_logs
     BEGIN
       SELECT RAISE(ABORT, 'event_logs are immutable');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS audit_logs_prevent_update
+    BEFORE UPDATE ON audit_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'audit_logs are immutable');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS audit_logs_prevent_delete
+    BEFORE DELETE ON audit_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'audit_logs are immutable');
     END;
   `);
 
@@ -391,5 +549,8 @@ export function runMigrations() {
 
   db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
     "001_initial_schema",
+  );
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+    "004_sprint4_schema",
   );
 }

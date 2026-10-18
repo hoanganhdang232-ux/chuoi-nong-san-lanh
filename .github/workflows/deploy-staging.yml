@@ -1,5 +1,6 @@
 name: Deploy staging
 
+# Chạy sau khi CI workflow hoàn thành trên nhánh main
 on:
   workflow_run:
     workflows:
@@ -14,15 +15,41 @@ permissions:
 
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: Deploy to Render staging
+    # Chỉ deploy khi CI pass VÀ commit thuộc nhánh main
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Render deployment
+      - name: Trigger Render Deploy Hook
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "RENDER_DEPLOY_HOOK_URL is not configured." >&2
+            echo "::error::RENDER_DEPLOY_HOOK_URL chưa được cấu hình trong GitHub Secrets."
+            echo "Hướng dẫn:"
+            echo "  1. Vào Render dashboard → chọn service agritrace-staging"
+            echo "  2. Settings → Deploy Hook → Copy URL"
+            echo "  3. GitHub repo → Settings → Secrets → Actions → New secret"
+            echo "  4. Name: RENDER_DEPLOY_HOOK_URL  Value: <URL vừa copy>"
             exit 1
           fi
-          curl --fail --silent --show-error --request POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Triggering Render deployment for commit ${{ github.event.workflow_run.head_sha }}..."
+          RESPONSE=$(curl \
+            --fail \
+            --silent \
+            --show-error \
+            --write-out "\n%{http_code}" \
+            --request POST \
+            "$RENDER_DEPLOY_HOOK_URL")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "Response: $BODY"
+          echo "HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Staging deployment triggered successfully."
+          else
+            echo "::error::Deployment trigger failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi

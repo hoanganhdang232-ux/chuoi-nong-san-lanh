@@ -2,33 +2,188 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   ArrowRightLeft,
   Box,
   CheckCircle2,
+  Clock,
   Droplets,
   Download,
   ExternalLink,
   MapPin,
+  Pencil,
   Plus,
+  ShieldAlert,
   ShieldCheck,
   Siren,
   Thermometer,
+  Tractor,
+  Truck,
+  ClipboardList,
+  ShoppingCart,
+  Network,
+  X,
+  XCircle,
+  Sun,
+  Moon,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
+import LineageGraphView from "../components/LineageGraphView.jsx";
+import LocationsView from "../components/LocationsView.jsx";
+import AuditLogsView from "../components/AuditLogsView.jsx";
+import CsvImportView from "../components/CsvImportView.jsx";
+import ConsumeModal from "../components/ConsumeModal.jsx";
+import ConfirmSaveModal from "../components/ConfirmSaveModal.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useToast } from "../context/ToastContext.jsx";
+import { useTheme } from "../context/ThemeContext.jsx";
 
-const statusColors = {
-  registered: "bg-slate-100 text-slate-700",
-  pending_confirmation: "bg-amber-100 text-amber-700",
-  processed: "bg-blue-100 text-blue-700",
-  in_transit: "bg-amber-100 text-amber-700",
-  delivered: "bg-emerald-100 text-emerald-700",
-  recalled: "bg-rose-100 text-rose-700",
+const EVENT_META = {
+  batch_harvested:           { label: "Thu hoạch",           color: "bg-emerald-100 text-emerald-700",  icon: Tractor },
+  batch_imported:            { label: "Nhập lô từ CSV",       color: "bg-cyan-100 text-cyan-700",        icon: ClipboardList },
+  batch_processed:           { label: "Đã sơ chế",           color: "bg-blue-100 text-blue-700",       icon: ClipboardList },
+  batch_in_transit:          { label: "Đang vận chuyển",     color: "bg-amber-100 text-amber-700",    icon: Truck },
+  batch_delivered:           { label: "Đã giao",             color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
+  batch_transfer_requested:  { label: "Yêu cầu bàn giao",  color: "bg-violet-100 text-violet-700",   icon: ArrowRightLeft },
+  batch_transferred:         { label: "Xác nhận bàn giao", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
+  batch_transfer_rejected:   { label: "Từ chối bàn giao",  color: "bg-rose-100 text-rose-700",      icon: ShieldAlert },
+  batch_recalled:            { label: "Thu hồi",             color: "bg-rose-100 text-rose-700",      icon: Siren },
+  cold_chain_violation:      { label: "Vi phạm chuỗi lạnh",color: "bg-orange-100 text-orange-700",  icon: AlertTriangle },
+  temperature_series_recorded:{ label: "Ghi cảm biến",      color: "bg-sky-100 text-sky-700",        icon: Thermometer },
+  temperature_check:         { label: "Kiểm tra nhiệt độ", color: "bg-sky-100 text-sky-700",        icon: Thermometer },
+  temperature_violation:     { label: "Vi phạm nhiệt độ",  color: "bg-orange-100 text-orange-700",  icon: AlertTriangle },
+  batch_split:               { label: "Tách lô",             color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
+  batch_split_child:         { label: "Lô con (tách)",       color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
+  batch_split_parent:        { label: "Lô cha (tách)",       color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
+  batch_merge:               { label: "Gộp lô",              color: "bg-teal-100 text-teal-700",      icon: ArrowRightLeft },
+  SPLIT:                     { label: "Tách lô (SPLIT)",     color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
+  SPLIT_CHILD:               { label: "Lô con (SPLIT_CHILD)",color: "bg-indigo-100 text-indigo-700",  icon: ArrowRightLeft },
+  MERGE:                     { label: "Gộp lô (MERGE)",      color: "bg-teal-100 text-teal-700",      icon: ArrowRightLeft },
+  MERGE_CHILD:               { label: "Lô gộp (MERGE_CHILD)",color: "bg-teal-100 text-teal-700",      icon: ArrowRightLeft },
+  batch_consumed:            { label: "Đã tiêu thụ",         color: "bg-slate-100 text-slate-700",    icon: ShoppingCart },
+  location_assigned:         { label: "Gán địa điểm nội bộ", color: "bg-cyan-100 text-cyan-700",      icon: MapPin },
 };
+
+function EventBadge({ eventType }) {
+  const meta = EVENT_META[eventType] || { label: eventType, color: "bg-slate-100 text-slate-600", icon: ClipboardList };
+  const Icon = meta.icon;
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${meta.color}`}>
+      <Icon size={12} />
+      {meta.label}
+    </span>
+  );
+}
+
+function DataField({ label, value }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="text-xs text-slate-400 min-w-fit">{label}:</span>
+      <span className="text-xs text-slate-700 font-medium break-all">{String(value)}</span>
+    </div>
+  );
+}
+
+function HashBadge({ label, hash }) {
+  const [copied, setCopied] = useState(false);
+  if (!hash) return null;
+  const short = hash.startsWith("GENESIS") ? hash : `${hash.slice(0, 8)}…${hash.slice(-6)}`;
+  const copy = () => {
+    navigator.clipboard.writeText(hash);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={hash}
+      className="inline-flex items-center gap-1 rounded-md border border-slate-200/90 bg-slate-50 px-2 py-0.5 font-mono text-[10px] text-slate-600 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-800 transition-all duration-150 cursor-pointer shadow-2xs"
+    >
+      <span className="text-slate-400 font-sans">{label}:</span> <span className="font-semibold text-slate-800">{short}</span>
+      <span className={`ml-1 text-[9px] ${copied ? "font-bold text-emerald-600" : "text-slate-400"}`}>{copied ? "✓" : "⎘"}</span>
+    </button>
+  );
+}
+
+const STATUS_META = {
+  registered: {
+    label: "Đã đăng ký",
+    color: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700",
+    dot: "bg-slate-400",
+  },
+  pending_confirmation: {
+    label: "Chờ bàn giao",
+    color: "bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700 ring-1 ring-amber-200 dark:ring-amber-900/40",
+    dot: "bg-amber-500",
+  },
+  processed: {
+    label: "Đã sơ chế",
+    color: "bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+    dot: "bg-blue-500",
+  },
+  in_transit: {
+    label: "Đang vận chuyển",
+    color: "bg-orange-50 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 border-orange-200 dark:border-orange-800",
+    dot: "bg-orange-500",
+  },
+  delivered: {
+    label: "Đã giao nhận",
+    color: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 ring-1 ring-emerald-200 dark:ring-emerald-900/40",
+    dot: "bg-emerald-500",
+  },
+  recalled: {
+    label: "Thu hồi",
+    color: "bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-700 ring-1 ring-rose-200 dark:ring-rose-900/40",
+    dot: "bg-rose-500",
+  },
+  consumed: {
+    label: "Đã tiêu thụ",
+    color: "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700",
+    dot: "bg-slate-400",
+  },
+};
+
+function BatchStatusBadge({ status }) {
+  const meta = STATUS_META[status] || {
+    label: status,
+    color: "bg-slate-100 text-slate-700 border-slate-200",
+    dot: "bg-slate-400",
+  };
+  const isPulsing = ["pending_confirmation", "in_transit", "recalled"].includes(status);
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold shadow-2xs ${meta.color}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${isPulsing ? "animate-pulse" : ""}`} />
+      {meta.label}
+    </span>
+  );
+}
+
+const HARVEST_PREVIEW_SCHEMA = [
+  { key: "productName", label: "Tên nông sản", icon: Box },
+  { key: "landPlotName", label: "Thửa đất trồng", icon: MapPin },
+  {
+    key: "quantityKg",
+    label: "Sản lượng thu hoạch",
+    icon: Tractor,
+    format: (val) => `${Number(val).toLocaleString()} kg`,
+  },
+  {
+    key: "harvestedAt",
+    label: "Thời gian thu hoạch",
+    icon: Clock,
+    format: (val) => (val ? new Date(val).toLocaleString("vi-VN") : "Thời điểm hiện tại"),
+  },
+];
 
 export default function DashboardPage() {
   const { user, logout } = useAuth();
+  const toast = useToast();
+  const { isDark, toggleTheme } = useTheme();
   const [dashboard, setDashboard] = useState(null);
   const [batches, setBatches] = useState([]);
   const [transferRequests, setTransferRequests] = useState([]);
@@ -37,7 +192,10 @@ export default function DashboardPage() {
   const [temperatureLogs, setTemperatureLogs] = useState([]);
   const [recallReports, setRecallReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [, setActivity] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState(null);
+  const [genealogy, setGenealogy] = useState(null);
+  const [batchSummary, setBatchSummary] = useState(null);
   const [selectedView, setSelectedView] = useState("Tổng quan");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -53,31 +211,81 @@ export default function DashboardPage() {
     latitude: "",
     longitude: "",
   });
+  const [editingLandPlotId, setEditingLandPlotId] = useState(null);
+  const [productForm, setProductForm] = useState({ name: "", unit: "kg" });
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [splitBatchId, setSplitBatchId] = useState("");
+  const [splitAllocations, setSplitAllocations] = useState([
+    { quantity: "", location: "" },
+    { quantity: "", location: "" },
+  ]);
+  const [mergeBatchIds, setMergeBatchIds] = useState([]);
   const [transferForm, setTransferForm] = useState({
     batchId: "",
     toOrganizationId: "",
     note: "",
   });
-  const [submission, setSubmission] = useState({ message: "", tone: "" });
+  const [submission, setSubmissionState] = useState({ message: "", tone: "" });
+  const setSubmission = ({ message, tone = "success" }) => {
+    setSubmissionState({ message, tone });
+    if (!message) return;
+    if (tone === "error") {
+      toast.error(message);
+    } else if (tone === "warning") {
+      toast.warning(message);
+    } else {
+      toast.success(message);
+    }
+  };
   const [recallForm, setRecallForm] = useState({ batchId: "", reason: "" });
-  const [transferDecision, setTransferDecision] = useState({
+  const [transferFilter, setTransferFilter] = useState("all");
+  const [decisionModal, setDecisionModal] = useState({
     open: false,
-    transferId: null,
+    transfer: null,
     decision: "confirmed",
     reason: "",
-    error: "",
+    submitting: false,
   });
+  const [consumeModalBatch, setConsumeModalBatch] = useState(null);
+  const [distributeBatchId, setDistributeBatchId] = useState(null);
+  const [lineageModalBatch, setLineageModalBatch] = useState(null);
+  const [confirmHarvestModal, setConfirmHarvestModal] = useState({
+    open: false,
+    data: null,
+    submitting: false,
+  });
+  const [recentlyCreatedBatchId, setRecentlyCreatedBatchId] = useState(null);
 
   const loadData = async () => {
-    const [dashboardData, batchData, transferData] = await Promise.all([
+    const [dashboardData, batchData, transferData, activityData] = await Promise.all([
       api.getDashboard(),
       api.getBatches(),
       api.getTransferRequests(),
+      api.getActivity(),
     ]);
     setDashboard(dashboardData);
     setBatches(batchData);
     setTransferRequests(transferData);
-    setSelectedBatch(batchData[0] || null);
+    setActivity(activityData);
+    if (batchData[0]) {
+      try {
+        const [fullBatch, batchGenealogy, summary] = await Promise.all([
+          api.getBatch(batchData[0].id),
+          api.getBatchGenealogy(batchData[0].id),
+          api.getBatchSummary(batchData[0].id),
+        ]);
+        setSelectedBatch(fullBatch);
+        setGenealogy(batchGenealogy);
+        setBatchSummary(summary);
+      } catch {
+        setSelectedBatch(batchData[0]);
+        setBatchSummary(null);
+      }
+    } else {
+      setSelectedBatch(null);
+      setGenealogy(null);
+      setBatchSummary(null);
+    }
   };
 
   useEffect(() => {
@@ -150,13 +358,146 @@ export default function DashboardPage() {
           (batch) => batch.organization_id === user?.organizationId,
         );
 
+  const lineageGraph = useMemo(() => {
+    if (!genealogy || !selectedBatch) return { nodes: [], edges: [] };
+    const byId = new Map();
+    for (const node of [
+      ...(genealogy.ancestors || []),
+      ...(genealogy.descendants || []),
+      genealogy.batch,
+      selectedBatch,
+    ]) {
+      if (node?.id !== undefined) byId.set(node.id, node);
+    }
+    const edges = [];
+    const seen = new Set();
+    for (const child of byId.values()) {
+      const parentIds = [...new Set([
+        child.parent_batch_id,
+        ...(Array.isArray(child.source_batch_ids) ? child.source_batch_ids : []),
+      ].filter(Boolean))];
+      for (const parentId of parentIds) {
+        const parent = byId.get(parentId);
+        const edgeKey = `${parentId}:${child.id}`;
+        if (!parent || seen.has(edgeKey)) continue;
+        seen.add(edgeKey);
+        edges.push({ parent, child });
+      }
+    }
+    return { nodes: [...byId.values()], edges };
+  }, [genealogy, selectedBatch]);
+
+  const timelineEvents = useMemo(() => {
+    const currentEvents = (selectedBatch?.events || []).map((event) => ({
+      ...event,
+      batch_code: selectedBatch.batch_code,
+      isAncestorEvent: false,
+    }));
+    const ancestorEvents = (genealogy?.ancestorEvents || []).map((event) => ({
+      ...event,
+      isAncestorEvent: true,
+    }));
+    return [...ancestorEvents, ...currentEvents].sort(
+      (a, b) => new Date(a.timestamp) - new Date(b.timestamp) || a.id - b.id,
+    );
+  }, [genealogy, selectedBatch]);
+
+  const pendingIncomingCount = useMemo(() => {
+    return transferRequests.filter(
+      (req) =>
+        req.status === "pending" &&
+        req.to_organization_id === user?.organizationId,
+    ).length;
+  }, [transferRequests, user?.organizationId]);
+
+  const filteredTransferRequests = useMemo(() => {
+    return transferRequests.filter((req) => {
+      if (transferFilter === "incoming") {
+        return (
+          req.status === "pending" &&
+          req.to_organization_id === user?.organizationId
+        );
+      }
+      if (transferFilter === "outgoing") {
+        return req.from_organization_id === user?.organizationId;
+      }
+      if (transferFilter === "completed") {
+        return req.status === "confirmed" || req.status === "rejected";
+      }
+      return true;
+    });
+  }, [transferRequests, transferFilter, user?.organizationId]);
+
+  const openDecisionModal = (transfer, decision) => {
+    setDecisionModal({
+      open: true,
+      transfer,
+      decision,
+      reason: decision === "confirmed" ? "" : "Lô hàng không đạt tiêu chuẩn chất lượng.",
+      submitting: false,
+    });
+  };
+
+  const closeDecisionModal = () => {
+    setDecisionModal({
+      open: false,
+      transfer: null,
+      decision: "confirmed",
+      reason: "",
+      submitting: false,
+    });
+  };
+
+  const handleSubmitDecisionModal = async (e) => {
+    if (e) e.preventDefault();
+    const { transfer, decision, reason } = decisionModal;
+    if (!transfer) return;
+    if (decision === "rejected") {
+      if (!reason || !reason.trim() || reason.trim().length < 10) {
+        setSubmission({
+          message: "Lý do từ chối bắt buộc và phải có tối thiểu 10 ký tự.",
+          tone: "error",
+        });
+        return;
+      }
+    }
+    setDecisionModal((prev) => ({ ...prev, submitting: true }));
+    try {
+      await api.decideTransfer(transfer.id, {
+        decision,
+        reason: reason?.trim() || null,
+      });
+      await loadData();
+      setSubmission({
+        message:
+          decision === "confirmed"
+            ? `Đã xác nhận bàn giao lô ${transfer.batch_code}. Lô hàng đã chuyển sang tổ chức của bạn.`
+            : `Đã từ chối bàn giao lô ${transfer.batch_code} kèm lý do.`,
+        tone: "success",
+      });
+      closeDecisionModal();
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+      setDecisionModal((prev) => ({ ...prev, submitting: false }));
+    }
+  };
+
   const handleSelectBatch = async (batchId) => {
     const batch = filteredBatches.find((item) => item.id === batchId);
     if (!batch) return;
     try {
-      setSelectedBatch(await api.getBatch(batchId));
+      const [batch, batchGenealogy, summary] = await Promise.all([
+        api.getBatch(batchId),
+        api.getBatchGenealogy(batchId),
+        api.getBatchSummary(batchId),
+      ]);
+      setSelectedBatch(batch);
+      setGenealogy(batchGenealogy);
+      setBatchSummary(summary);
     } catch (loadError) {
       setSelectedBatch(batch);
+      setGenealogy(null);
+      setBatchSummary(null);
       setSubmission({ message: loadError.message, tone: "error" });
     }
   };
@@ -165,8 +506,13 @@ export default function DashboardPage() {
     event.preventDefault();
     setSubmission({ message: "", tone: "" });
     try {
-      await api.createLandPlot(landPlotForm);
+      if (editingLandPlotId) {
+        await api.updateLandPlot(editingLandPlotId, landPlotForm);
+      } else {
+        await api.createLandPlot(landPlotForm);
+      }
       setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "" });
+      setEditingLandPlotId(null);
       const nextPlots = await api.getLandPlots();
       setLandPlots(nextPlots);
       setSubmission({ message: "Đã khai báo thửa đất mới.", tone: "success" });
@@ -175,8 +521,118 @@ export default function DashboardPage() {
     }
   };
 
-  const handleHarvestSubmit = async (event) => {
+  const handleProductSubmit = async (event) => {
     event.preventDefault();
+    try {
+      if (editingProductId) {
+        await api.updateProduct(editingProductId, productForm);
+      } else {
+        await api.createProduct(productForm);
+      }
+      setProductForm({ name: "", unit: "kg" });
+      setEditingProductId(null);
+      setProducts(await api.getProducts());
+      setSubmission({
+        message: editingProductId ? "Đã cập nhật sản phẩm." : "Đã thêm sản phẩm.",
+        tone: "success",
+      });
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const handleSplitSubmit = async (event) => {
+    event.preventDefault();
+    try {
+      const allocations = splitAllocations.map((allocation) => ({
+        quantity: Number(allocation.quantity),
+        ...(allocation.location.trim() ? { location: allocation.location.trim() } : {}),
+      }));
+      const result = await api.splitBatch(Number(splitBatchId), allocations);
+      setSplitBatchId("");
+      setSplitAllocations([{ quantity: "", location: "" }, { quantity: "", location: "" }]);
+      await loadData();
+      setSubmission({
+        message: `Đã tách lô thành ${result.children.length} lô con.`,
+        tone: "success",
+      });
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const handleBatchCsvImport = async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const file = form.elements.namedItem("batchCsv")?.files?.[0];
+    if (!file) return;
+    if (file.size > 900_000) {
+      setSubmission({ message: "File CSV vượt giới hạn 900 KB.", tone: "error" });
+      return;
+    }
+    try {
+      const result = await api.importBatchesCsv(await file.text());
+      form.reset();
+      await loadData();
+      setSubmission({
+        message: `Đã nhập ${result.createdCount} lô từ CSV.`,
+        tone: "success",
+      });
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const downloadBatchCsvTemplate = () => {
+    const content = "productId,quantityKg,currentLocation,harvestedAt,batchCode\n1,100,Kho tiếp nhận,,\n";
+    const url = URL.createObjectURL(new Blob(["\uFEFF", content], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "agritrace-batch-import-template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleMergeSubmit = async (event) => {
+    event.preventDefault();
+    try {
+      const result = await api.mergeBatches(
+        mergeBatchIds.map(Number),
+        filteredBatches.find((batch) => batch.id === Number(mergeBatchIds[0]))?.product_id,
+      );
+      setMergeBatchIds([]);
+      await loadData();
+      setSubmission({ message: `Đã tạo lô gộp ${result.newBatch.batch_code}.`, tone: "success" });
+    } catch (submitError) {
+      setSubmission({ message: submitError.message, tone: "error" });
+    }
+  };
+
+  const handleHarvestSubmit = (event) => {
+    event.preventDefault();
+    if (!harvestForm.landPlotId || !harvestForm.productId || !harvestForm.quantityKg) {
+      setSubmission({
+        message: "Vui lòng chọn thửa đất, sản phẩm và nhập sản lượng thu hoạch.",
+        tone: "error",
+      });
+      return;
+    }
+    const selectedPlot = landPlots.find((p) => String(p.id) === String(harvestForm.landPlotId));
+    const selectedProduct = products.find((p) => String(p.id) === String(harvestForm.productId));
+    setConfirmHarvestModal({
+      open: true,
+      data: {
+        ...harvestForm,
+        landPlotName: selectedPlot ? selectedPlot.name : harvestForm.landPlotId,
+        productName: selectedProduct ? selectedProduct.name : harvestForm.productId,
+      },
+      submitting: false,
+    });
+  };
+
+  const handleConfirmHarvestSave = async () => {
+    if (!confirmHarvestModal.data) return;
+    setConfirmHarvestModal((prev) => ({ ...prev, submitting: true }));
     try {
       const result = await api.createHarvest(harvestForm);
       setHarvestForm({
@@ -185,13 +641,17 @@ export default function DashboardPage() {
         quantityKg: "",
         harvestedAt: "",
       });
+      setConfirmHarvestModal({ open: false, data: null, submitting: false });
+      setRecentlyCreatedBatchId(result.batch.id);
+      setTimeout(() => setRecentlyCreatedBatchId(null), 3500);
       await loadData();
       setSubmission({
-        message: `Đã tạo ${result.batch.batch_code}.`,
+        message: `Đã lưu thành công lô nông sản ${result.batch.batch_code}!`,
         tone: "success",
       });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
+      setConfirmHarvestModal((prev) => ({ ...prev, submitting: false }));
     }
   };
 
@@ -211,61 +671,6 @@ export default function DashboardPage() {
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
     }
-  };
-
-  const openTransferDecisionModal = (transferId, decision) => {
-    setTransferDecision({
-      open: true,
-      transferId,
-      decision,
-      reason: decision === "confirmed" ? "Đã kiểm tra và nhận đủ lô hàng." : "",
-      error: "",
-    });
-  };
-
-  const submitTransferDecision = async () => {
-    const { transferId, decision, reason } = transferDecision;
-    const trimmedReason = reason.trim();
-
-    if (decision === "rejected") {
-      if (!trimmedReason) {
-        setTransferDecision((current) => ({
-          ...current,
-          error: "Vui lòng nhập lý do từ chối bàn giao.",
-        }));
-        return;
-      }
-      if (trimmedReason.length < 10) {
-        setTransferDecision((current) => ({
-          ...current,
-          error: "Lý do từ chối phải tối thiểu 10 ký tự.",
-        }));
-        return;
-      }
-    }
-
-    try {
-      await api.decideTransfer(transferId, {
-        decision,
-        reason: decision === "confirmed" ? trimmedReason || "Đã kiểm tra và nhận đủ lô hàng." : trimmedReason,
-      });
-      setTransferDecision({ open: false, transferId: null, decision: "confirmed", reason: "", error: "" });
-      await loadData();
-      setSubmission({
-        message: decision === "confirmed" ? "Đã xác nhận bàn giao." : "Đã từ chối bàn giao.",
-        tone: "success",
-      });
-    } catch (submitError) {
-      setTransferDecision((current) => ({
-        ...current,
-        error: submitError.message || "Không thể xử lý bàn giao.",
-      }));
-      setSubmission({ message: submitError.message, tone: "error" });
-    }
-  };
-
-  const handleTransferDecision = async (transferId, decision) => {
-    openTransferDecisionModal(transferId, decision);
   };
 
   const handleVerifyIntegrity = async (batchId) => {
@@ -345,19 +750,19 @@ export default function DashboardPage() {
 
   if (loading)
     return (
-      <div className="flex min-h-screen items-center justify-center text-slate-500">
+      <div className="flex min-h-screen items-center justify-center text-slate-500 font-medium">
         Đang tải dashboard...
       </div>
     );
   if (error)
     return (
-      <div className="flex min-h-screen items-center justify-center px-6 text-center text-rose-600">
+      <div className="flex min-h-screen items-center justify-center px-6 text-center text-rose-600 font-medium">
         {error}
       </div>
     );
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-100 lg:flex-row">
+    <div className="flex min-h-screen flex-col bg-slate-50/70 dark:bg-slate-950 bg-dot-pattern text-slate-800 dark:text-slate-100 lg:flex-row antialiased">
       <Sidebar
         user={user}
         currentView={selectedView}
@@ -365,139 +770,291 @@ export default function DashboardPage() {
         onLogout={logout}
       />
 
-      <main className="flex-1 p-5 sm:p-8">
-        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <main className="flex-1 p-4 sm:p-7 lg:p-8 overflow-x-hidden">
+        {/* Header */}
+        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-4 sm:p-5 card-shadow backdrop-blur-md">
           <div>
-            <p className="text-sm font-medium uppercase tracking-[0.16em] text-emerald-600">
-              Agritrace Dashboard
-            </p>
-            <h1 className="mt-1 text-3xl font-bold text-slate-900">
-              {user?.organizationName}
-            </h1>
-          </div>
-          <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3 shadow-sm">
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <ShieldCheck className="text-emerald-600" size={18} /> Event lock
-              integrity:{" "}
-              <span className="font-semibold text-emerald-700">Verified</span>
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
+                Hệ thống giám sát chuỗi nông sản lạnh IoT & Blockchain
+              </p>
             </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2.5">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                {user?.organizationName}
+              </h1>
+              <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                {user?.role === "farm_admin"
+                  ? "Quản trị Nông trại"
+                  : user?.role === "processor_admin"
+                  ? "Cơ sở chế biến"
+                  : user?.role === "distributor_admin"
+                  ? "Nhà phân phối"
+                  : user?.role === "auditor"
+                  ? "Kiểm toán viên"
+                  : "Người dùng"}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="rounded-xl border border-cyan-200/80 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 px-3 py-1.5 shadow-2xs">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-cyan-800 dark:text-cyan-300">
+                <Thermometer size={15} className="text-cyan-600 dark:text-cyan-400" />
+                <span>Chuỗi lạnh:</span>
+                <span className="font-bold text-cyan-900 dark:text-cyan-100">2 - 8°C Chuẩn hóa</span>
+              </div>
+            </div>
+            <div className="rounded-xl border border-emerald-200/90 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 px-3 py-1.5 shadow-2xs">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                <ShieldCheck className="text-emerald-600 dark:text-emerald-400" size={16} />
+                <span>Toàn vẹn sự kiện:</span>
+                <span className="rounded-md bg-emerald-200/80 dark:bg-emerald-900/60 px-1.5 py-0.5 text-emerald-900 dark:text-emerald-200 font-extrabold text-[11px]">
+                  Bất biến (Verified)
+                </span>
+              </div>
+            </div>
+
+            {/* Prominent Theme Toggle Button in Header */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              title={isDark ? "Chuyển sang giao diện Sáng" : "Chuyển sang giao diện Tối"}
+              className="flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer active:scale-95"
+            >
+              {isDark ? (
+                <>
+                  <Sun size={15} className="text-amber-400" />
+                  <span>Giao diện Sáng</span>
+                </>
+              ) : (
+                <>
+                  <Moon size={15} className="text-slate-700 dark:text-slate-300" />
+                  <span>Giao diện Tối</span>
+                </>
+              )}
+            </button>
           </div>
         </header>
 
         {selectedView === "Tổng quan" && (
           <>
+            {/* Sprint Status & Integrity Overview Banner */}
+            <section className="mb-6 rounded-3xl bg-gradient-to-r from-slate-950 via-emerald-950 to-teal-950 p-6 sm:p-7 text-white shadow-xl border border-emerald-500/20 relative overflow-hidden">
+              <div className="absolute -right-10 -bottom-10 opacity-10 pointer-events-none text-emerald-400">
+                <ShieldCheck size={280} />
+              </div>
+              <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/20 border border-emerald-400/30 px-3.5 py-1 text-xs font-semibold backdrop-blur-sm text-emerald-300">
+                    <ShieldCheck size={14} className="text-emerald-400" /> Chuỗi Hash SHA-256 Bất biến
+                  </div>
+                  <h2 className="mt-3 text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight leading-snug">
+                    Hệ thống Giám sát & Truy xuất Nguồn gốc Nông sản Lạnh
+                  </h2>
+                  <p className="mt-2 text-xs sm:text-sm text-emerald-100/80 max-w-2xl leading-relaxed">
+                    Mọi sự kiện thu hoạch, sơ chế, bàn giao và vi phạm nhiệt độ đều được ký băm SHA-256 liên hoàn. Không thể sửa hay xóa lén dữ liệu đã ghi nhận.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="rounded-2xl bg-white/10 p-3.5 sm:p-4 backdrop-blur-sm ring-1 ring-white/15 text-center min-w-[100px] shadow-sm">
+                    <p className="text-2xl sm:text-3xl font-black text-white">{filteredBatches.length}</p>
+                    <p className="text-[10px] text-emerald-300 uppercase font-bold tracking-wider mt-0.5">Tổng lô hàng</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 p-3.5 sm:p-4 backdrop-blur-sm ring-1 ring-white/15 text-center min-w-[100px] shadow-sm">
+                    <p className="text-2xl sm:text-3xl font-black text-amber-300">{pendingIncomingCount}</p>
+                    <p className="text-[10px] text-amber-200 uppercase font-bold tracking-wider mt-0.5">Chờ bàn giao</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 p-3.5 sm:p-4 backdrop-blur-sm ring-1 ring-white/15 text-center min-w-[100px] shadow-sm">
+                    <p className="text-2xl sm:text-3xl font-black text-emerald-300">100%</p>
+                    <p className="text-[10px] text-emerald-200 uppercase font-bold tracking-wider mt-0.5">Toàn vẹn Hash</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Quick Stats Grid */}
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {stats.map(({ label, value, icon: Icon, tone }) => (
                 <div
                   key={label}
-                  className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+                  className="rounded-2xl bg-white p-5 card-shadow card-shadow-hover border border-slate-200/90 transition-all"
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-slate-500">{label}</p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+                      <p className="mt-2 text-2xl font-black tracking-tight text-slate-900 font-mono">
                         {value}
                       </p>
                     </div>
                     <div
-                      className={`flex h-11 w-11 items-center justify-center rounded-xl ${tone}`}
+                      className={`flex h-12 w-12 items-center justify-center rounded-2xl shadow-xs ${tone}`}
                     >
-                      <Icon size={20} />
+                      <Icon size={22} />
                     </div>
                   </div>
                 </div>
               ))}
             </section>
 
+            {/* Main Section: Excel/AntD Styled Batch Table & Quick Cold Chain Monitor */}
             <section className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_0.9fr]">
-              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80">
                 <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Lô hàng gần nhất
-                  </h2>
-                  <span className="text-xs text-slate-500">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">
+                      Danh sách lô nông sản
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Bảng định dạng chuẩn Excel với mã nguồn Monospace và trạng thái có điều kiện
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
                     {filteredBatches.length} lô
                   </span>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="text-slate-500">
-                      <tr>
-                        <th className="pb-3">Mã lô</th>
-                        <th className="pb-3">Sản phẩm</th>
-                        <th className="pb-3">Trạng thái</th>
-                        <th className="pb-3">Khối lượng</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredBatches.slice(0, 5).map((batch) => (
-                        <tr
-                          key={batch.id}
-                          className="border-t border-slate-100 hover:bg-slate-50"
-                        >
-                          <td className="py-3 font-semibold text-slate-800">
-                            <button
-                              onClick={() => handleSelectBatch(batch.id)}
-                              className="text-left hover:text-emerald-600"
-                            >
-                              {batch.batch_code}
-                            </button>
-                          </td>
-                          <td className="py-3 text-slate-600">
-                            {batch.product_name}
-                          </td>
-                          <td className="py-3">
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusColors[batch.status] || statusColors.registered}`}
-                            >
-                              {batch.status}
-                            </span>
-                          </td>
-                          <td className="py-3 text-slate-600">
-                            {Number(batch.remaining_quantity).toLocaleString()}{" "}
-                            kg
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+
+                {filteredBatches.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <Box size={36} className="mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">Chưa có lô hàng nào.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        {/* Excel / AntD style dark green header */}
+                        <thead className="bg-emerald-900 text-slate-100 font-semibold text-xs tracking-wider uppercase">
+                          <tr>
+                            <th className="px-4 py-3.5">Mã lô (Batch Code)</th>
+                            <th className="px-4 py-3.5">Sản phẩm</th>
+                            <th className="px-4 py-3.5">Trạng thái</th>
+                            <th className="px-4 py-3.5 text-right">Khối lượng</th>
+                            <th className="px-4 py-3.5 text-center">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {filteredBatches.map((batch, idx) => {
+                            const isSelected = selectedBatch?.id === batch.id;
+                            const isRecentlyAdded = recentlyCreatedBatchId === batch.id;
+                            return (
+                              <tr
+                                key={batch.id}
+                                onClick={() => handleSelectBatch(batch.id)}
+                                className={`transition-colors cursor-pointer ${
+                                  isRecentlyAdded
+                                    ? "animate-highlight-row font-semibold ring-2 ring-emerald-500/80"
+                                    : isSelected
+                                    ? "bg-emerald-50/90 font-medium ring-1 ring-inset ring-emerald-400"
+                                    : idx % 2 === 0
+                                    ? "bg-white hover:bg-emerald-50/40"
+                                    : "bg-slate-50/60 hover:bg-emerald-50/40"
+                                }`}
+                              >
+                                <td className="px-4 py-3.5">
+                                  <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-1 rounded-md border border-slate-200">
+                                    {batch.batch_code}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3.5 font-medium text-slate-800">
+                                  {batch.product_name}
+                                </td>
+                                <td className="px-4 py-3.5">
+                                  <BatchStatusBadge status={batch.status} />
+                                </td>
+                                <td className="px-4 py-3.5 text-right font-mono font-semibold text-slate-900">
+                                  {Number(batch.remaining_quantity).toLocaleString()}{" "}
+                                  <span className="text-xs text-slate-400 font-normal">kg</span>
+                                </td>
+                                <td className="px-4 py-3.5 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectBatch(batch.id);
+                                    }}
+                                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                                      isSelected
+                                        ? "bg-emerald-700 text-white shadow-sm"
+                                        : "bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-700"
+                                    }`}
+                                  >
+                                    {isSelected ? "Đang chọn" : "Xem sự kiện"}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                <h2 className="text-lg font-bold text-slate-900">
-                  Giám sát chuỗi lạnh
-                </h2>
-                <div className="mt-5 space-y-4">
-                  <div className="flex items-center justify-between rounded-xl bg-emerald-50 p-4">
-                    <div className="flex items-center gap-3">
-                      <CheckCircle2 className="text-emerald-600" size={18} />
-                      <span className="font-medium text-slate-700">
-                        Nhiệt độ hiện tại
+              {/* Quick Cold Chain Monitor */}
+              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold text-slate-900">
+                      Giám sát chuỗi lạnh
+                    </h2>
+                    {selectedBatch && (
+                      <span className="font-mono text-xs text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-md">
+                        {selectedBatch.batch_code}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between rounded-xl bg-emerald-50/80 p-4 border border-emerald-100">
+                      <div className="flex items-center gap-3">
+                        <Thermometer className="text-emerald-600" size={20} />
+                        <div>
+                          <p className="text-xs text-slate-500">Nhiệt độ hiện tại</p>
+                          <p className="font-bold text-slate-800">Cảm biến thời gian thực</p>
+                        </div>
+                      </div>
+                      <span className="font-mono text-2xl font-black text-emerald-700">
+                        {selectedBatch?.temperature_c ?? 9}°C
                       </span>
                     </div>
-                    <span className="font-bold text-emerald-700">
-                      {selectedBatch?.temperature_c ?? 9}°C
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-xl bg-amber-50 p-4">
-                    <div className="flex items-center gap-3">
-                      <AlertTriangle className="text-amber-600" size={18} />
-                      <span className="font-medium text-slate-700">
-                        Ngưỡng an toàn
-                      </span>
+
+                    <div className="flex items-center justify-between rounded-xl bg-amber-50/80 p-4 border border-amber-100">
+                      <div className="flex items-center gap-3">
+                        <AlertTriangle className="text-amber-600" size={20} />
+                        <div>
+                          <p className="text-xs text-slate-500">Ngưỡng chuẩn quy định</p>
+                          <p className="font-bold text-slate-800">Tiêu chuẩn bảo quản lạnh</p>
+                        </div>
+                      </div>
+                      <span className="font-mono text-xl font-bold text-amber-700">≤ 8°C</span>
                     </div>
-                    <span className="font-bold text-amber-700">≥ 2°C</span>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                      <MapPin size={16} /> Vị trí hiện tại
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                        <MapPin size={15} /> Vị trí lưu kho / hiện tại
+                      </div>
+                      <p className="mt-1.5 font-bold text-slate-800">
+                        {selectedBatch?.current_location || "Chưa cập nhật"}
+                      </p>
                     </div>
-                    <p className="mt-2 font-semibold text-slate-800">
-                      {selectedBatch?.current_location || "Chưa cập nhật"}
-                    </p>
                   </div>
                 </div>
+
+                {selectedBatch?.cold_chain_alert ? (
+                  <div className="mt-4 rounded-xl bg-rose-50 p-3 border border-rose-200 flex items-center gap-2 text-xs text-rose-800 font-semibold">
+                    <AlertTriangle size={16} className="text-rose-600 flex-shrink-0" />
+                    <span>Lô hàng này có vi phạm chuỗi lạnh trong lịch sử!</span>
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl bg-emerald-50/60 p-3 border border-emerald-100 flex items-center gap-2 text-xs text-emerald-800 font-medium">
+                    <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
+                    <span>Chuỗi lạnh duy trì đạt chuẩn an toàn.</span>
+                  </div>
+                )}
               </div>
             </section>
           </>
@@ -654,8 +1211,299 @@ export default function DashboardPage() {
                 Tạo lô cho thu hoạch
               </button>
             </form>
+            <form
+              className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+              onSubmit={handleProductSubmit}
+            >
+              <h2 className="text-lg font-bold text-slate-900">
+                {editingProductId ? "Sửa sản phẩm" : "Thêm sản phẩm"}
+              </h2>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <input
+                  className="rounded-xl border px-3 py-2"
+                  placeholder="Tên sản phẩm"
+                  value={productForm.name}
+                  onChange={(event) =>
+                    setProductForm({ ...productForm, name: event.target.value })
+                  }
+                />
+                <input
+                  className="rounded-xl border px-3 py-2"
+                  placeholder="Đơn vị tính"
+                  value={productForm.unit}
+                  onChange={(event) =>
+                    setProductForm({ ...productForm, unit: event.target.value })
+                  }
+                />
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white"
+                  type="submit"
+                >
+                  {editingProductId ? "Cập nhật" : "Thêm sản phẩm"}
+                </button>
+                {editingProductId && (
+                  <button
+                    className="rounded-xl border px-4 py-2"
+                    type="button"
+                    onClick={() => {
+                      setEditingProductId(null);
+                      setProductForm({ name: "", unit: "kg" });
+                    }}
+                  >
+                    Hủy
+                  </button>
+                )}
+              </div>
+              <div className="mt-5 space-y-2">
+                {products.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left hover:border-emerald-300"
+                    onClick={() => {
+                      setEditingProductId(product.id);
+                      setProductForm({ name: product.name, unit: product.unit });
+                    }}
+                  >
+                    <span className="font-medium">{product.name}</span>
+                    <span className="text-sm text-slate-500">{product.unit}</span>
+                  </button>
+                ))}
+              </div>
+            </form>
           </section>
         )}
+
+        {selectedView === "L\u00f4 n\u00f4ng s\u1ea3n" && user?.role === "farm_admin" && (
+          <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Danh sách thửa đất</h2>
+                <p className="text-xs text-slate-400 mt-0.5">{landPlots.length} thửa đang quản lý</p>
+              </div>
+            </div>
+            {landPlots.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-slate-400">
+                <MapPin size={32} className="opacity-30" />
+                <p className="text-sm">Chưa có thửa đất nào. Hãy khai báo thửa đất ở trên.</p>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {landPlots.map((plot) => {
+                  const batchCount = batches.filter(
+                    (b) => b.organization_id === user?.organizationId
+                  ).length;
+                  const hasCoords = plot.latitude && plot.longitude;
+                  return (
+                    <article
+                      key={plot.id}
+                      className="group relative flex flex-col gap-3 rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-emerald-50/40 p-5 shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
+                    >
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-600">
+                            {plot.farm_name}
+                          </p>
+                          <h3 className="mt-0.5 text-base font-bold text-slate-900">{plot.name}</h3>
+                        </div>
+                        <button
+                          type="button"
+                          title="Chỉnh sửa thửa đất"
+                          className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
+                          onClick={() => {
+                            setEditingLandPlotId(plot.id);
+                            setLandPlotForm({
+                              name: plot.name,
+                              areaHa: String(plot.area_ha),
+                              latitude: plot.latitude ? String(plot.latitude) : "",
+                              longitude: plot.longitude ? String(plot.longitude) : "",
+                            });
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </div>
+
+                      {/* Stats row */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-xl bg-white/80 px-3 py-2 text-center ring-1 ring-slate-100">
+                          <p className="text-lg font-bold text-slate-900">{plot.area_ha}</p>
+                          <p className="text-[10px] text-slate-400">ha</p>
+                        </div>
+                        <div className="rounded-xl bg-white/80 px-3 py-2 text-center ring-1 ring-slate-100">
+                          <p className="text-lg font-bold text-slate-900">{batchCount}</p>
+                          <p className="text-[10px] text-slate-400">Lô hàng</p>
+                        </div>
+                        <div className="rounded-xl bg-white/80 px-3 py-2 text-center ring-1 ring-slate-100">
+                          <p className="text-lg font-bold text-emerald-600">#</p>
+                          <p className="text-[10px] text-slate-400">ID: {plot.id}</p>
+                        </div>
+                      </div>
+
+                      {/* Coordinates */}
+                      <div className="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 ring-1 ring-slate-100">
+                        <MapPin size={14} className={hasCoords ? "text-emerald-500" : "text-slate-300"} />
+                        {hasCoords ? (
+                          <span className="font-mono text-[11px] text-slate-600">
+                            {Number(plot.latitude).toFixed(4)}°N, {Number(plot.longitude).toFixed(4)}°E
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 italic">Chưa có tọa độ GPS</span>
+                        )}
+                        {hasCoords && (
+                          <a
+                            href={`https://www.google.com/maps?q=${plot.latitude},${plot.longitude}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="ml-auto text-[10px] text-emerald-600 hover:underline"
+                          >
+                            Xem Maps ↗
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Created date */}
+                      <p className="text-[10px] text-slate-400">
+                        Khai báo: {new Date(plot.created_at).toLocaleDateString("vi-VN", {
+                          day: "2-digit", month: "2-digit", year: "numeric"
+                        })}
+                      </p>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {["L\u00f4 n\u00f4ng s\u1ea3n", "L\u00f4 ph\u00e2n ph\u1ed1i", "L\u00f4 x\u1eed l\u00fd", "Tổng quan"].includes(selectedView) &&
+          ["farm_admin", "processor_admin", "distributor_admin"].includes(user?.role) && (
+            <section className="mt-6 grid gap-6 lg:grid-cols-2">
+              <form
+                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+                onSubmit={handleSplitSubmit}
+              >
+                <h2 className="text-lg font-bold text-slate-900">Tách lô hàng</h2>
+                <p className="mt-2 text-sm text-slate-500">Chọn lô mẹ, sau đó khai báo khối lượng và nơi giữ cho từng lô con.</p>
+                <div className="mt-4 grid gap-3">
+                  <select
+                    className="rounded-xl border px-3 py-2"
+                    value={splitBatchId}
+                    onChange={(event) => setSplitBatchId(event.target.value)}
+                  >
+                    <option value="">Chọn lô cần tách</option>
+                    {filteredBatches.map((batch) => (
+                      <option key={batch.id} value={batch.id}>
+                        {batch.batch_code} · còn {batch.remaining_quantity}
+                      </option>
+                    ))}
+                  </select>
+                  {splitAllocations.map((allocation, index) => (
+                    <div key={index} className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_1fr_auto]">
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        Lô con {index + 1} · khối lượng
+                        <input
+                          className="rounded-lg border px-3 py-2 text-sm"
+                          type="number"
+                          min="0.0001"
+                          step="0.0001"
+                          required
+                          placeholder="Ví dụ: 25"
+                          value={allocation.quantity}
+                          onChange={(event) => setSplitAllocations((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item))}
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        Nơi giữ lô con
+                        <input
+                          className="rounded-lg border px-3 py-2 text-sm"
+                          placeholder="Mặc định theo lô mẹ"
+                          value={allocation.location}
+                          onChange={(event) => setSplitAllocations((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, location: event.target.value } : item))}
+                        />
+                      </label>
+                      <button
+                        className="self-end rounded-lg border px-3 py-2 text-sm text-slate-600 disabled:opacity-40"
+                        type="button"
+                        aria-label={`Xóa lô con ${index + 1}`}
+                        disabled={splitAllocations.length <= 2}
+                        onClick={() => setSplitAllocations((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                    <span>Tổng phân bổ: {splitAllocations.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0).toLocaleString()} kg</span>
+                    <button
+                      className="rounded-lg border border-emerald-200 px-3 py-2 font-semibold text-emerald-700 hover:bg-emerald-50"
+                      type="button"
+                      onClick={() => setSplitAllocations((current) => [...current, { quantity: "", location: "" }])}
+                    >
+                      + Thêm lô con
+                    </button>
+                  </div>
+                </div>
+                <button className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white" type="submit" disabled={!splitBatchId || splitAllocations.length < 2 || splitAllocations.some((item) => !(Number(item.quantity) > 0))}>
+                  Tách lô
+                </button>
+              </form>
+
+              <form
+                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+                onSubmit={handleMergeSubmit}
+              >
+                <h2 className="text-lg font-bold text-slate-900">Gộp lô hàng</h2>
+                <p className="mt-2 text-sm text-slate-500">Chọn ít nhất hai lô cùng sản phẩm.</p>
+                <div className="mt-4 max-h-48 space-y-2 overflow-auto">
+                  {filteredBatches.map((batch) => (
+                    <label key={batch.id} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={mergeBatchIds.includes(String(batch.id))}
+                        onChange={(event) =>
+                          setMergeBatchIds((current) =>
+                            event.target.checked
+                              ? [...current, String(batch.id)]
+                              : current.filter((id) => id !== String(batch.id)),
+                          )
+                        }
+                      />
+                      {batch.batch_code} · {batch.product_name}
+                    </label>
+                  ))}
+                </div>
+                <button className="mt-4 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white" type="submit" disabled={mergeBatchIds.length < 2}>
+                  Gộp lô
+                </button>
+              </form>
+
+              <form
+                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 lg:col-span-2"
+                onSubmit={handleBatchCsvImport}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Nhập lô từ CSV</h2>
+                    <p className="mt-1 text-sm text-slate-500">Mỗi dòng tạo một lô thuộc tổ chức đang đăng nhập và ghi sự kiện nhập vào hash chain.</p>
+                  </div>
+                  <button className="rounded-lg border px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50" type="button" onClick={downloadBatchCsvTemplate}>Tải CSV mẫu</button>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                    Chọn file CSV (tối đa 500 lô mỗi lần)
+                    <input className="rounded-xl border px-3 py-2 text-sm" type="file" name="batchCsv" accept=".csv,text/csv" required />
+                  </label>
+                  <button className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white" type="submit">Nhập lô</button>
+                </div>
+                <p className="mt-2 text-xs text-slate-400">Cột bắt buộc: productId, quantityKg. Cột tùy chọn: currentLocation, harvestedAt, batchCode. Dùng productId trong danh mục sản phẩm của tổ chức.</p>
+              </form>
+            </section>
+          )}
 
         {selectedView === "Integrity" && (
           <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
@@ -1022,278 +1870,842 @@ export default function DashboardPage() {
           </section>
         )}
 
+        {/* Danh sách yêu cầu bàn giao */}
         {transferRequests.length > 0 && (
           <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <h2 className="text-lg font-bold text-slate-900">
-              Danh sách bàn giao
-            </h2>
-            <div className="mt-4 space-y-3">
-              {transferRequests.map((request) => (
-                <div
-                  key={request.id}
-                  className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-800">
-                      {request.batch_code}
-                    </div>
-                    <div className="text-sm text-slate-500">
-                      Từ {request.from_organization_name} →{" "}
-                      {request.to_organization_name}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Trạng thái: {request.status}
-                    </div>
-                  </div>
-                  {request.status === "pending" &&
-                    [
-                      "farm_admin",
-                      "processor_admin",
-                      "distributor_admin",
-                    ].includes(user?.role) &&
-                    request.to_organization_id === user?.organizationId && (
-                      <div className="flex gap-2">
-                        <button
-                          className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white"
-                          onClick={() =>
-                            handleTransferDecision(request.id, "confirmed")
-                          }
-                        >
-                          Xác nhận
-                        </button>
-                        <button
-                          className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white"
-                          onClick={() =>
-                            handleTransferDecision(request.id, "rejected")
-                          }
-                        >
-                          Từ chối
-                        </button>
-                      </div>
-                    )}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Quản lý bàn giao lô hàng
+                  </h2>
+                  {pendingIncomingCount > 0 && (
+                    <span className="rounded-full bg-rose-500 px-2.5 py-0.5 text-xs font-bold text-white animate-pulse">
+                      {pendingIncomingCount} cần xử lý
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-          </section>
-        )}
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Bàn giao quyền sở hữu lô hàng qua chuỗi cung ứng (Farm → Cơ sở sơ chế → Nhà phân phối).
+                </p>
+              </div>
 
-        {selectedBatch && (
-          <section className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-              <h2 className="text-lg font-bold text-slate-900">
-                Lịch sử sự kiện
-              </h2>
-              <div className="mt-5 space-y-3">
-                {(selectedBatch.events || []).map((event, index) => (
-                  <div
-                    key={event.id || index}
-                    className="rounded-xl border border-slate-200 p-4"
+              {/* Filter tabs */}
+              <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 text-xs font-medium">
+                {[
+                  { id: "all", label: `Tất cả (${transferRequests.length})` },
+                  { id: "incoming", label: `Cần tôi xử lý (${pendingIncomingCount})` },
+                  { id: "outgoing", label: "Đã gửi" },
+                  { id: "completed", label: "Lịch sử" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setTransferFilter(tab.id)}
+                    className={`rounded-lg px-3 py-1.5 transition ${
+                      transferFilter === tab.id
+                        ? "bg-white font-semibold text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-800">
-                        {event.event_type}
-                      </span>
-                      <span className="text-xs text-slate-500">
-                        {new Date(event.timestamp).toLocaleString("vi-VN")}
-                      </span>
-                    </div>
-                    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-                      {event.data_json}
-                    </pre>
-                    <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                      <span>Hash trước: {event.previous_hash}</span>
-                      <span>Hash hiện tại: {event.current_hash}</span>
-                    </div>
-                  </div>
+                    {tab.label}
+                  </button>
                 ))}
               </div>
             </div>
 
+            {/* Transfer List */}
+            <div className="mt-4 space-y-3">
+              {filteredTransferRequests.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                  <ArrowRightLeft size={36} className="opacity-30 mb-2" />
+                  <p className="text-sm">Không có yêu cầu bàn giao nào trong danh mục này.</p>
+                </div>
+              ) : (
+                filteredTransferRequests.map((request) => {
+                  const isIncoming = request.to_organization_id === user?.organizationId;
+                  const isOutgoing = request.from_organization_id === user?.organizationId;
+                  const canDecide =
+                    request.status === "pending" &&
+                    isIncoming &&
+                    ["farm_admin", "processor_admin", "distributor_admin"].includes(user?.role);
+
+                  return (
+                    <div
+                      key={request.id}
+                      className={`group relative flex flex-col gap-3.5 rounded-2xl border p-5 transition-all ${
+                        request.status === "pending" && isIncoming
+                          ? "border-amber-300 bg-amber-50/40 hover:border-amber-400 hover:shadow-md ring-1 ring-amber-200"
+                          : request.status === "confirmed"
+                          ? "border-emerald-200 bg-emerald-50/20 hover:border-emerald-300"
+                          : request.status === "rejected"
+                          ? "border-rose-200 bg-rose-50/20 hover:border-rose-300"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
+                      {/* Top row: Organizations & Status Badge */}
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+                            <span className="text-slate-400 font-normal">Từ:</span> {request.from_organization_name}
+                          </span>
+                          <ArrowRight size={14} className="text-slate-400" />
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+                            <span className="text-slate-400 font-normal">Đến:</span> {request.to_organization_name}
+                          </span>
+                          {isIncoming && (
+                            <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                              Bên nhận (Tổ chức của bạn)
+                            </span>
+                          )}
+                          {isOutgoing && (
+                            <span className="rounded-md bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                              Bên gửi (Tổ chức của bạn)
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {Boolean(request.is_overdue) && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-700 animate-bounce">
+                              <AlertTriangle size={12} />
+                              Quá hạn 48h
+                            </span>
+                          )}
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+                              request.status === "pending"
+                                ? "bg-amber-100 text-amber-800 ring-1 ring-amber-300"
+                                : request.status === "confirmed"
+                                ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300"
+                                : "bg-rose-100 text-rose-800 ring-1 ring-rose-300"
+                            }`}
+                          >
+                            {request.status === "pending" && <Clock size={12} />}
+                            {request.status === "confirmed" && <CheckCircle2 size={12} />}
+                            {request.status === "rejected" && <ShieldAlert size={12} />}
+                            {request.status === "pending"
+                              ? "Chờ xác nhận"
+                              : request.status === "confirmed"
+                              ? "Đã xác nhận"
+                              : "Đã từ chối"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Middle row: Batch details */}
+                      <div className="grid gap-3 sm:grid-cols-3 rounded-xl bg-white/90 p-3 ring-1 ring-slate-200/70">
+                        <div>
+                          <p className="text-[11px] text-slate-400">Mã lô hàng</p>
+                          <p className="font-mono font-bold text-slate-800">{request.batch_code}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-slate-400">Sản phẩm & Khối lượng</p>
+                          <p className="font-semibold text-slate-800">
+                            {request.product_name || "Nông sản"} · {request.remaining_quantity || request.initial_quantity || 0} {request.product_unit || "kg"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-slate-400">Thời gian tạo</p>
+                          <p className="text-xs text-slate-600">
+                            {new Date(request.created_at).toLocaleString("vi-VN")}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Note row if sender provided note */}
+                      {request.note && (
+                        <div className="rounded-xl bg-slate-50/90 px-3.5 py-2 text-xs text-slate-600">
+                          <span className="font-semibold text-slate-700">Ghi chú từ bên gửi: </span>
+                          <span>{request.note}</span>
+                        </div>
+                      )}
+
+                      {/* Reason row if confirmed or rejected */}
+                      {request.reason && (
+                        <div className={`rounded-xl px-3.5 py-2.5 text-xs ${
+                          request.status === "confirmed"
+                            ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
+                            : "bg-rose-50 text-rose-900 border border-rose-200"
+                        }`}>
+                          <span className="font-bold">
+                            {request.status === "confirmed" ? "Lý do tiếp nhận: " : "Lý do từ chối: "}
+                          </span>
+                          <span>{request.reason}</span>
+                        </div>
+                      )}
+
+                      {/* Action buttons if current user is the receiver */}
+                      {canDecide && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-amber-200">
+                          <span className="text-xs font-semibold text-amber-900">
+                            👉 Vui lòng kiểm tra và xác nhận hoặc từ chối bàn giao:
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition"
+                              onClick={() => openDecisionModal(request, "confirmed")}
+                            >
+                              <CheckCircle2 size={14} />
+                              Xác nhận tiếp nhận
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700 transition"
+                              onClick={() => openDecisionModal(request, "rejected")}
+                            >
+                              <XCircle size={14} />
+                              Từ chối bàn giao
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Modal xác nhận hoặc từ chối bàn giao kèm lý do */}
+        {decisionModal.open && decisionModal.transfer && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+              {/* Modal Header */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
+                      decisionModal.decision === "confirmed"
+                        ? "bg-emerald-100 text-emerald-600"
+                        : "bg-rose-100 text-rose-600"
+                    }`}
+                  >
+                    {decisionModal.decision === "confirmed" ? (
+                      <CheckCircle2 size={26} />
+                    ) : (
+                      <XCircle size={26} />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">
+                      {decisionModal.decision === "confirmed"
+                        ? "Xác nhận nhận bàn giao lô hàng"
+                        : "Từ chối nhận bàn giao lô hàng"}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {decisionModal.decision === "confirmed"
+                        ? "Lô hàng sẽ được chuyển quyền sở hữu sang tổ chức của bạn."
+                        : "Lô hàng sẽ được hoàn trả về trạng thái của bên gửi."}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeDecisionModal}
+                  disabled={decisionModal.submitting}
+                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Transfer Summary */}
+              <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/90 p-4 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Mã lô hàng:</span>
+                  <span className="font-mono font-bold text-slate-800">
+                    {decisionModal.transfer.batch_code}
+                  </span>
+                </div>
+                {decisionModal.transfer.product_name && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Sản phẩm:</span>
+                    <span className="font-semibold text-slate-800">
+                      {decisionModal.transfer.product_name} ({decisionModal.transfer.remaining_quantity || decisionModal.transfer.initial_quantity || 0} {decisionModal.transfer.product_unit || "kg"})
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Bên chuyển giao:</span>
+                  <span className="font-medium text-slate-700">
+                    {decisionModal.transfer.from_organization_name}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Bên nhận (Tổ chức của bạn):</span>
+                  <span className="font-medium text-emerald-700">
+                    {decisionModal.transfer.to_organization_name}
+                  </span>
+                </div>
+                {decisionModal.transfer.note && (
+                  <div className="pt-2 border-t border-slate-200/60 text-slate-600">
+                    <span className="font-semibold text-slate-700">Ghi chú từ bên gửi: </span>
+                    <span className="italic">{decisionModal.transfer.note}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Preset suggestion chips */}
+              <div className="mt-4">
+                <label className="text-xs font-semibold text-slate-700 block mb-2">
+                  Gợi ý lý do nhanh:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(decisionModal.decision === "confirmed"
+                    ? [
+                        "Đã kiểm tra chất lượng và nhận đủ số lượng.",
+                        "Bao bì nguyên vẹn, nhiệt độ đạt chuẩn.",
+                        "Đã đối chiếu chứng từ thành công.",
+                        "Hàng đạt tiêu chuẩn VietGAP/GlobalGAP."
+                      ]
+                    : [
+                        "Lô hàng không đạt tiêu chuẩn chất lượng.",
+                        "Nhiệt độ bảo quản bị vi phạm quá ngưỡng.",
+                        "Khối lượng thực tế không khớp với chứng từ.",
+                        "Bao bì bị rách hỏng, biến dạng nghiêm trọng."
+                      ]
+                  ).map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() =>
+                        setDecisionModal((prev) => ({ ...prev, reason: preset }))
+                      }
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 hover:border-slate-400 hover:bg-slate-50 transition"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reason Form */}
+              <form onSubmit={handleSubmitDecisionModal} className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-800">
+                    {decisionModal.decision === "confirmed" ? (
+                      <>
+                        Ghi chú / Nhận xét tiếp nhận <span className="text-slate-400 font-normal">(Không bắt buộc)</span>
+                      </>
+                    ) : (
+                      <>
+                        Lý do từ chối <span className="text-rose-500">* (Bắt buộc tối thiểu 10 ký tự)</span>
+                      </>
+                    )}
+                  </label>
+                  <textarea
+                    rows={3}
+                    required={decisionModal.decision === "rejected"}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    placeholder={
+                      decisionModal.decision === "confirmed"
+                        ? "Có thể để trống hoặc ghi chú thêm nếu muốn..."
+                        : "Bắt buộc nhập rõ nguyên nhân từ chối lô hàng (tối thiểu 10 ký tự)..."
+                    }
+                    value={decisionModal.reason}
+                    onChange={(e) =>
+                      setDecisionModal((prev) => ({ ...prev, reason: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={decisionModal.submitting}
+                    onClick={closeDecisionModal}
+                    className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      decisionModal.submitting ||
+                      (decisionModal.decision === "rejected" &&
+                        decisionModal.reason.trim().length < 10)
+                    }
+                    className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:opacity-50 ${
+                      decisionModal.decision === "confirmed"
+                        ? "bg-emerald-600 hover:bg-emerald-700"
+                        : "bg-rose-600 hover:bg-rose-700"
+                    }`}
+                  >
+                    {decisionModal.submitting ? (
+                      <span>Đang xử lý...</span>
+                    ) : decisionModal.decision === "confirmed" ? (
+                      <>
+                        <CheckCircle2 size={16} />
+                        <span>Xác nhận tiếp nhận</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle size={16} />
+                        <span>Từ chối tiếp nhận</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {selectedView === "Địa điểm & Cửa hàng" && (
+          <LocationsView
+            user={user}
+            batches={batches}
+            onBatchUpdated={loadData}
+            activeBatchId={distributeBatchId}
+          />
+        )}
+
+        {selectedView === "Nhập CSV" && (
+          <CsvImportView onImportSuccess={loadData} />
+        )}
+
+        {selectedView === "Nhật ký thao tác" && (
+          <AuditLogsView />
+        )}
+
+        {selectedBatch && selectedView !== "Nhật ký thao tác" && (
+          <section className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+            {/* Event Timeline */}
+            <div className="rounded-2xl bg-white p-6 card-shadow border border-slate-200/80">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-900">Dòng thời gian sự kiện (Hash Chain)</h2>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
+                      {timelineEvents.length} mốc
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Lô hàng: <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{selectedBatch.batch_code}</span>
+                  </p>
+                  {(selectedBatch.events || []).some((event) => event.event_type === "batch_transferred") && (
+                    <p className="mt-2 inline-flex items-center rounded-lg bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-800 ring-1 ring-sky-200">
+                      Nhật ký bao gồm các sự kiện trước và sau khi bàn giao lô.
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleVerifyIntegrity(selectedBatch.id)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-800 transition"
+                >
+                  <ShieldCheck size={14} />
+                  Xác minh tính toàn vẹn
+                </button>
+              </div>
+
+              {selectedBatch.integrity && (
+                <div
+                  className={`mt-4 rounded-xl p-3.5 text-xs flex items-center gap-2.5 border ${
+                    selectedBatch.integrity.valid
+                      ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                      : "bg-rose-50 text-rose-900 border-rose-300 animate-pulse"
+                  }`}
+                >
+                  {selectedBatch.integrity.valid ? (
+                    <ShieldCheck size={18} className="text-emerald-600 flex-shrink-0" />
+                  ) : (
+                    <ShieldAlert size={18} className="text-rose-600 flex-shrink-0" />
+                  )}
+                  <div>
+                    <p className="font-bold">
+                      {selectedBatch.integrity.valid
+                        ? "Chuỗi Hash SHA-256 hoàn toàn nguyên vẹn."
+                        : `CẢNH BÁO: Phát hiện đứt gãy/sửa lén tại event ID: ${selectedBatch.integrity.invalidEventIds.join(", ")}!`}
+                    </p>
+                    <p className="text-[11px] opacity-80 mt-0.5">
+                      {selectedBatch.integrity.valid
+                        ? "Tất cả các hash liên tiếp khớp 100% với genesis hash."
+                        : "Dữ liệu sự kiện đã bị chỉnh sửa bất hợp pháp ngoài ứng dụng."}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {timelineEvents.length === 0 ? (
+                <div className="mt-12 flex flex-col items-center justify-center py-10 text-slate-400">
+                  <ClipboardList size={40} className="opacity-30 mb-2" />
+                  <p className="text-sm">Chưa có sự kiện nào cho lô này.</p>
+                </div>
+              ) : (
+                <ol className="mt-6 relative border-l-2 border-slate-200 pl-6 space-y-0">
+                  {timelineEvents.map((event, index) => {
+                    let parsedData = {};
+                    try { parsedData = JSON.parse(event.data_json); } catch { /* ignore */ }
+                    const isLast = index === (timelineEvents.length - 1);
+                    const meta = EVENT_META[event.event_type] || {};
+                    const dotColor = meta.color?.includes("rose") ? "bg-rose-500" :
+                      meta.color?.includes("orange") ? "bg-orange-500" :
+                      meta.color?.includes("amber") ? "bg-amber-500" :
+                      meta.color?.includes("emerald") ? "bg-emerald-500" :
+                      meta.color?.includes("violet") ? "bg-violet-500" :
+                      meta.color?.includes("sky") || meta.color?.includes("blue") ? "bg-sky-500" :
+                      meta.color?.includes("indigo") ? "bg-indigo-500" :
+                      meta.color?.includes("teal") ? "bg-teal-500" : "bg-slate-400";
+                    return (
+                      <li key={event.id || index} className={`relative pb-6 ${isLast ? "pb-0" : ""}`}>
+                        {/* Milestone icon dot */}
+                        <span className={`absolute -left-[calc(0.75rem+1px)] top-1 flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-white ${dotColor} shadow-sm`} />
+
+                        <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 hover:border-slate-300 hover:bg-white transition-all card-shadow">
+                          {/* Event header */}
+                          <div className="flex flex-wrap items-start gap-2 justify-between">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <EventBadge eventType={event.event_type} />
+                              {event.isAncestorEvent && (
+                                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-200">
+                                  Lịch sử tổ tiên · {event.batch_code}
+                                </span>
+                              )}
+                            </div>
+                            <time className="text-[11px] font-mono text-slate-400 tabular-nums">
+                              {new Date(event.timestamp).toLocaleString("vi-VN", {
+                                day: "2-digit", month: "2-digit", year: "numeric",
+                                hour: "2-digit", minute: "2-digit", second: "2-digit"
+                              })}
+                            </time>
+                          </div>
+
+                          {/* Actor */}
+                          {event.actor_name && (
+                            <p className="mt-2 text-xs text-slate-500">
+                              Người thực hiện: <span className="font-semibold text-slate-800">{event.actor_name}</span>
+                            </p>
+                          )}
+
+                          {/* Parsed data fields */}
+                          <div className="mt-3 grid gap-1.5 rounded-xl bg-white/90 p-3 border border-slate-100">
+                            {Object.entries(parsedData).map(([k, v]) => (
+                              <DataField key={k}
+                                label={k.replaceAll("_", " ")}
+                                value={Array.isArray(v) ? v.join(", ") : typeof v === "object" ? JSON.stringify(v) : v}
+                              />
+                            ))}
+                          </div>
+
+                          {/* Hash chain badges */}
+                          <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/60">
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">SHA-256:</span>
+                            <HashBadge label="prev" hash={event.previous_hash} />
+                            <HashBadge label="curr" hash={event.current_hash} />
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </div>
+
+            {/* Right Column: Details & Genealogy */}
             <div className="space-y-6">
-              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                <h3 className="font-bold text-slate-900">Thông tin lô</h3>
-                <dl className="mt-4 space-y-3 text-sm">
-                  <div className="flex justify-between gap-4">
+              {/* Batch Info Card */}
+              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80">
+                <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
+                  Thông tin chi tiết lô
+                </h3>
+                <dl className="mt-4 space-y-3 text-xs">
+                  <div className="flex justify-between items-center gap-4">
                     <dt className="text-slate-500">Mã lô</dt>
-                    <dd className="font-semibold text-slate-800">
+                    <dd className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                       {selectedBatch.batch_code}
                     </dd>
                   </div>
-                  <div className="flex justify-between gap-4">
+                  <div className="flex justify-between items-center gap-4">
                     <dt className="text-slate-500">Sản phẩm</dt>
                     <dd className="font-semibold text-slate-800">
                       {selectedBatch.product_name}
                     </dd>
                   </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-slate-500">Tổ chức</dt>
+                  <div className="flex justify-between items-center gap-4">
+                    <dt className="text-slate-500">Trạng thái hiện tại</dt>
+                    <dd>
+                      <BatchStatusBadge status={selectedBatch.status} />
+                    </dd>
+                  </div>
+                  <div className="flex justify-between items-center gap-4">
+                    <dt className="text-slate-500">Tổ chức quản lý</dt>
                     <dd className="font-semibold text-slate-800">
                       {selectedBatch.organization_name}
                     </dd>
                   </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-slate-500">Khối lượng</dt>
-                    <dd className="font-semibold text-slate-800">
-                      {Number(
-                        selectedBatch.remaining_quantity,
-                      ).toLocaleString()}{" "}
-                      kg
+                  <div className="flex justify-between items-center gap-4">
+                    <dt className="text-slate-500">Nơi giữ hiện tại</dt>
+                    <dd className="font-semibold text-right text-slate-800">
+                      {selectedBatch.current_location || "Chưa cập nhật"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between items-center gap-4">
+                    <dt className="text-slate-500">Khối lượng còn lại</dt>
+                    <dd className="font-mono font-bold text-slate-900">
+                      {Number(selectedBatch.remaining_quantity).toLocaleString()} {selectedBatch.product_unit || "kg"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between items-center gap-4">
+                    <dt className="text-slate-500">Nhiệt độ hiện tại</dt>
+                    <dd className="font-mono font-bold text-emerald-700">
+                      {selectedBatch.temperature_c ?? 9}°C
                     </dd>
                   </div>
                 </dl>
+
+                {/* S-29: Tiêu thụ / Bán hết Button & S-30: Chia lô về cửa hàng */}
+                {selectedBatch.status !== "consumed" && Number(selectedBatch.remaining_quantity) > 0 && (
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2">
+                    {user?.role === "distributor_admin" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDistributeBatchId(selectedBatch.id);
+                          setSelectedView("Địa điểm & Cửa hàng");
+                        }}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:from-emerald-700 hover:to-teal-700 transition cursor-pointer"
+                      >
+                        <Boxes size={14} /> Chia lô về các cửa hàng (S-30)
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setConsumeModalBatch(selectedBatch)}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-amber-700 transition cursor-pointer"
+                    >
+                      <ShoppingCart size={14} /> Ghi nhận bán hết / Tiêu thụ (S-29)
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                <h3 className="font-bold text-slate-900">Integrity status</h3>
-                <div className="mt-4 flex items-center gap-3 rounded-xl bg-emerald-50 p-3 text-emerald-700">
-                  <ShieldCheck size={18} />{" "}
-                  <span className="font-semibold">
-                    Lịch sử sự kiện không thể sửa
+              {/* Integrity & Public Trace Card */}
+              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80">
+                <h3 className="text-base font-bold text-slate-900">Bảo chứng toàn vẹn & Truy xuất</h3>
+                <div className="mt-3 flex items-center gap-2.5 rounded-xl bg-emerald-50 p-3 text-emerald-800 border border-emerald-200">
+                  <ShieldCheck size={20} className="text-emerald-600 flex-shrink-0" />
+                  <span className="text-xs font-semibold">
+                    Lịch sử sự kiện chống giả mạo, không thể sửa hay xóa.
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-slate-500">
-                  Mỗi event được nối bằng SHA-256. Demo sử dụng
-                  previous_hash/current_hash để kiểm tra tính toàn vẹn.
+                <p className="mt-3 text-xs text-slate-500 leading-relaxed">
+                  Mỗi sự kiện được liên kết bằng SHA-256 băm tuần tự. Cơ chế Database Trigger ngăn chặn triệt để mọi hành vi sửa/xóa.
                 </p>
                 <a
                   href={`/trace/${encodeURIComponent(selectedBatch.batch_code)}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-900"
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-800 transition"
                 >
-                  <ExternalLink size={16} /> Mở trang truy xuất công khai
+                  <ExternalLink size={14} /> Mở trang truy xuất công khai
                 </a>
+              </div>
+
+              {/* Genealogy Card */}
+              <div className="rounded-2xl bg-white p-5 card-shadow border border-slate-200/80">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Nguồn gốc phả hệ (Genealogy)</h3>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      Truy nguyên lô gốc và quan hệ tách/gộp qua các công đoạn.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLineageModalBatch(selectedBatch)}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition"
+                  >
+                    <Network size={14} /> Sơ đồ cây phả hệ (S-28)
+                  </button>
+                </div>
+                {genealogy ? (
+                  <div className="mt-4 space-y-3 text-xs">
+                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                      <span className="text-slate-500 font-medium">Lô tổ tiên (Ancestors):</span>
+                      <span className="font-bold text-slate-800">{genealogy.ancestors?.length || 0} lô</span>
+                    </div>
+                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                      <span className="text-slate-500 font-medium">Lô con cháu (Descendants):</span>
+                      <span className="font-bold text-slate-800">{genealogy.descendants?.length || 0} lô</span>
+                    </div>
+                    {genealogy.roots?.length > 0 && (
+                      <div className="pt-2">
+                        <span className="font-semibold text-slate-700 block mb-2">Lô gốc ban đầu (Roots):</span>
+                        <div className="space-y-1.5">
+                          {genealogy.roots.map((root) => (
+                            <div key={root.id} className="font-mono text-xs font-bold text-slate-800 bg-emerald-50/80 px-3 py-1.5 rounded-lg border border-emerald-200 flex items-center justify-between">
+                              <span>{root.batch_code}</span>
+                              <span className="text-[10px] text-emerald-700 font-normal">Lô gốc</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {lineageGraph.edges.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <span className="font-semibold text-slate-700">Sơ đồ quan hệ lô</span>
+                        <div className="mt-2 grid gap-2">
+                          {lineageGraph.edges.map(({ parent, child }) => (
+                            <div key={`${parent.id}-${child.id}`} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <span className="truncate rounded-lg bg-white px-2 py-1 font-mono text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">{parent.batch_code}</span>
+                              <span className="text-emerald-600" aria-label="dẫn đến">→</span>
+                              <span className={`truncate rounded-lg px-2 py-1 font-mono text-[11px] font-semibold ring-1 ${child.id === selectedBatch.id ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-white text-slate-700 ring-slate-200"}`}>{child.batch_code}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
+                      <div>
+                        <span className="font-semibold text-slate-700">Lô cha trực tiếp</span>
+                        {batchSummary?.parentRelations?.length ? (
+                          <ul className="mt-2 space-y-1.5">
+                            {batchSummary.parentRelations.map((relation) => (
+                              <li key={`${relation.parent_batch_id}-${relation.child_batch_id}`} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                                {filteredBatches.some((item) => item.id === relation.parent_batch_id) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectBatch(relation.parent_batch_id)}
+                                    className="font-mono font-semibold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900"
+                                    title="Mở chi tiết lô mẹ"
+                                  >
+                                    {relation.parent_batch_code}
+                                  </button>
+                                ) : (
+                                  <span className="font-mono font-semibold text-slate-700" title="Lịch sử lô mẹ được hiển thị trên dòng thời gian">
+                                    {relation.parent_batch_code}
+                                  </span>
+                                )}
+                                <span className="ml-1 text-slate-500">· {Number(relation.quantity).toLocaleString()} kg · {relation.relation_type}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : <p className="mt-1 text-slate-400">Đây là lô gốc.</p>}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-700">Lô con trực tiếp</span>
+                        {batchSummary?.childRelations?.length ? (
+                          <ul className="mt-2 space-y-1.5">
+                            {batchSummary.childRelations.map((relation) => (
+                              <li key={`${relation.parent_batch_id}-${relation.child_batch_id}`} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                                {filteredBatches.some((item) => item.id === relation.child_batch_id) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectBatch(relation.child_batch_id)}
+                                    className="font-mono font-semibold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900"
+                                    title="Mở chi tiết lô con"
+                                  >
+                                    {relation.child_batch_code}
+                                  </button>
+                                ) : (
+                                  <span className="font-mono font-semibold text-slate-700">{relation.child_batch_code}</span>
+                                )}
+                                <span className="ml-1 text-slate-500">· {Number(relation.quantity).toLocaleString()} kg · {relation.relation_type}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : <p className="mt-1 text-slate-400">Chưa tách thành lô con.</p>}
+                      </div>
+                    </div>
+                    {genealogy.ancestors?.length > 1 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <span className="font-semibold text-slate-700">Đường truy ngược về nguồn gốc</span>
+                        <ol className="mt-2 space-y-1.5">
+                          {genealogy.ancestors.filter((item) => item.id !== selectedBatch.id).map((ancestor, index) => (
+                            <li key={ancestor.id} className="flex items-center gap-2 rounded-lg bg-emerald-50/70 px-2.5 py-2">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-800">{index + 1}</span>
+                              <span className="font-mono font-semibold text-slate-800">{ancestor.batch_code}</span>
+                              <span className="ml-auto text-slate-500">còn {Number(ancestor.remaining_quantity).toLocaleString()} kg</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                    {genealogy.descendants?.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <span className="font-semibold text-slate-700">Các lô hậu duệ</span>
+                        <ul className="mt-2 space-y-1.5">
+                          {genealogy.descendants.map((descendant) => (
+                            <li key={descendant.id} className="grid gap-2 rounded-lg bg-indigo-50/70 px-2.5 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-indigo-500">↳</span>
+                                  <span className="font-mono font-semibold text-slate-800">{descendant.batch_code}</span>
+                                  <BatchStatusBadge status={descendant.status} />
+                                </div>
+                                <p className="mt-1 truncate text-[11px] text-slate-500">
+                                  {descendant.organization_name || "Chưa rõ tổ chức"} · {descendant.current_location || "Chưa cập nhật địa điểm"}
+                                </p>
+                              </div>
+                              <span className="text-xs font-semibold text-slate-700">
+                                Còn {Number(descendant.remaining_quantity).toLocaleString()} kg
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-slate-400 italic">
+                    Chọn một lô để tải cây phả hệ nguồn gốc.
+                  </p>
+                )}
               </div>
             </div>
           </section>
         )}
 
-        {transferDecision.open && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-medium uppercase tracking-[0.12em] text-emerald-600">
-                    Xử lý bàn giao
-                  </p>
-                  <h3 className="mt-1 text-xl font-bold text-slate-900">
-                    {transferDecision.decision === "confirmed"
-                      ? "Xác nhận bàn giao"
-                      : "Từ chối bàn giao"}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-50"
-                  onClick={() =>
-                    setTransferDecision({
-                      open: false,
-                      transferId: null,
-                      decision: "confirmed",
-                      reason: "",
-                      error: "",
-                    })
-                  }
-                >
-                  Đóng
-                </button>
-              </div>
+        {consumeModalBatch && (
+          <ConsumeModal
+            batch={consumeModalBatch}
+            onClose={() => setConsumeModalBatch(null)}
+            onSuccess={async () => {
+              await loadData();
+              setSubmission({
+                message: `Đã ghi nhận tiêu thụ thành công lô ${consumeModalBatch.batch_code || consumeModalBatch.code}.`,
+                tone: "success",
+              });
+            }}
+          />
+        )}
 
-              <div className="mt-6 flex gap-2">
-                <button
-                  type="button"
-                  className={`flex-1 rounded-xl px-4 py-2 font-semibold ${
-                    transferDecision.decision === "confirmed"
-                      ? "bg-emerald-600 text-white"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                  onClick={() =>
-                    setTransferDecision((current) => ({
-                      ...current,
-                      decision: "confirmed",
-                      reason: current.decision === "confirmed" ? current.reason : "Đã kiểm tra và nhận đủ lô hàng.",
-                      error: "",
-                    }))
-                  }
-                >
-                  Xác nhận
-                </button>
-                <button
-                  type="button"
-                  className={`flex-1 rounded-xl px-4 py-2 font-semibold ${
-                    transferDecision.decision === "rejected"
-                      ? "bg-rose-600 text-white"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                  onClick={() =>
-                    setTransferDecision((current) => ({
-                      ...current,
-                      decision: "rejected",
-                      reason: current.reason || "",
-                      error: "",
-                    }))
-                  }
-                >
-                  Từ chối
-                </button>
-              </div>
-
-              {transferDecision.decision === "rejected" && (
-                <div className="mt-5">
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Lý do từ chối
-                  </label>
-                  <textarea
-                    rows={4}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
-                    placeholder="Ví dụ: Hàng giao không đúng mẫu, cần kiểm tra lại trước khi bàn giao tiếp."
-                    value={transferDecision.reason}
-                    onChange={(event) =>
-                      setTransferDecision((current) => ({
-                        ...current,
-                        reason: event.target.value,
-                        error: "",
-                      }))
-                    }
-                  />
-                  <p className="mt-2 text-xs text-slate-500">
-                    Tối thiểu 10 ký tự và không được để trống.
-                  </p>
-                </div>
-              )}
-
-              {transferDecision.error && (
-                <div className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">
-                  {transferDecision.error}
-                </div>
-              )}
-
-              <div className="mt-6 flex justify-end gap-3">
-                <button
-                  type="button"
-                  className="rounded-xl border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
-                  onClick={() =>
-                    setTransferDecision({
-                      open: false,
-                      transferId: null,
-                      decision: "confirmed",
-                      reason: "",
-                      error: "",
-                    })
-                  }
-                >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-700"
-                  onClick={submitTransferDecision}
-                >
-                  Xác nhận
-                </button>
-              </div>
+        {lineageModalBatch && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+            <div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl bg-slate-50 p-6 shadow-2xl ring-1 ring-slate-900/10">
+              <button
+                type="button"
+                onClick={() => setLineageModalBatch(null)}
+                className="absolute right-4 top-4 rounded-xl p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition"
+              >
+                <X size={20} />
+              </button>
+              <LineageGraphView
+                batchId={lineageModalBatch.id}
+                batchCode={lineageModalBatch.batch_code || lineageModalBatch.code}
+              />
             </div>
           </div>
+        )}
+
+        {confirmHarvestModal.open && (
+          <ConfirmSaveModal
+            isOpen={confirmHarvestModal.open}
+            title="Xác nhận lưu thông tin lô thu hoạch"
+            subtitle="Vui lòng kiểm tra lại thông tin lô nông sản trước khi tạo chuỗi hash"
+            data={confirmHarvestModal.data}
+            schema={HARVEST_PREVIEW_SCHEMA}
+            isLoading={confirmHarvestModal.submitting}
+            onClose={() =>
+              !confirmHarvestModal.submitting &&
+              setConfirmHarvestModal({ open: false, data: null, submitting: false })
+            }
+            onConfirm={handleConfirmHarvestSave}
+          />
         )}
       </main>
     </div>

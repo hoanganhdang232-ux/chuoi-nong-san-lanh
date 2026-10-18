@@ -1,124 +1,19 @@
 import { Router } from "express";
-import bcrypt from "bcryptjs";
 import { getDb } from "../db/database.js";
 import { authenticateToken } from "../middleware/auth.js";
 import {
-  createToken,
+  createSessionToken,
   findUserByEmail,
   getLoginFailureInfo,
+  hashPassword,
+  needsPasswordRehash,
   resetLoginFailure,
   updateLoginFailure,
   verifyPassword,
+  revokeSession,
 } from "../services/authService.js";
 
 const router = Router();
-
-router.post("/register", (req, res) => {
-  const name = String(req.body?.name || "").trim();
-  const email = String(req.body?.email || "").trim();
-  const password = String(req.body?.password || "");
-  const organizationName = String(req.body?.organizationName || "").trim();
-  const organizationType = String(req.body?.organizationType || "").trim();
-
-  if (!name || !email || !password || !organizationName || !organizationType) {
-    return res.status(400).json({
-      message: "Vui lòng nhập đầy đủ thông tin cá nhân và tổ chức.",
-    });
-  }
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ message: "Email không hợp lệ." });
-  }
-
-  if (password.length < 6) {
-    return res.status(400).json({
-      message: "Mật khẩu phải có ít nhất 6 ký tự.",
-    });
-  }
-
-  const allowedTypes = ["farm", "processor", "distributor"];
-  if (!allowedTypes.includes(organizationType)) {
-    return res.status(400).json({
-      message: "Loại tổ chức không hợp lệ. Chỉ hỗ trợ Farm, Processor, Distributor.",
-    });
-  }
-
-  const db = getDb();
-
-  if (findUserByEmail(email)) {
-    return res.status(409).json({ message: "Email này đã được đăng ký." });
-  }
-
-  const existingOrganization = db
-    .prepare("SELECT id FROM organizations WHERE name = ?")
-    .get(organizationName);
-
-  if (existingOrganization) {
-    return res.status(409).json({
-      message: "Tên tổ chức đã tồn tại, vui lòng chọn tên khác.",
-    });
-  }
-
-  try {
-    db.exec("BEGIN IMMEDIATE");
-
-    const organizationResult = db
-      .prepare(
-        "INSERT INTO organizations(name, type, address) VALUES (?, ?, ?)",
-      )
-      .run(organizationName, organizationType, "");
-
-    const role = `${organizationType}_admin`;
-    const passwordHash = bcrypt.hashSync(password, 12);
-
-    const userInsert = db
-      .prepare(
-        `INSERT INTO users(organization_id, name, email, password_hash, role, is_active, failed_login_count, locked_until)
-         VALUES (?, ?, ?, ?, ?, 1, 0, NULL)`,
-      )
-      .run(
-        organizationResult.lastInsertRowid,
-        name,
-        email,
-        passwordHash,
-        role,
-      );
-
-    const user = db
-      .prepare(
-        `SELECT u.*, o.type AS organization_type, o.name AS organization_name
-         FROM users u
-         INNER JOIN organizations o ON o.id = u.organization_id
-         WHERE u.id = ?`,
-      )
-      .get(userInsert.lastInsertRowid);
-
-    db.exec("COMMIT");
-
-    const token = createToken(user);
-    const safeUser = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      organizationId: user.organization_id,
-      organizationName: user.organization_name,
-      organizationType: user.organization_type,
-    };
-
-    return res.status(201).json({
-      token,
-      user: safeUser,
-      message: "Đăng ký thành công.",
-    });
-  } catch (error) {
-    db.exec("ROLLBACK");
-    console.error("Register error:", error);
-    return res.status(500).json({
-      message: "Không thể tạo tài khoản. Vui lòng thử lại sau.",
-    });
-  }
-});
 
 router.post("/login", async (req, res) => {
   const email = String(req.body?.email || "").trim();
@@ -175,6 +70,13 @@ router.post("/login", async (req, res) => {
 
   resetLoginFailure(user.id);
 
+  if (needsPasswordRehash(user.password_hash)) {
+    const upgradedHash = await hashPassword(password);
+    getDb()
+      .prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .run(upgradedHash, user.id);
+  }
+
   const safeUser = {
     id: user.id,
     name: user.name,
@@ -185,12 +87,18 @@ router.post("/login", async (req, res) => {
     organizationType: user.organization_type,
   };
 
-  const token = createToken(user);
+  const token = createSessionToken(user);
   return res.json({
     token,
     user: safeUser,
     message: "Đăng nhập thành công.",
   });
+});
+
+router.post("/logout", authenticateToken, (req, res) => {
+  const token = req.headers.authorization?.slice("Bearer ".length);
+  if (token) revokeSession(token);
+  return res.status(204).end();
 });
 
 router.get("/me", authenticateToken, (req, res) => {

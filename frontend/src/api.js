@@ -15,7 +15,8 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Yêu cầu không thành công.");
+    const details = Array.isArray(errorData.errors) ? ` ${errorData.errors.join(" ")}` : "";
+    throw new Error(`${errorData.message || "Yêu cầu không thành công."}${details}`);
   }
 
   return response.status === 204 ? null : response.json();
@@ -27,21 +28,45 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  register: ({ name, email, password, organizationName, organizationType }) =>
-    request("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ name, email, password, organizationName, organizationType }),
-    }),
+  logout: () => request("/auth/logout", { method: "POST" }),
   getMe: () => request("/auth/me"),
   getDashboard: () => request("/auth/dashboard"),
   getBatches: () => request("/batches"),
+  getActivity: (limit = 100) => request(`/batches/activity?limit=${limit}`),
+  importBatchesCsv: (csvText) => request("/batches/import-csv", {
+    method: "POST",
+    body: JSON.stringify({ csvText }),
+  }),
   getBatch: (batchId) => request(`/batches/${batchId}`),
+  getBatchGenealogy: (batchId) => request(`/batches/${batchId}/genealogy`),
+  splitBatch: (batchId, allocations) =>
+    request(`/batches/${batchId}/split`, {
+      method: "POST",
+      body: JSON.stringify({ allocations }),
+    }),
+  mergeBatches: (batchIds, productId) =>
+    request("/batches/merge", {
+      method: "POST",
+      body: JSON.stringify({ batchIds, productId }),
+    }),
   getBatchSummary: (batchId) => request(`/batches/${batchId}/summary`),
   getProducts: () => request("/batches/products"),
+  createProduct: (payload) =>
+    request("/batches/products", { method: "POST", body: JSON.stringify(payload) }),
+  updateProduct: (productId, payload) =>
+    request(`/batches/products/${productId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   getLandPlots: () => request("/batches/land-plots"),
   createLandPlot: (payload) =>
     request("/batches/land-plots", {
       method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateLandPlot: (plotId, payload) =>
+    request(`/batches/land-plots/${plotId}`, {
+      method: "PUT",
       body: JSON.stringify(payload),
     }),
   createHarvest: (payload) =>
@@ -57,6 +82,27 @@ export const api = {
     }),
   decideTransfer: (transferId, payload) =>
     request(`/batches/transfer-requests/${transferId}/decision`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  v1CreateTransfer: (payload) =>
+    request("/v1/transfers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  v1GetPendingTransfers: () => request("/v1/transfers/pending"),
+  v1ApproveTransfer: (id, payload = {}) =>
+    request(`/v1/transfers/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  v1RejectTransfer: (id, payload) =>
+    request(`/v1/transfers/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  v1CancelTransfer: (id, payload = {}) =>
+    request(`/v1/transfers/${id}/cancel`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
@@ -78,4 +124,54 @@ export const api = {
   getAuditReport: (batchId) => request(`/features/auditor/reports/${batchId}`),
   getPublicTrace: (batchCode) =>
     request(`/features/public/trace/${encodeURIComponent(batchCode)}`),
+  // ─── SPRINT 4 APIs ────────────────────────────────────────────────────────
+  getDescendants: (batchId) => request(`/v1/batches/${batchId}/descendants`),
+  getLineageGraph: (batchId) => request(`/v1/batches/${batchId}/lineage-graph`),
+  consumeBatch: (batchId, payload = {}) =>
+    request(`/v1/batches/${batchId}/consume`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getLocations: () => request("/v1/locations"),
+  distributeBatchToStores: (batchId, allocations) =>
+    request("/v1/locations/distribute-batch", {
+      method: "POST",
+      body: JSON.stringify({ batchId, allocations }),
+    }),
+  createLocation: (payload) =>
+    request("/v1/locations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateLocation: (id, payload) =>
+    request(`/v1/locations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteLocation: (id) =>
+    request(`/v1/locations/${id}`, {
+      method: "DELETE",
+    }),
+  assignBatchLocation: (batchId, payload) =>
+    request(`/v1/batches/${batchId}/assign-location`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getAuditLogs: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/audit-logs${q ? "?" + q : ""}`);
+  },
+  importProductsCsv: (csvContent) =>
+    request("/v1/import/products", {
+      method: "POST",
+      body: JSON.stringify({ csvContent }),
+    }),
+  importLandPlotsCsv: (csvContent) =>
+    request("/v1/import/land-plots", {
+      method: "POST",
+      body: JSON.stringify({ csvContent }),
+    }),
 };

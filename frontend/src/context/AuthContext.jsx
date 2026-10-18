@@ -43,28 +43,8 @@ export function AuthProvider({ children }) {
     return result;
   };
 
-  const register = async ({
-    name,
-    email,
-    password,
-    organizationName,
-    organizationType,
-  }) => {
-    const result = await api.register({
-      name,
-      email,
-      password,
-      organizationName,
-      organizationType,
-    });
-    localStorage.setItem("agritrace_token", result.token);
-    localStorage.setItem("agritrace_user", JSON.stringify(result.user));
-    setToken(result.token);
-    setUser(result.user);
-    return result;
-  };
-
   const logout = () => {
+    api.logout().catch(() => undefined);
     localStorage.removeItem("agritrace_token");
     localStorage.removeItem("agritrace_user");
     setToken(null);
@@ -72,7 +52,7 @@ export function AuthProvider({ children }) {
   };
 
   const value = useMemo(
-    () => ({ user, token, loading, login, register, logout }),
+    () => ({ user, token, loading, login, logout }),
     [user, token, loading],
   );
 
