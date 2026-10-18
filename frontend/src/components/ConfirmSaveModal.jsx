@@ -55,34 +55,34 @@ export default function ConfirmSaveModal({
         onClick={!isLoading ? onClose : undefined}
       />
 
-      {/* 2. Hộp thoại Modal chính (Fade-in & Scale-up) */}
-      <div className="animate-modal-in modal-card-glow relative w-full max-w-lg rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
+      {/* 2. Hộp thoại Modal chính (Fade-in & Scale-up - Mở rộng kích thước rộng rãi hơn) */}
+      <div className="animate-modal-in modal-card-glow relative w-full max-w-2xl rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden transition-all">
         {/* Header Modal */}
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4.5 bg-slate-50/70 dark:bg-slate-800/50">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 shadow-2xs">
-              <HeaderIcon size={20} />
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-7 py-5 bg-slate-50/70 dark:bg-slate-800/50">
+          <div className="flex items-center gap-3.5">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 shadow-2xs">
+              <HeaderIcon size={22} />
             </span>
             <div>
-              <h3 id="confirm-modal-title" className="text-base font-bold text-slate-900 dark:text-white">
+              <h3 id="confirm-modal-title" className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
                 {title}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{subtitle}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">{subtitle}</p>
             </div>
           </div>
           <button
             type="button"
             disabled={isLoading}
             onClick={onClose}
-            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
+            className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
-        {/* Body: Preview dữ liệu người dùng vừa nhập */}
-        <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
-          <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 p-4 space-y-3">
+        {/* Body: Preview dữ liệu người dùng vừa nhập - Thoáng đãng, rõ nét */}
+        <div className="max-h-[65vh] overflow-y-auto px-7 py-6">
+          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 p-5 space-y-4">
             {schema.map(({ key, label, format, icon: FieldIcon }) => {
               const rawValue = data?.[key];
               const displayValue = format ? format(rawValue, data) : (rawValue ?? "—");
@@ -90,13 +90,13 @@ export default function ConfirmSaveModal({
               return (
                 <div
                   key={key}
-                  className="flex items-start justify-between gap-4 border-b border-slate-200/50 dark:border-slate-800/60 pb-2.5 last:border-0 last:pb-0"
+                  className="flex items-center justify-between gap-6 border-b border-slate-200/50 dark:border-slate-800/60 pb-3 last:border-0 last:pb-0"
                 >
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    {FieldIcon && <FieldIcon size={14} className="text-slate-400" />}
+                  <span className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400 min-w-[130px]">
+                    {FieldIcon && <FieldIcon size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />}
                     {label}:
                   </span>
-                  <span className="text-right text-xs font-semibold text-slate-800 dark:text-slate-200 break-all font-mono">
+                  <span className="text-right text-sm font-semibold text-slate-900 dark:text-slate-100 break-all font-mono">
                     {displayValue}
                   </span>
                 </div>
@@ -105,20 +105,20 @@ export default function ConfirmSaveModal({
           </div>
 
           {noticeText && (
-            <div className="mt-4 flex items-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/50">
-              <AlertCircle size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
-              <span>{noticeText}</span>
+            <div className="mt-4 flex items-center gap-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 p-3.5 text-xs text-amber-800 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/50">
+              <AlertCircle size={18} className="shrink-0 text-amber-600 dark:text-amber-400" />
+              <span className="leading-relaxed">{noticeText}</span>
             </div>
           )}
         </div>
 
         {/* Footer: 2 nút hành động (Hủy bỏ & Xác nhận lưu) */}
-        <div className="flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/80 px-6 py-4 rounded-b-2xl">
+        <div className="flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/80 px-7 py-4.5 rounded-b-3xl">
           <button
             type="button"
             disabled={isLoading}
             onClick={onClose}
-            className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300 shadow-2xs hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-slate-400 transition active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+            className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300 shadow-2xs hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-slate-400 transition active:scale-[0.98] disabled:opacity-50 cursor-pointer"
           >
             Hủy bỏ
           </button>
@@ -127,7 +127,7 @@ export default function ConfirmSaveModal({
             type="button"
             disabled={isLoading}
             onClick={onConfirm}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm shadow-emerald-950/20 hover:from-emerald-700 hover:to-teal-700 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-2.5 text-xs font-bold text-white shadow-sm shadow-emerald-950/20 hover:from-emerald-700 hover:to-teal-700 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
           >
             {isLoading ? (
               <>
