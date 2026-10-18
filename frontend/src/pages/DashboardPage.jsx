@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -27,6 +27,8 @@ import {
   XCircle,
   Sun,
   Moon,
+  Upload,
+  FileSpreadsheet,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import LineageGraphView from "../components/LineageGraphView.jsx";
@@ -250,6 +252,10 @@ export default function DashboardPage() {
     { quantity: "", location: "" },
   ]);
   const [mergeBatchIds, setMergeBatchIds] = useState([]);
+  const [batchCsvFile, setBatchCsvFile] = useState(null);
+  const [isDraggingBatchCsv, setIsDraggingBatchCsv] = useState(false);
+  const [isImportingBatchCsv, setIsImportingBatchCsv] = useState(false);
+  const batchCsvInputRef = useRef(null);
   const [transferForm, setTransferForm] = useState({
     batchId: "",
     toOrganizationId: "",
@@ -685,25 +691,71 @@ export default function DashboardPage() {
     }
   };
 
-  const handleBatchCsvImport = async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const file = form.elements.namedItem("batchCsv")?.files?.[0];
-    if (!file) return;
-    if (file.size > 900_000) {
-      setSubmission({ message: "File CSV vượt giới hạn 900 KB.", tone: "error" });
+  const handleBatchFileSelect = (selectedFile) => {
+    if (!selectedFile) return;
+    const isCsv = selectedFile.name.toLowerCase().endsWith(".csv") || selectedFile.type === "text/csv";
+    if (!isCsv) {
+      toast.error("Định dạng tệp không hợp lệ! Vui lòng chỉ tải lên tệp CSV (.csv).");
       return;
     }
-    try {
-      const result = await api.importBatchesCsv(await file.text());
-      form.reset();
-      await loadData();
+    if (selectedFile.size > 900_000) {
+      toast.error("Kích thước tệp CSV vượt quá giới hạn 900 KB.");
+      return;
+    }
+    setBatchCsvFile(selectedFile);
+    toast.success(`Đã chọn tệp: ${selectedFile.name}`);
+  };
+
+  const handleBatchDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingBatchCsv(true);
+  };
+
+  const handleBatchDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingBatchCsv(false);
+  };
+
+  const handleBatchDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingBatchCsv(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      handleBatchFileSelect(files[0]);
+    }
+  };
+
+  const handleBatchCsvImport = async (event) => {
+    event.preventDefault();
+    if (!batchCsvFile) {
+      toast.warning("Vui lòng chọn hoặc kéo thả tệp CSV trước khi nhấn Nhập lô.");
       setSubmission({
-        message: `Đã nhập ${result.createdCount} lô từ CSV.`,
+        message: "Vui lòng chọn hoặc kéo thả tệp CSV trước khi nhập dữ liệu.",
+        tone: "error",
+      });
+      return;
+    }
+    setIsImportingBatchCsv(true);
+    setSubmission({ message: "", tone: "" });
+    try {
+      const content = await batchCsvFile.text();
+      const result = await api.importBatchesCsv(content);
+      setBatchCsvFile(null);
+      if (batchCsvInputRef.current) batchCsvInputRef.current.value = "";
+      await loadData();
+      toast.success(`Nhập dữ liệu thành công! Đã tạo ${result.createdCount} lô nông sản từ CSV.`);
+      setSubmission({
+        message: `Đã nhập ${result.createdCount} lô từ CSV vào chuỗi hash.`,
         tone: "success",
       });
     } catch (submitError) {
+      toast.error(submitError.message || "Không thể nhập lô từ file CSV.");
       setSubmission({ message: submitError.message, tone: "error" });
+    } finally {
+      setIsImportingBatchCsv(false);
     }
   };
 
@@ -1688,24 +1740,138 @@ export default function DashboardPage() {
               </form>
 
               <form
-                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 lg:col-span-2"
+                className="rounded-3xl bg-white dark:bg-slate-900 p-6 sm:p-7 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800 lg:col-span-2 border border-slate-100 dark:border-slate-800/80 transition-all"
                 onSubmit={handleBatchCsvImport}
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900">Nhập lô từ CSV</h2>
-                    <p className="mt-1 text-sm text-slate-500">Mỗi dòng tạo một lô thuộc tổ chức đang đăng nhập và ghi sự kiện nhập vào hash chain.</p>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 shrink-0 shadow-2xs">
+                      <FileSpreadsheet size={22} />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900 dark:text-white">Nhập lô từ CSV</h2>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        Mỗi dòng tạo một lô thuộc tổ chức đang đăng nhập và ghi sự kiện nhập vào hash chain.
+                      </p>
+                    </div>
                   </div>
-                  <button className="rounded-lg border px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50" type="button" onClick={downloadBatchCsvTemplate}>Tải CSV mẫu</button>
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer shadow-2xs"
+                    type="button"
+                    onClick={downloadBatchCsvTemplate}
+                  >
+                    <Download size={14} />
+                    Tải CSV mẫu
+                  </button>
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                  <label className="grid gap-1 text-xs font-semibold text-slate-600">
-                    Chọn file CSV (tối đa 500 lô mỗi lần)
-                    <input className="rounded-xl border px-3 py-2 text-sm" type="file" name="batchCsv" accept=".csv,text/csv" required />
-                  </label>
-                  <button className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white" type="submit">Nhập lô</button>
+
+                {/* Vùng Dropzone Kéo & Thả file CSV chuyên nghiệp */}
+                <div className="mt-5">
+                  <input
+                    ref={batchCsvInputRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={(e) => handleBatchFileSelect(e.target.files?.[0])}
+                  />
+
+                  {!batchCsvFile ? (
+                    <div
+                      onDragOver={handleBatchDragOver}
+                      onDragLeave={handleBatchDragLeave}
+                      onDrop={handleBatchDrop}
+                      onClick={() => batchCsvInputRef.current?.click()}
+                      className={`group relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 transition-all duration-200 cursor-pointer ${
+                        isDraggingBatchCsv
+                          ? "border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/50 scale-[1.01] shadow-md shadow-emerald-500/10"
+                          : "border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/40 hover:border-emerald-400 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/20"
+                      }`}
+                    >
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 shadow-sm group-hover:text-emerald-600 dark:group-hover:text-emerald-400 group-hover:scale-110 transition-all">
+                        <Upload size={24} />
+                      </div>
+                      <div className="mt-3 text-center">
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                          {isDraggingBatchCsv ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">Thả tệp CSV vào đây ngay...</span>
+                          ) : (
+                            <>
+                              Kéo thả tệp CSV vào đây hoặc{" "}
+                              <span className="text-emerald-600 dark:text-emerald-400 underline font-extrabold">duyệt chọn từ máy tính</span>
+                            </>
+                          )}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                          Chỉ hỗ trợ tệp định dạng .csv (tối đa 500 lô, kích thước không quá 900 KB)
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between rounded-2xl border border-emerald-300/80 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 p-4 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-200/80 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300">
+                          <FileSpreadsheet size={22} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-bold text-emerald-950 dark:text-emerald-100 font-mono">
+                              {batchCsvFile.name}
+                            </p>
+                            <span className="rounded-full bg-emerald-200/90 dark:bg-emerald-900/80 px-2 py-0.5 text-[10px] font-extrabold text-emerald-900 dark:text-emerald-200 uppercase">
+                              Sẵn sàng
+                            </span>
+                          </div>
+                          <p className="text-xs text-emerald-700/80 dark:text-emerald-400 mt-0.5">
+                            Dung lượng: {(batchCsvFile.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => batchCsvInputRef.current?.click()}
+                          className="rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-slate-700 transition cursor-pointer"
+                        >
+                          Đổi tệp khác
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBatchCsvFile(null);
+                            if (batchCsvInputRef.current) batchCsvInputRef.current.value = "";
+                          }}
+                          className="rounded-xl p-1.5 text-slate-400 hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-950/60 transition cursor-pointer"
+                          title="Hủy tệp này"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <p className="mt-2 text-xs text-slate-400">Cột bắt buộc: productId, quantityKg. Cột tùy chọn: currentLocation, harvestedAt, batchCode. Dùng productId trong danh mục sản phẩm của tổ chức.</p>
+
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <p className="text-[11px] text-slate-400 leading-relaxed max-w-xl">
+                    Cột bắt buộc: <code className="font-mono text-emerald-700 dark:text-emerald-400">productId, quantityKg</code>. Cột tùy chọn: <code className="font-mono text-slate-600 dark:text-slate-400">currentLocation, harvestedAt, batchCode</code>.
+                  </p>
+                  <button
+                    className="min-w-[150px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 px-7 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-700/25 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-all cursor-pointer active:scale-95"
+                    type="submit"
+                    disabled={isImportingBatchCsv}
+                  >
+                    {isImportingBatchCsv ? (
+                      <>
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        <span>Đang nhập lô...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={16} />
+                        <span>Nhập lô</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </form>
             </section>
           )}
