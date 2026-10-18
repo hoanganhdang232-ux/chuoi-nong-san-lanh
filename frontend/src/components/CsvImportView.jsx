@@ -29,6 +29,7 @@ export default function CsvImportView({ onImportSuccess }) {
   const [file, setFile] = useState(null);
   const [fileContent, setFileContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [result, setResult] = useState(null);
   const [errorDetails, setErrorDetails] = useState(null);
   const fileInputRef = useRef(null);
@@ -44,9 +45,23 @@ export default function CsvImportView({ onImportSuccess }) {
     }
   };
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
+  const processSelectedFile = (selectedFile) => {
     if (!selectedFile) return;
+
+    const isCsv =
+      selectedFile.name.toLowerCase().endsWith(".csv") ||
+      selectedFile.type === "text/csv" ||
+      selectedFile.type === "application/vnd.ms-excel";
+
+    if (!isCsv) {
+      const err = {
+        message: "Định dạng tệp không hợp lệ! Vui lòng chỉ tải lên file CSV (.csv).",
+        errors: [],
+      };
+      setErrorDetails(err);
+      toast.error(err.message);
+      return;
+    }
 
     if (selectedFile.size > 5 * 1024 * 1024) {
       const err = {
@@ -61,12 +76,40 @@ export default function CsvImportView({ onImportSuccess }) {
     setFile(selectedFile);
     setErrorDetails(null);
     setResult(null);
+    toast.success(`Đã chọn file: ${selectedFile.name}`);
 
     const reader = new FileReader();
     reader.onload = (event) => {
       setFileContent(event.target.result || "");
     };
     reader.readAsText(selectedFile);
+  };
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (selectedFile) processSelectedFile(selectedFile);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      processSelectedFile(files[0]);
+    }
   };
 
   const handleDownloadSample = () => {
@@ -234,55 +277,88 @@ export default function CsvImportView({ onImportSuccess }) {
           </div>
         </div>
 
-        {/* Upload Dropzone */}
+        {/* Upload Dropzone hỗ trợ Kéo & Thả chuyên nghiệp */}
         <div className="mt-6">
-          <div className="flex justify-center rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 px-6 pt-6 pb-6 bg-slate-50/50 dark:bg-slate-950/40 hover:bg-slate-50 dark:hover:bg-slate-950 transition">
-            <div className="text-center">
-              <Upload className="mx-auto h-10 w-10 text-slate-400" />
-              <div className="mt-3 flex text-xs text-slate-600 dark:text-slate-300 justify-center">
-                <label
-                  htmlFor="file-upload"
-                  className="relative cursor-pointer rounded-md font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 focus-within:outline-none"
-                >
-                  <span>Chọn file từ máy tính</span>
-                  <input
-                    id="file-upload"
-                    name="file-upload"
-                    type="file"
-                    accept=".csv"
-                    className="sr-only"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                  />
-                </label>
-                <p className="pl-1">hoặc kéo thả vào đây</p>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Chỉ chấp nhận định dạng .CSV (Tối đa 5MB)
-              </p>
-            </div>
-          </div>
+          <input
+            id="file-upload"
+            name="file-upload"
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+          />
 
-          {file && (
-            <div className="mt-3 flex items-center justify-between rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-3 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300">
-              <div className="flex items-center gap-2">
-                <FileCheck size={18} className="text-emerald-600 dark:text-emerald-400" />
-                <span className="font-semibold">{file.name}</span>
-                <span className="text-emerald-600 dark:text-emerald-400">
-                  ({(file.size / 1024).toFixed(1)} KB)
-                </span>
+          {!file ? (
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`group relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-7 transition-all duration-200 cursor-pointer ${
+                isDragging
+                  ? "border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/50 scale-[1.01] shadow-md shadow-emerald-500/10"
+                  : "border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/40 hover:border-emerald-400 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/20"
+              }`}
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 shadow-sm group-hover:text-emerald-600 dark:group-hover:text-emerald-400 group-hover:scale-110 transition-all">
+                <Upload size={24} />
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  setFileContent("");
-                  if (fileInputRef.current) fileInputRef.current.value = "";
-                }}
-                className="font-bold text-slate-500 hover:text-rose-600 cursor-pointer"
-              >
-                Hủy file
-              </button>
+              <div className="mt-3 text-center">
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                  {isDragging ? (
+                    <span className="text-emerald-600 dark:text-emerald-400">Thả tệp CSV vào đây...</span>
+                  ) : (
+                    <>
+                      Kéo thả tệp CSV vào đây hoặc{" "}
+                      <span className="text-emerald-600 dark:text-emerald-400 underline font-extrabold">duyệt chọn từ máy tính</span>
+                    </>
+                  )}
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  Chỉ chấp nhận định dạng .csv (Dung lượng tối đa 5MB)
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/50 p-4 border border-emerald-300/80 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-200/80 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300">
+                  <FileCheck size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-emerald-950 dark:text-emerald-100 font-mono">{file.name}</span>
+                    <span className="rounded-full bg-emerald-200/90 dark:bg-emerald-900/80 px-2 py-0.5 text-[10px] font-extrabold text-emerald-900 dark:text-emerald-200 uppercase">
+                      Sẵn sàng
+                    </span>
+                  </div>
+                  <span className="text-emerald-600 dark:text-emerald-400 text-xs mt-0.5 block">
+                    Dung lượng: {(file.size / 1024).toFixed(1)} KB
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-slate-700 transition cursor-pointer"
+                >
+                  Đổi file khác
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFile(null);
+                    setFileContent("");
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                  className="rounded-xl p-1.5 text-slate-400 hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-950/60 transition cursor-pointer"
+                  title="Hủy file này"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -293,7 +369,7 @@ export default function CsvImportView({ onImportSuccess }) {
             type="button"
             disabled={!file || isSubmitting}
             onClick={handleUpload}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:from-emerald-700 hover:to-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="min-w-[190px] inline-flex items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 px-8 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-700/25 hover:from-emerald-700 hover:to-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-95"
           >
             {isSubmitting ? (
               <>
