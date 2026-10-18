@@ -9,8 +9,84 @@ import {
   ShieldCheck,
   ThermometerSun,
   Truck,
+  Tractor,
+  UserCheck,
+  FileCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
+
+const DEMO_ACCOUNTS = [
+  {
+    roleName: "Quản trị Nông trại",
+    roleBadge: "Farm Admin",
+    email: "farm@agritrace.demo",
+    password: "Farm@123",
+    description: "Khai báo thửa đất, thu hoạch nông sản, xuất kho",
+    icon: Tractor,
+    theme: {
+      borderHover: "hover:border-emerald-400 hover:bg-emerald-50/50",
+      iconBg: "bg-emerald-100 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white",
+      badge: "bg-emerald-100 text-emerald-800",
+      arrow: "group-hover:text-emerald-600",
+    },
+  },
+  {
+    roleName: "Cơ sở sơ chế / Chế biến",
+    roleBadge: "Processor Admin",
+    email: "processor@agritrace.demo",
+    password: "Processor@123",
+    description: "Sơ chế, đóng gói, tách/gộp lô & kiểm soát nhiệt độ",
+    icon: Factory,
+    theme: {
+      borderHover: "hover:border-blue-400 hover:bg-blue-50/50",
+      iconBg: "bg-blue-100 text-blue-700 group-hover:bg-blue-600 group-hover:text-white",
+      badge: "bg-blue-100 text-blue-800",
+      arrow: "group-hover:text-blue-600",
+    },
+  },
+  {
+    roleName: "Nhà phân phối",
+    roleBadge: "Distributor Admin",
+    email: "distributor@agritrace.demo",
+    password: "Distributor@123",
+    description: "Nhận hàng, chia lô về từng cửa hàng & tiêu thụ",
+    icon: Truck,
+    theme: {
+      borderHover: "hover:border-amber-400 hover:bg-amber-50/50",
+      iconBg: "bg-amber-100 text-amber-700 group-hover:bg-amber-600 group-hover:text-white",
+      badge: "bg-amber-100 text-amber-800",
+      arrow: "group-hover:text-amber-600",
+    },
+  },
+  {
+    roleName: "Kiểm toán viên độc lập",
+    roleBadge: "Auditor",
+    email: "auditor@agritrace.demo",
+    password: "Auditor@123",
+    description: "Thanh tra chuỗi lạnh, kiểm tra băm SHA-256",
+    icon: FileCheck,
+    theme: {
+      borderHover: "hover:border-violet-400 hover:bg-violet-50/50",
+      iconBg: "bg-violet-100 text-violet-700 group-hover:bg-violet-600 group-hover:text-white",
+      badge: "bg-violet-100 text-violet-800",
+      arrow: "group-hover:text-violet-600",
+    },
+  },
+  {
+    roleName: "Nông dân xã viên",
+    roleBadge: "Farmer / User",
+    email: "user@agritrace.demo",
+    password: "User@123",
+    description: "Xem danh sách lô nông sản & quyền cơ bản",
+    icon: UserCheck,
+    theme: {
+      borderHover: "hover:border-cyan-400 hover:bg-cyan-50/50",
+      iconBg: "bg-cyan-100 text-cyan-700 group-hover:bg-cyan-600 group-hover:text-white",
+      badge: "bg-cyan-100 text-cyan-800",
+      arrow: "group-hover:text-cyan-600",
+    },
+  },
+];
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -267,80 +343,47 @@ export default function LoginPage() {
 
               <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-1">
                 <span className="h-px flex-1 bg-slate-200" />
-                Hoặc chọn nhanh tài khoản demo
+                Chọn nhanh tài khoản demo (Đăng nhập 1-click)
                 <span className="h-px flex-1 bg-slate-200" />
               </div>
 
-              {/* Demo Account Buttons - Đăng nhập trực tiếp */}
-              <div className="grid gap-2">
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() => handleDemoLogin("processor@agritrace.demo", "Processor@123")}
-                  className="group flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left transition-all duration-150 hover:border-blue-400 hover:bg-blue-50/40 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 transition-colors group-hover:bg-blue-600 group-hover:text-white">
-                    <Factory size={18} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-xs font-bold text-slate-900">
-                      Cơ sở chế biến (Processor Admin)
-                    </span>
-                    <span className="block text-[11px] text-slate-500 truncate">
-                      processor@agritrace.demo · Sơ chế, đóng gói, tách/gộp lô
-                    </span>
-                  </span>
-                  <ArrowRight
-                    className="shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-600"
-                    size={15}
-                  />
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() => handleDemoLogin("distributor@agritrace.demo", "Distributor@123")}
-                  className="group flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left transition-all duration-150 hover:border-amber-400 hover:bg-amber-50/40 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 transition-colors group-hover:bg-amber-600 group-hover:text-white">
-                    <Truck size={18} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-xs font-bold text-slate-900">
-                      Nhà phân phối (Distributor Admin)
-                    </span>
-                    <span className="block text-[11px] text-slate-500 truncate">
-                      distributor@agritrace.demo · Phân phối cửa hàng, tiêu thụ lô
-                    </span>
-                  </span>
-                  <ArrowRight
-                    className="shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-amber-600"
-                    size={15}
-                  />
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() => handleDemoLogin("farm@agritrace.demo", "Farm@123")}
-                  className="group flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left transition-all duration-150 hover:border-emerald-400 hover:bg-emerald-50/40 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 transition-colors group-hover:bg-emerald-600 group-hover:text-white">
-                    <ShieldCheck size={18} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-xs font-bold text-slate-900">
-                      Quản trị viên Nông trại (Farm Admin)
-                    </span>
-                    <span className="block text-[11px] text-slate-500 truncate">
-                      farm@agritrace.demo · Quản lý vùng trồng, thu hoạch
-                    </span>
-                  </span>
-                  <ArrowRight
-                    className="shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-600"
-                    size={15}
-                  />
-                </button>
+              {/* Demo Account Cards - Đăng nhập trực tiếp cho cả 5 vai trò */}
+              <div className="max-h-[290px] overflow-y-auto pr-1 space-y-2">
+                {DEMO_ACCOUNTS.map((acc) => {
+                  const Icon = acc.icon;
+                  return (
+                    <button
+                      key={acc.email}
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => handleDemoLogin(acc.email, acc.password)}
+                      className={`group flex w-full items-center gap-3 rounded-2xl border border-slate-200/90 bg-white p-2.5 text-left transition-all duration-150 ${acc.theme.borderHover} hover:shadow-xs active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer`}
+                    >
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors ${acc.theme.iconBg}`}
+                      >
+                        <Icon size={18} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-bold text-slate-900 truncate">
+                            {acc.roleName}
+                          </span>
+                          <span className={`rounded-md px-1.5 py-0.2 text-[10px] font-extrabold font-mono ${acc.theme.badge}`}>
+                            {acc.roleBadge}
+                          </span>
+                        </span>
+                        <span className="block text-[11px] text-slate-500 truncate mt-0.5">
+                          <strong className="text-slate-700 font-mono">{acc.email}</strong> · {acc.description}
+                        </span>
+                      </span>
+                      <ArrowRight
+                        className={`shrink-0 text-slate-300 transition-transform group-hover:translate-x-1 ${acc.theme.arrow}`}
+                        size={15}
+                      />
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
