@@ -480,3 +480,47 @@ pre,
 .animate-highlight-row {
   animation: highlightRow 3s ease-out forwards;
 }
+
+/* ========================================================
+   GAUSSIAN BLUR & ELEVATED MODAL SYSTEM
+   ======================================================== */
+.gaussian-backdrop {
+  background-color: rgba(15, 23, 42, 0.68);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .gaussian-backdrop {
+  background-color: rgba(2, 6, 23, 0.82);
+  backdrop-filter: blur(22px) saturate(190%);
+  -webkit-backdrop-filter: blur(22px) saturate(190%);
+}
+
+.modal-card-glow {
+  box-shadow: 
+    0 25px 60px -15px rgba(15, 23, 42, 0.3),
+    0 0 0 1px rgba(226, 232, 240, 0.8),
+    0 0 40px -5px rgba(16, 185, 129, 0.12);
+}
+
+.dark .modal-card-glow {
+  box-shadow: 
+    0 25px 70px -15px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(51, 65, 85, 0.7),
+    0 0 45px -5px rgba(16, 185, 129, 0.22);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+

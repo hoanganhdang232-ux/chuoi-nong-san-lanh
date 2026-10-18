@@ -21,6 +21,9 @@ export default function ConfirmSaveModal({
   onClose,
   onConfirm,
   isLoading = false,
+  confirmText = "Xác nhận lưu",
+  icon: HeaderIcon = FileText,
+  noticeText = "Dữ liệu sau khi xác nhận sẽ được lưu vào hệ thống và kích hoạt ký băm SHA-256.",
 }) {
   // Đóng modal khi bấm phím ESC
   useEffect(() => {
@@ -46,19 +49,19 @@ export default function ConfirmSaveModal({
       aria-labelledby="confirm-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
     >
-      {/* 1. Backdrop Blur làm mờ nền phía sau */}
+      {/* 1. Backdrop Blur làm mờ nền phía sau (Gaussian Blur cao cấp) */}
       <div
-        className="fixed inset-0 bg-slate-950/60 backdrop-blur-md transition-opacity duration-200"
+        className="gaussian-backdrop fixed inset-0 animate-fade-in"
         onClick={!isLoading ? onClose : undefined}
       />
 
       {/* 2. Hộp thoại Modal chính (Fade-in & Scale-up) */}
-      <div className="animate-modal-in relative w-full max-w-lg rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
+      <div className="animate-modal-in modal-card-glow relative w-full max-w-lg rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
         {/* Header Modal */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4.5 bg-slate-50/70 dark:bg-slate-800/50">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 shadow-2xs">
-              <FileText size={20} />
+              <HeaderIcon size={20} />
             </span>
             <div>
               <h3 id="confirm-modal-title" className="text-base font-bold text-slate-900 dark:text-white">
@@ -101,10 +104,12 @@ export default function ConfirmSaveModal({
             })}
           </div>
 
-          <div className="mt-4 flex items-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/50">
-            <AlertCircle size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
-            <span>Dữ liệu sau khi xác nhận sẽ được lưu vào hệ thống và kích hoạt ký băm SHA-256.</span>
-          </div>
+          {noticeText && (
+            <div className="mt-4 flex items-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/50">
+              <AlertCircle size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>{noticeText}</span>
+            </div>
+          )}
         </div>
 
         {/* Footer: 2 nút hành động (Hủy bỏ & Xác nhận lưu) */}
@@ -127,12 +132,12 @@ export default function ConfirmSaveModal({
             {isLoading ? (
               <>
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                <span>Đang ghi dữ liệu...</span>
+                <span>Đang xử lý...</span>
               </>
             ) : (
               <>
                 <CheckCircle2 size={16} />
-                <span>Xác nhận lưu</span>
+                <span>{confirmText}</span>
               </>
             )}
           </button>
