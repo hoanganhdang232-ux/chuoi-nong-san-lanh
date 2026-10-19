@@ -31,6 +31,11 @@ export function createTransferRequest({
       throw new Error("Lô hàng này đang có một lệnh bàn giao chờ xác nhận.");
     }
 
+    const currentStatus = String(batch.status || "").toLowerCase();
+    if (currentStatus === "recalled" || currentStatus === "quarantined") {
+      throw new Error("Lô hàng đang bị thu hồi / niêm phong cách ly, không được phép bàn giao.");
+    }
+
     db.prepare(
       `UPDATE batches SET status = 'pending_confirmation', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     ).run(batchId);

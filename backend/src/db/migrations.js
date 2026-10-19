@@ -760,6 +760,45 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_recall_affected_org ON recall_affected_batches(organization_id);
   `);
 
+  // Migration 007: Add harvested_at & land_plot_id to batches if not present
+  const batchCols = db.prepare("PRAGMA table_info(batches)").all();
+  if (!batchCols.some((c) => c.name === "harvested_at")) {
+    db.exec("ALTER TABLE batches ADD COLUMN harvested_at TEXT;");
+  }
+  if (!batchCols.some((c) => c.name === "land_plot_id")) {
+    db.exec("ALTER TABLE batches ADD COLUMN land_plot_id INTEGER REFERENCES land_plots(id);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_batches_land_plot ON batches(land_plot_id);");
+  }
+
+  // Backfill harvested_at and land_plot_id from event_logs
+  try {
+    const harvestLogs = db
+      .prepare(
+        "SELECT batch_id, data_json, timestamp FROM event_logs WHERE event_type = 'batch_harvested'",
+      )
+      .all();
+    for (const log of harvestLogs) {
+      try {
+        const data = JSON.parse(log.data_json);
+        const hAt = data.harvested_at || log.timestamp;
+        const plotId = data.land_plot_id;
+        if (hAt && plotId) {
+          db.prepare(
+            "UPDATE batches SET harvested_at = ?, land_plot_id = ?, created_at = ? WHERE id = ?",
+          ).run(hAt, plotId, hAt, log.batch_id);
+        } else if (hAt) {
+          db.prepare(
+            "UPDATE batches SET harvested_at = ?, created_at = ? WHERE id = ?",
+          ).run(hAt, hAt, log.batch_id);
+        }
+      } catch {
+        // Skip unparsable logs
+      }
+    }
+  } catch {
+    // Ignore backfill errors
+  }
+
   const migration = db
     .prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'",
@@ -783,4 +822,8 @@ export function runMigrations() {
   db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
     "006_sprint5_recalls_and_notifications",
   );
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+    "007_batch_harvested_at_and_land_plot",
+  );
 }
+

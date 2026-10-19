@@ -90,9 +90,15 @@ export class BatchSplitMergeService {
           throw new ForbiddenError("Bạn không có quyền tách lô này.");
         }
 
-        if (parent.status === "pending_confirmation") {
+        const parentStatus = String(parent.status || "").toLowerCase();
+        if (parentStatus === "pending_confirmation") {
           throw new ValidationError(
             "Lô hàng đang trong trạng thái chờ xác nhận bàn giao (bị khóa), không thể chia tách."
+          );
+        }
+        if (parentStatus === "recalled" || parentStatus === "quarantined") {
+          throw new ValidationError(
+            "Lô hàng đang bị thu hồi / niêm phong cách ly, không được phép chia tách."
           );
         }
 
@@ -294,6 +300,16 @@ export class BatchSplitMergeService {
         if (lockedBatch) {
           throw new ValidationError(
             `Lô hàng ${lockedBatch.batch_code} đang trong trạng thái chờ xác nhận bàn giao (bị khóa), không thể gộp.`
+          );
+        }
+
+        const recalledOrQuarantinedBatch = parentBatches.find((b) => {
+          const s = String(b.status || "").toLowerCase();
+          return s === "recalled" || s === "quarantined";
+        });
+        if (recalledOrQuarantinedBatch) {
+          throw new ValidationError(
+            `Lô hàng ${recalledOrQuarantinedBatch.batch_code} đang bị thu hồi / niêm phong cách ly, không được phép gộp.`
           );
         }
 

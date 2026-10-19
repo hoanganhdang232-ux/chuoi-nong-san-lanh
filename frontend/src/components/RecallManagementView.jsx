@@ -18,7 +18,7 @@ import {
 import { api } from "../api.js";
 import { useToast } from "../context/ToastContext.jsx";
 
-export default function RecallManagementView({ user, batches = [] }) {
+export default function RecallManagementView({ user, batches = [], onBatchUpdated }) {
   const { addToast } = useToast() || {};
 
   // State quản lý danh sách lệnh thu hồi
@@ -158,9 +158,13 @@ export default function RecallManagementView({ user, batches = [] }) {
   }, [selectedRecallId, loadRecalls, loadAffectedBatches, addToast]);
 
   // 4. Lọc danh sách lô bị ảnh hưởng (T-77)
+  const allBatches = useMemo(() => {
+    const list = affectedData?.batches || affectedData?.items || affectedData?.allItemsForStats || [];
+    return Array.isArray(list) ? list : [];
+  }, [affectedData]);
+
   const filteredBatches = useMemo(() => {
-    if (!affectedData?.batches) return [];
-    return affectedData.batches.filter((b) => {
+    return allBatches.filter((b) => {
       // Lọc trạng thái
       if (statusFilter === "PENDING" && b.quarantine_status === "QUARANTINED") return false;
       if (statusFilter === "QUARANTINED" && b.quarantine_status !== "QUARANTINED") return false;
@@ -182,19 +186,18 @@ export default function RecallManagementView({ user, batches = [] }) {
 
       return true;
     });
-  }, [affectedData, statusFilter, orgFilter, searchQuery]);
+  }, [allBatches, statusFilter, orgFilter, searchQuery]);
 
   // Danh sách tổ chức duy nhất để đưa vào dropdown filter
   const uniqueOrgs = useMemo(() => {
-    if (!affectedData?.batches) return [];
     const map = new Map();
-    for (const b of affectedData.batches) {
+    for (const b of allBatches) {
       if (b.organization_id && !map.has(b.organization_id)) {
         map.set(b.organization_id, b.organization_name);
       }
     }
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [affectedData]);
+  }, [allBatches]);
 
   // 5. T-78: Xuất CSV
   const handleExportCsv = async () => {
@@ -221,7 +224,17 @@ export default function RecallManagementView({ user, batches = [] }) {
   };
 
   const currentRecall = affectedData?.recall;
-  const summary = affectedData?.summary;
+  const rawSummary = affectedData?.summary || {};
+  const summary = {
+    quarantineProgressPercent: rawSummary.quarantineProgressPercent ?? rawSummary.quarantine_rate ?? 0,
+    quarantinedBatches: rawSummary.quarantinedBatches ?? rawSummary.quarantined_batches ?? 0,
+    totalBatches: rawSummary.totalBatches ?? rawSummary.total_batches ?? allBatches.length,
+    quarantineWeightPercent: rawSummary.quarantineWeightPercent ?? rawSummary.weight_quarantine_rate ?? 0,
+    quarantinedRemainingKg: rawSummary.quarantinedRemainingKg ?? rawSummary.quarantined_quantity ?? 0,
+    totalRemainingKg: rawSummary.totalRemainingKg ?? rawSummary.total_remaining_quantity ?? 0,
+    blendedBatchesCount: rawSummary.blendedBatchesCount ?? rawSummary.blended_batches_count ?? allBatches.filter((b) => b.is_blended).length,
+    totalConsumedKg: rawSummary.totalConsumedKg ?? rawSummary.total_consumed_quantity ?? 0,
+  };
 
   return (
     <div className="space-y-6">
@@ -485,10 +498,29 @@ export default function RecallManagementView({ user, batches = [] }) {
                     ))}
                   </select>
                 )}
+
+                {/* Quick filter: Chỉ xem lô của đơn vị tôi */}
+                {user?.role !== "auditor" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const myOrgId = String(user?.organizationId ?? user?.organization_id ?? "");
+                      setOrgFilter(orgFilter === myOrgId ? "ALL" : myOrgId);
+                    }}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all border ${
+                      orgFilter === String(user?.organizationId ?? user?.organization_id ?? "")
+                        ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                        : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+                    }`}
+                    title="Lọc nhanh các lô nông sản thuộc quyền xử lý của tổ chức bạn"
+                  >
+                    🏢 Lô thuộc đơn vị tôi
+                  </button>
+                )}
               </div>
 
               <div className="text-xs text-slate-500 font-medium">
-                Hiển thị <strong>{filteredBatches.length}</strong> / {affectedData?.batches?.length || 0} lô ảnh hưởng
+                Hiển thị <strong>{filteredBatches.length}</strong> / {allBatches.length} lô ảnh hưởng
               </div>
             </div>
 
@@ -525,10 +557,11 @@ export default function RecallManagementView({ user, batches = [] }) {
                   ) : (
                     filteredBatches.map((batch) => {
                       const isQuarantined = batch.quarantine_status === "QUARANTINED";
+                      const currentOrgId = user?.organizationId ?? user?.organization_id;
                       const canQuarantine =
                         !isQuarantined &&
                         (["farm_admin", "processor_admin", "distributor_admin", "auditor"].includes(user?.role) &&
-                          (user?.role === "auditor" || user?.organization_id === batch.organization_id));
+                          (user?.role === "auditor" || currentOrgId === batch.organization_id));
 
                       return (
                         <tr
@@ -656,6 +689,7 @@ export default function RecallManagementView({ user, batches = [] }) {
             if (newRecall?.id) {
               setSelectedRecallId(newRecall.id);
             }
+            if (onBatchUpdated) onBatchUpdated();
           }}
         />
       )}
@@ -671,6 +705,7 @@ export default function RecallManagementView({ user, batches = [] }) {
               loadAffectedBatches(selectedRecallId);
             }
             loadRecalls();
+            if (onBatchUpdated) onBatchUpdated();
           }}
         />
       )}
@@ -682,11 +717,23 @@ export default function RecallManagementView({ user, batches = [] }) {
 // COMPONENT T-72: MODAL XÁC NHẬN TẠO LỆNH THU HỒI
 // ─────────────────────────────────────────────────────────────────────────────
 function CreateRecallModal({ batches = [], onClose, onSuccess }) {
+  const [availableBatches, setAvailableBatches] = useState(batches);
   const [rootBatchId, setRootBatchId] = useState("");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const { addToast } = useToast() || {};
+
+  useEffect(() => {
+    if (!batches || batches.length === 0) {
+      api.getBatches().then((res) => {
+        const list = Array.isArray(res) ? res : res?.batches || [];
+        setAvailableBatches(list);
+      }).catch(() => {});
+    } else {
+      setAvailableBatches(batches);
+    }
+  }, [batches]);
 
   const reasonLen = reason.trim().length;
   const isReasonValid = reasonLen >= 20;
@@ -728,7 +775,7 @@ function CreateRecallModal({ batches = [], onClose, onSuccess }) {
     }
   };
 
-  const selectedBatchObj = batches.find((b) => String(b.id) === String(rootBatchId));
+  const selectedBatchObj = availableBatches.find((b) => String(b.id) === String(rootBatchId));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -802,7 +849,7 @@ function CreateRecallModal({ batches = [], onClose, onSuccess }) {
               required
             >
               <option value="">-- Chọn một lô nông sản trong hệ thống --</option>
-              {batches.map((b) => (
+              {availableBatches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.batch_code} · {b.product_name} ({b.remaining_quantity || b.initial_quantity || 0} kg) · {b.organization_name || ""}
                 </option>

@@ -141,9 +141,19 @@ const STATUS_META = {
     dot: "bg-emerald-500",
   },
   recalled: {
-    label: "Thu hồi",
-    color: "bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-700 ring-1 ring-rose-200 dark:ring-rose-900/40",
+    label: "Thu hồi khẩn cấp",
+    color: "bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800 ring-1 ring-rose-200 dark:ring-rose-900/40",
     dot: "bg-rose-500",
+  },
+  quarantined: {
+    label: "Đã niêm phong / Cách ly",
+    color: "bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800",
+    dot: "bg-emerald-600",
+  },
+  active: {
+    label: "Đang hoạt động",
+    color: "bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 border-teal-300 dark:border-teal-700",
+    dot: "bg-teal-500",
   },
   consumed: {
     label: "Đã tiêu thụ",
@@ -153,12 +163,13 @@ const STATUS_META = {
 };
 
 function BatchStatusBadge({ status }) {
-  const meta = STATUS_META[status] || {
+  const norm = String(status || "").toLowerCase();
+  const meta = STATUS_META[norm] || {
     label: status,
     color: "bg-slate-100 text-slate-700 border-slate-200",
     dot: "bg-slate-400",
   };
-  const isPulsing = ["pending_confirmation", "in_transit", "recalled"].includes(status);
+  const isPulsing = ["pending_confirmation", "in_transit", "recalled"].includes(norm);
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold shadow-2xs ${meta.color}`}
@@ -190,6 +201,11 @@ const PLOT_PREVIEW_SCHEMA = [
   { key: "name", label: "Tên thửa đất", icon: MapPin },
   { key: "areaHa", label: "Diện tích canh tác", format: (val) => `${val} ha` },
   { key: "coordinates", label: "Tọa độ GPS" },
+  {
+    key: "createdAt",
+    label: "Ngày khai báo",
+    format: (val) => (val ? new Date(val).toLocaleDateString("vi-VN") : "Thời điểm hiện tại"),
+  },
 ];
 
 const PRODUCT_PREVIEW_SCHEMA = [
@@ -254,6 +270,7 @@ export default function DashboardPage() {
     areaHa: "",
     latitude: "",
     longitude: "",
+    createdAt: "",
   });
   const [editingLandPlotId, setEditingLandPlotId] = useState(null);
   const [productForm, setProductForm] = useState({ name: "", unit: "kg" });
@@ -605,7 +622,7 @@ export default function DashboardPage() {
       } else {
         await api.createLandPlot(landPlotForm);
       }
-      setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "" });
+      setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "", createdAt: "" });
       setEditingLandPlotId(null);
       const nextPlots = await api.getLandPlots();
       setLandPlots(nextPlots);
@@ -1043,7 +1060,7 @@ export default function DashboardPage() {
 
       <main className="flex-1 p-4 sm:p-7 lg:p-8 overflow-x-hidden">
         {/* Header */}
-        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-4 sm:p-5 card-shadow backdrop-blur-md">
+        <header className="relative z-40 mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-4 sm:p-5 card-shadow backdrop-blur-md">
           <div>
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
@@ -1264,6 +1281,7 @@ export default function DashboardPage() {
                           <tr>
                             <th className="px-4 py-3">Mã lô</th>
                             <th className="px-4 py-3">Sản phẩm</th>
+                            <th className="px-4 py-3">Khai báo / Thu hoạch</th>
                             <th className="px-4 py-3">Trạng thái</th>
                             <th className="px-4 py-3 text-right">Khối lượng</th>
                             <th className="px-4 py-3 text-center">Chi tiết</th>
@@ -1299,6 +1317,15 @@ export default function DashboardPage() {
                                 </td>
                                 <td className="px-4 py-3.5 font-medium text-slate-800 dark:text-slate-200">
                                   {batch.product_name}
+                                </td>
+                                <td className="px-4 py-3.5 font-mono text-xs text-slate-600 dark:text-slate-300">
+                                  {batch.harvested_at || batch.created_at
+                                    ? new Date(batch.harvested_at || batch.created_at).toLocaleDateString("vi-VN", {
+                                        day: "2-digit",
+                                        month: "2-digit",
+                                        year: "numeric",
+                                      })
+                                    : "--"}
                                 </td>
                                 <td className="px-4 py-3.5">
                                   <BatchStatusBadge status={batch.status} />
@@ -1472,6 +1499,24 @@ export default function DashboardPage() {
                     })
                   }
                 />
+                <div className="flex flex-col sm:col-span-2">
+                  <label className="text-[11px] font-semibold text-slate-500 mb-1">
+                    Ngày khai báo thửa đất (để trống nếu là thời điểm hiện tại):
+                  </label>
+                  <input
+                    className="rounded-xl border px-3 py-2 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
+                    type="date"
+                    max={new Date().toISOString().split("T")[0]}
+                    value={landPlotForm.createdAt || ""}
+                    onChange={(event) =>
+                      setLandPlotForm({
+                        ...landPlotForm,
+                        createdAt: event.target.value,
+                      })
+                    }
+                    placeholder="Ngày khai báo"
+                  />
+                </div>
               </div>
               <button
                 className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white"
@@ -1652,10 +1697,12 @@ export default function DashboardPage() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {landPlots.map((plot) => {
-                  const batchCount = batches.filter(
-                    (b) => b.organization_id === user?.organizationId
-                  ).length;
+                  const plotBatches = batches.filter(
+                    (b) => b.land_plot_id === plot.id || b.current_location === `Thửa ${plot.name}`
+                  );
+                  const batchCount = plotBatches.length;
                   const hasCoords = plot.latitude && plot.longitude;
+                  const latestBatch = plotBatches[0];
                   return (
                     <article
                       key={plot.id}
@@ -1680,6 +1727,7 @@ export default function DashboardPage() {
                               areaHa: String(plot.area_ha),
                               latitude: plot.latitude ? String(plot.latitude) : "",
                               longitude: plot.longitude ? String(plot.longitude) : "",
+                              createdAt: plot.created_at ? plot.created_at.split("T")[0].split(" ")[0] : "",
                             });
                             window.scrollTo({ top: 0, behavior: "smooth" });
                           }}
@@ -1726,11 +1774,28 @@ export default function DashboardPage() {
                         )}
                       </div>
 
-                      {/* Created date */}
-                      <p className="text-[10px] text-slate-400">
-                        Khai báo: {new Date(plot.created_at).toLocaleDateString("vi-VN", {
-                          day: "2-digit", month: "2-digit", year: "numeric"
-                        })}
+                      {/* Created / Harvest date */}
+                      <p className="text-[10px] text-slate-400 flex items-center justify-between">
+                        <span>
+                          {latestBatch && (latestBatch.harvested_at || latestBatch.created_at) ? (
+                            <>
+                              Thu hoạch: {new Date(latestBatch.harvested_at || latestBatch.created_at).toLocaleDateString("vi-VN", {
+                                day: "2-digit", month: "2-digit", year: "numeric"
+                              })}
+                            </>
+                          ) : (
+                            <>
+                              Khai báo: {new Date(plot.created_at).toLocaleDateString("vi-VN", {
+                                day: "2-digit", month: "2-digit", year: "numeric"
+                              })}
+                            </>
+                          )}
+                        </span>
+                        {latestBatch && (
+                          <span className="font-mono text-[9px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800">
+                            {latestBatch.batch_code}
+                          </span>
+                        )}
                       </p>
                     </article>
                   );
@@ -2079,7 +2144,7 @@ export default function DashboardPage() {
           )}
 
         {selectedView === "Thu hồi" && (
-          <RecallManagementView user={user} batches={batches} />
+          <RecallManagementView user={user} batches={batches} onBatchUpdated={loadData} />
         )}
 
         {(selectedView === "Báo cáo kiểm tra" ||

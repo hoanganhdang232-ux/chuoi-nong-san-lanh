@@ -154,19 +154,22 @@ router.post("/harvest", requireRole("farm_admin"), (req, res) => {
   const batchCode = `BATCH-${randomBytes(5).toString("hex").toUpperCase()}`;
   const batchInsert = db
     .prepare(
-      `INSERT INTO batches(batch_code, product_id, organization_id, source_farm_id, initial_quantity, remaining_quantity, current_location, temperature_c, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO batches(batch_code, product_id, organization_id, source_farm_id, land_plot_id, initial_quantity, remaining_quantity, current_location, temperature_c, status, harvested_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       batchCode,
       product.id,
       req.user.organization_id,
       plot.farm_id,
+      plot.id,
       quantity,
       quantity,
       `Thửa ${plot.name}`,
       9,
       "registered",
+      harvestDate.toISOString(),
+      harvestDate.toISOString(),
     );
 
   const event = createEventLog({
@@ -350,7 +353,7 @@ router.get("/land-plots", requireRole("farm_admin"), (req, res) => {
 });
 
 router.post("/land-plots", requireRole("farm_admin"), (req, res) => {
-  const { name, areaHa, latitude, longitude } = req.body || {};
+  const { name, areaHa, latitude, longitude, createdAt } = req.body || {};
   const area = Number(areaHa);
   if (!name || !Number.isFinite(area) || area <= 0) {
     return res
@@ -366,22 +369,41 @@ router.post("/land-plots", requireRole("farm_admin"), (req, res) => {
       .status(404)
       .json({ message: "Không tìm thấy trang trại của tổ chức." });
 
-  const result = getDb()
-    .prepare(
-      "INSERT INTO land_plots(farm_id, name, area_ha, latitude, longitude) VALUES (?, ?, ?, ?, ?)",
-    )
-    .run(
-      farm.id,
-      String(name).trim(),
-      area,
-      Number(latitude) || null,
-      Number(longitude) || null,
-    );
+  const customCreatedAt =
+    createdAt && !Number.isNaN(new Date(createdAt).getTime())
+      ? new Date(createdAt).toISOString()
+      : null;
+
+  const result = customCreatedAt
+    ? getDb()
+        .prepare(
+          "INSERT INTO land_plots(farm_id, name, area_ha, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          farm.id,
+          String(name).trim(),
+          area,
+          Number(latitude) || null,
+          Number(longitude) || null,
+          customCreatedAt,
+        )
+    : getDb()
+        .prepare(
+          "INSERT INTO land_plots(farm_id, name, area_ha, latitude, longitude) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run(
+          farm.id,
+          String(name).trim(),
+          area,
+          Number(latitude) || null,
+          Number(longitude) || null,
+        );
 
   res.status(201).json({
     id: result.lastInsertRowid,
     name: String(name).trim(),
     area_ha: area,
+    created_at: customCreatedAt,
   });
 });
 
@@ -461,14 +483,30 @@ router.put("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
     )
     .get(plotId, req.user.organization_id);
   if (!plot) return res.status(404).json({ message: "Không tìm thấy thửa đất." });
-  db.prepare("UPDATE land_plots SET name = ?, area_ha = ?, latitude = ?, longitude = ? WHERE id = ?").run(
-    name,
-    area,
-    Number(req.body?.latitude) || null,
-    Number(req.body?.longitude) || null,
-    plotId,
-  );
-  return res.json({ id: plotId, name, area_ha: area });
+  const customCreatedAt =
+    req.body?.createdAt && !Number.isNaN(new Date(req.body.createdAt).getTime())
+      ? new Date(req.body.createdAt).toISOString()
+      : null;
+
+  if (customCreatedAt) {
+    db.prepare("UPDATE land_plots SET name = ?, area_ha = ?, latitude = ?, longitude = ?, created_at = ? WHERE id = ?").run(
+      name,
+      area,
+      Number(req.body?.latitude) || null,
+      Number(req.body?.longitude) || null,
+      customCreatedAt,
+      plotId,
+    );
+  } else {
+    db.prepare("UPDATE land_plots SET name = ?, area_ha = ?, latitude = ?, longitude = ? WHERE id = ?").run(
+      name,
+      area,
+      Number(req.body?.latitude) || null,
+      Number(req.body?.longitude) || null,
+      plotId,
+    );
+  }
+  return res.json({ id: plotId, name, area_ha: area, created_at: customCreatedAt });
 });
 
 router.get("/:id/summary", (req, res) => {
