@@ -14,6 +14,11 @@ import {
   Phone,
   Building2,
   RefreshCw,
+  Eye,
+  ShieldCheck,
+  Hash,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { api } from "../api.js";
 import { useToast } from "../context/ToastContext.jsx";
@@ -32,10 +37,21 @@ export default function LocationsView({
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 8;
 
   // Transfer history state
   const [transfersHistory, setTransfersHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [transferSearch, setTransferSearch] = useState("");
+  const [transferPage, setTransferPage] = useState(1);
+  const transferPageSize = 8;
+
+  // Transfer Detail Modal State
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedTransferDetail, setSelectedTransferDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   // Location Form State (T-64)
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -45,6 +61,7 @@ export default function LocationsView({
     name: "",
     address: "",
     phone: "",
+    type: "STORE",
     status: "Active",
   });
   const [submitting, setSubmitting] = useState(false);
@@ -77,8 +94,10 @@ export default function LocationsView({
   const fetchLocations = async () => {
     try {
       setLoading(true);
-      const data = await api.getLocations();
-      setLocations(data);
+      const res = await api.getLocations();
+      // Hỗ trợ cả array hoặc object { data, pagination }
+      const items = Array.isArray(res) ? res : (res?.data || []);
+      setLocations(items);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -89,10 +108,10 @@ export default function LocationsView({
   const fetchTransfersHistory = async () => {
     try {
       setHistoryLoading(true);
-      const data = await api.getInternalTransfers();
-      setTransfersHistory(data || []);
+      const res = await api.getInternalTransfers();
+      const items = Array.isArray(res) ? res : (res?.data || []);
+      setTransfersHistory(items);
     } catch (err) {
-      // Bỏ qua lỗi nếu chưa có dữ liệu lịch sử
       console.warn("Không tải được lịch sử điều chuyển:", err);
     } finally {
       setHistoryLoading(false);
@@ -118,6 +137,7 @@ export default function LocationsView({
       name: "",
       address: "",
       phone: "",
+      type: "STORE",
       status: "Active",
     });
     setIsFormOpen(true);
@@ -130,9 +150,37 @@ export default function LocationsView({
       name: loc.name || "",
       address: loc.address || "",
       phone: loc.phone || "",
+      type: loc.type || "STORE",
       status: loc.status || "Active",
     });
     setIsFormOpen(true);
+  };
+
+  const handleToggleStatus = async (id, currentStatus) => {
+    try {
+      const nextStatus = String(currentStatus).toUpperCase() === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+      await api.toggleLocationStatus(id, nextStatus);
+      toast.success(
+        `Đã chuyển trạng thái sang ${nextStatus === "ACTIVE" ? "Hoạt động" : "Tạm dừng"}.`,
+      );
+      await fetchLocations();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleViewTransferDetail = async (transferId) => {
+    try {
+      setDetailLoading(true);
+      setDetailModalOpen(true);
+      const detail = await api.getTransferDetail(transferId);
+      setSelectedTransferDetail(detail);
+    } catch (err) {
+      toast.error("Không thể xem chi tiết: " + err.message);
+      setDetailModalOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -243,8 +291,32 @@ export default function LocationsView({
       statusFilter === "all" ||
       loc.status?.toLowerCase() === statusFilter.toLowerCase();
 
-    return matchesSearch && matchesStatus;
+    const matchesType =
+      typeFilter === "all" ||
+      (loc.type || "STORE").toLowerCase() === typeFilter.toLowerCase();
+
+    return matchesSearch && matchesStatus && matchesType;
   });
+
+  const totalStorePages = Math.max(1, Math.ceil(filteredLocations.length / pageSize));
+  const paginatedLocations = filteredLocations.slice((page - 1) * pageSize, page * pageSize);
+
+  const filteredTransfers = transfersHistory.filter((t) => {
+    if (!transferSearch.trim()) return true;
+    const term = transferSearch.toLowerCase();
+    return (
+      t.transfer_code?.toLowerCase().includes(term) ||
+      t.source_batch_code?.toLowerCase().includes(term) ||
+      t.target_batch_code?.toLowerCase().includes(term) ||
+      t.location_name?.toLowerCase().includes(term)
+    );
+  });
+
+  const totalTransferPages = Math.max(1, Math.ceil(filteredTransfers.length / transferPageSize));
+  const paginatedTransfers = filteredTransfers.slice(
+    (transferPage - 1) * transferPageSize,
+    transferPage * transferPageSize,
+  );
 
   return (
     <div className="space-y-6">
@@ -326,20 +398,38 @@ export default function LocationsView({
         </div>
 
         {activeTab === "stores" && (
-          <div className="flex items-center gap-2 pb-2">
+          <div className="flex items-center gap-2 pb-2 flex-wrap">
             <div className="relative">
               <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
               <input
                 type="text"
                 placeholder="Tìm mã, tên, địa chỉ..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-48 sm:w-60"
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
+                className="rounded-xl border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-44 sm:w-56"
               />
             </div>
             <select
+              value={typeFilter}
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+            >
+              <option value="all">Tất cả loại</option>
+              <option value="STORE">Cửa hàng</option>
+              <option value="WAREHOUSE">Kho phụ</option>
+            </select>
+            <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
               className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
             >
               <option value="all">Tất cả trạng thái</option>
@@ -350,227 +440,344 @@ export default function LocationsView({
         )}
 
         {activeTab === "history" && (
-          <button
-            type="button"
-            onClick={fetchTransfersHistory}
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-emerald-700 font-semibold pb-2 cursor-pointer transition"
-          >
-            <RefreshCw size={13} className={historyLoading ? "animate-spin" : ""} />
-            <span>Làm mới</span>
-          </button>
+          <div className="flex items-center gap-2 pb-2 flex-wrap">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Tìm mã lệnh, lô hàng, cửa hàng..."
+                value={transferSearch}
+                onChange={(e) => {
+                  setTransferSearch(e.target.value);
+                  setTransferPage(1);
+                }}
+                className="rounded-xl border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-52 sm:w-64"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={fetchTransfersHistory}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-emerald-700 font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white cursor-pointer transition"
+            >
+              <RefreshCw size={13} className={historyLoading ? "animate-spin" : ""} />
+              <span>Làm mới</span>
+            </button>
+          </div>
         )}
       </div>
 
       {/* TAB 1: Danh sách Cửa hàng (T-64) */}
       {activeTab === "stores" && (
-        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider border-b border-slate-200/80">
-                <tr>
-                  <th className="px-5 py-3.5">Mã CH</th>
-                  <th className="px-5 py-3.5">Tên Cửa Hàng / Điểm Bán</th>
-                  <th className="px-5 py-3.5">Địa Chỉ Chi Tiết</th>
-                  <th className="px-5 py-3.5">Số Điện Thoại</th>
-                  <th className="px-5 py-3.5">Trạng Thái</th>
-                  <th className="px-5 py-3.5">Tồn Kho Hiện Tại</th>
-                  <th className="px-5 py-3.5 text-center">Thao Tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {loading ? (
+        <div className="space-y-3">
+          <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider border-b border-slate-200/80">
                   <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-slate-400">
-                      Đang tải danh sách cửa hàng...
-                    </td>
+                    <th className="px-5 py-3.5">Mã CH</th>
+                    <th className="px-5 py-3.5">Tên Cửa Hàng / Điểm Bán</th>
+                    <th className="px-5 py-3.5">Loại</th>
+                    <th className="px-5 py-3.5">Địa Chỉ Chi Tiết</th>
+                    <th className="px-5 py-3.5">Số Điện Thoại</th>
+                    <th className="px-5 py-3.5">Trạng Thái</th>
+                    <th className="px-5 py-3.5">Tồn Kho Hiện Tại</th>
+                    <th className="px-5 py-3.5 text-center">Thao Tác</th>
                   </tr>
-                ) : filteredLocations.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-slate-400 italic">
-                      {locations.length === 0
-                        ? "Chưa có cửa hàng nào được khai báo. Hãy bấm \"Thêm cửa hàng mới\"."
-                        : "Không tìm thấy cửa hàng phù hợp với bộ lọc."}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredLocations.map((loc, idx) => {
-                    const isActive = (loc.status || "Active").toLowerCase() === "active";
-                    return (
-                      <tr
-                        key={loc.id}
-                        className={`transition-colors ${
-                          idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
-                        } hover:bg-emerald-50/40`}
-                      >
-                        <td className="px-5 py-4 font-mono font-bold">
-                          <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700 border border-slate-200">
-                            {loc.code || `CH-${String(loc.id).padStart(3, "0")}`}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4 font-bold text-slate-900 text-sm">
-                          {loc.name}
-                        </td>
-                        <td className="px-5 py-4 text-slate-600 max-w-xs truncate" title={loc.address}>
-                          {loc.address || "Chưa cập nhật"}
-                        </td>
-                        <td className="px-5 py-4 text-slate-600 font-mono">
-                          {loc.phone ? (
-                            <span className="flex items-center gap-1.5">
-                              <Phone size={13} className="text-slate-400" />
-                              {loc.phone}
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-8 text-center text-slate-400">
+                        Đang tải danh sách cửa hàng...
+                      </td>
+                    </tr>
+                  ) : paginatedLocations.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-8 text-center text-slate-400 italic">
+                        {locations.length === 0
+                          ? "Chưa có cửa hàng nào được khai báo. Hãy bấm \"Thêm cửa hàng mới\"."
+                          : "Không tìm thấy cửa hàng phù hợp với bộ lọc."}
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedLocations.map((loc, idx) => {
+                      const isActive = (loc.status || "Active").toLowerCase() === "active";
+                      const isWarehouse = (loc.type || "STORE").toUpperCase() === "WAREHOUSE";
+                      return (
+                        <tr
+                          key={loc.id}
+                          className={`transition-colors ${
+                            idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
+                          } hover:bg-emerald-50/40`}
+                        >
+                          <td className="px-5 py-4 font-mono font-bold">
+                            <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700 border border-slate-200">
+                              {loc.code || `CH-${String(loc.id).padStart(3, "0")}`}
                             </span>
-                          ) : (
-                            <span className="text-slate-400 italic">--</span>
-                          )}
-                        </td>
-                        <td className="px-5 py-4">
-                          <span
-                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                              isActive
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-slate-100 text-slate-500 border border-slate-200"
-                            }`}
-                          >
+                          </td>
+                          <td className="px-5 py-4 font-bold text-slate-900 text-sm">
+                            {loc.name}
+                          </td>
+                          <td className="px-5 py-4">
                             <span
-                              className={`h-1.5 w-1.5 rounded-full ${
-                                isActive ? "bg-emerald-500" : "bg-slate-400"
+                              className={`rounded-md px-2 py-0.5 text-[11px] font-semibold border ${
+                                isWarehouse
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : "bg-blue-50 text-blue-700 border-blue-200"
                               }`}
-                            />
-                            {isActive ? "Hoạt động" : "Tạm dừng"}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-200">
-                              {loc.batch_count || 0} lô
+                            >
+                              {isWarehouse ? "Kho phụ" : "Cửa hàng"}
                             </span>
-                            <span className="font-mono text-slate-800 font-semibold">
-                              {Number(loc.total_inventory || 0).toLocaleString()} kg
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
+                          </td>
+                          <td className="px-5 py-4 text-slate-600 max-w-xs truncate" title={loc.address}>
+                            {loc.address || "Chưa cập nhật"}
+                          </td>
+                          <td className="px-5 py-4 text-slate-600 font-mono">
+                            {loc.phone ? (
+                              <span className="flex items-center gap-1.5">
+                                <Phone size={13} className="text-slate-400" />
+                                {loc.phone}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">--</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-4">
                             <button
                               type="button"
-                              onClick={() => handleOpenTransferForLocation(loc.id)}
-                              className="rounded-lg px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition cursor-pointer"
-                              title="Chuyển lô đến cửa hàng này"
+                              onClick={() => handleToggleStatus(loc.id, loc.status)}
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition cursor-pointer border ${
+                                isActive
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                                  : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200"
+                              }`}
+                              title="Bấm để bật/tắt trạng thái"
                             >
-                              Chuyển lô
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  isActive ? "bg-emerald-500" : "bg-slate-400"
+                                }`}
+                              />
+                              {isActive ? "Hoạt động" : "Tạm dừng"}
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEdit(loc)}
-                              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-emerald-700 transition cursor-pointer"
-                              title="Chỉnh sửa"
-                            >
-                              <Pencil size={15} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(loc.id, loc.name)}
-                              className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
-                              title="Xóa"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-200">
+                                {loc.batch_count || 0} lô
+                              </span>
+                              <span className="font-mono text-slate-800 font-semibold">
+                                {Number(loc.total_inventory || 0).toLocaleString()} kg
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTransferForLocation(loc.id)}
+                                className="rounded-lg px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition cursor-pointer"
+                                title="Chuyển lô đến cửa hàng này"
+                              >
+                                Chuyển lô
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(loc)}
+                                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-emerald-700 transition cursor-pointer"
+                                title="Chỉnh sửa"
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(loc.id, loc.name)}
+                                className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
+                                title="Xóa hoặc chuyển trạng thái"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
+
+          {/* Pagination Cửa hàng */}
+          {filteredLocations.length > 0 && (
+            <div className="flex items-center justify-between text-xs text-slate-500 px-2">
+              <div>
+                Hiển thị{" "}
+                <strong className="text-slate-800">
+                  {Math.min(filteredLocations.length, (page - 1) * pageSize + 1)} -{" "}
+                  {Math.min(filteredLocations.length, page * pageSize)}
+                </strong>{" "}
+                trong tổng số <strong className="text-slate-800">{filteredLocations.length}</strong> địa điểm
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="font-semibold text-slate-700">
+                  {page} / {totalStorePages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalStorePages}
+                  onClick={() => setPage((p) => Math.min(totalStorePages, p + 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* TAB 2: Lịch sử Điều chuyển Nội bộ (T-65) */}
       {activeTab === "history" && (
-        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider border-b border-slate-200/80">
-                <tr>
-                  <th className="px-5 py-3.5">Mã Lệnh Điều Chuyển</th>
-                  <th className="px-5 py-3.5">Thời Gian</th>
-                  <th className="px-5 py-3.5">Lô Nguồn (Kho Tổng)</th>
-                  <th className="px-5 py-3.5">Lô Đích (Cửa Hàng)</th>
-                  <th className="px-5 py-3.5">Cửa Hàng Tiếp Nhận</th>
-                  <th className="px-5 py-3.5">Khối Lượng</th>
-                  <th className="px-5 py-3.5">Người Thực Hiện</th>
-                  <th className="px-5 py-3.5">Ghi Chú</th>
-                  <th className="px-5 py-3.5 text-center">Trạng Thái</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {historyLoading ? (
+        <div className="space-y-3">
+          <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider border-b border-slate-200/80">
                   <tr>
-                    <td colSpan={9} className="px-6 py-8 text-center text-slate-400">
-                      Đang tải lịch sử điều chuyển lô hàng...
-                    </td>
+                    <th className="px-5 py-3.5">Mã Lệnh Điều Chuyển</th>
+                    <th className="px-5 py-3.5">Thời Gian</th>
+                    <th className="px-5 py-3.5">Lô Nguồn (Kho Tổng)</th>
+                    <th className="px-5 py-3.5">Lô Đích (Cửa Hàng)</th>
+                    <th className="px-5 py-3.5">Cửa Hàng Tiếp Nhận</th>
+                    <th className="px-5 py-3.5">Khối Lượng</th>
+                    <th className="px-5 py-3.5">Người Thực Hiện</th>
+                    <th className="px-5 py-3.5">Ghi Chú</th>
+                    <th className="px-5 py-3.5 text-center">Trạng Thái</th>
+                    <th className="px-5 py-3.5 text-center">Chi Tiết</th>
                   </tr>
-                ) : transfersHistory.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-6 py-8 text-center text-slate-400 italic">
-                      Chưa có lệnh điều chuyển nội bộ nào. Hãy thực hiện chuyển lô từ kho tổng về cửa hàng.
-                    </td>
-                  </tr>
-                ) : (
-                  transfersHistory.map((t, idx) => (
-                    <tr
-                      key={t.id || idx}
-                      className={`transition-colors ${
-                        idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
-                      } hover:bg-emerald-50/30`}
-                    >
-                      <td className="px-5 py-3.5 font-mono font-bold text-emerald-800">
-                        {t.transfer_code}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-500 font-mono">
-                        {t.created_at ? new Date(t.created_at).toLocaleString("vi-VN") : "--"}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="font-mono font-bold text-slate-900">{t.source_batch_code}</div>
-                        <div className="text-[11px] text-slate-500">{t.product_name}</div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                          {t.target_batch_code || "--"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="font-bold text-slate-900">{t.location_name}</div>
-                        <div className="text-[11px] text-slate-500 max-w-xs truncate" title={t.location_address}>
-                          {t.location_code ? `[${t.location_code}] ` : ""}
-                          {t.location_address}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="font-mono font-bold text-emerald-700 text-sm">
-                          {Number(t.quantity).toLocaleString()} {t.product_unit || "kg"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600">
-                        {t.actor_name || "Nhà phân phối"}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-500 max-w-xs truncate" title={t.note}>
-                        {t.note || <span className="text-slate-400 italic">--</span>}
-                      </td>
-                      <td className="px-5 py-3.5 text-center">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 size={12} />
-                          Hoàn thành
-                        </span>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {historyLoading ? (
+                    <tr>
+                      <td colSpan={10} className="px-6 py-8 text-center text-slate-400">
+                        Đang tải lịch sử điều chuyển lô hàng...
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : paginatedTransfers.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="px-6 py-8 text-center text-slate-400 italic">
+                        Chưa có lệnh điều chuyển nội bộ nào. Hãy thực hiện chuyển lô từ kho tổng về cửa hàng.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedTransfers.map((t, idx) => (
+                      <tr
+                        key={t.id || idx}
+                        className={`transition-colors ${
+                          idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
+                        } hover:bg-emerald-50/30`}
+                      >
+                        <td className="px-5 py-3.5 font-mono font-bold text-emerald-800">
+                          {t.transfer_code}
+                        </td>
+                        <td className="px-5 py-3.5 text-slate-500 font-mono">
+                          {t.created_at ? new Date(t.created_at).toLocaleString("vi-VN") : "--"}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="font-mono font-bold text-slate-900">{t.source_batch_code}</div>
+                          <div className="text-[11px] text-slate-500">{t.product_name}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {t.target_batch_code || "--"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="font-bold text-slate-900">{t.location_name}</div>
+                          <div className="text-[11px] text-slate-500 max-w-xs truncate" title={t.location_address}>
+                            {t.location_code ? `[${t.location_code}] ` : ""}
+                            {t.location_address}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="font-mono font-bold text-emerald-700 text-sm">
+                            {Number(t.quantity).toLocaleString()} {t.product_unit || "kg"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-slate-600">
+                          {t.actor_name || "Nhà phân phối"}
+                        </td>
+                        <td className="px-5 py-3.5 text-slate-500 max-w-xs truncate" title={t.note}>
+                          {t.note || <span className="text-slate-400 italic">--</span>}
+                        </td>
+                        <td className="px-5 py-3.5 text-center">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 size={12} />
+                            Hoàn thành
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleViewTransferDetail(t.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-50 hover:text-emerald-700 transition cursor-pointer"
+                            title="Xem chi tiết lệnh và audit log"
+                          >
+                            <Eye size={13} />
+                            <span>Xem</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
+
+          {/* Pagination Lịch sử */}
+          {filteredTransfers.length > 0 && (
+            <div className="flex items-center justify-between text-xs text-slate-500 px-2">
+              <div>
+                Hiển thị{" "}
+                <strong className="text-slate-800">
+                  {Math.min(filteredTransfers.length, (transferPage - 1) * transferPageSize + 1)} -{" "}
+                  {Math.min(filteredTransfers.length, transferPage * transferPageSize)}
+                </strong>{" "}
+                trong tổng số <strong className="text-slate-800">{filteredTransfers.length}</strong> lệnh chuyển
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={transferPage <= 1}
+                  onClick={() => setTransferPage((p) => Math.max(1, p - 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="font-semibold text-slate-700">
+                  {transferPage} / {totalTransferPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={transferPage >= totalTransferPages}
+                  onClick={() => setTransferPage((p) => Math.min(totalTransferPages, p + 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -594,15 +801,26 @@ export default function LocationsView({
               </button>
             </div>
             <form onSubmit={handleSubmit} className="mt-4 space-y-3.5 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <label className="block font-semibold text-slate-700">
                   Mã cửa hàng
                   <input
-                    placeholder="VD: CH-HN-01 (Tự sinh nếu trống)"
+                    placeholder="VD: CH-HN-01"
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
                     className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-2.5 font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 uppercase"
                   />
+                </label>
+                <label className="block font-semibold text-slate-700">
+                  Loại địa điểm *
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-2.5 font-normal text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  >
+                    <option value="STORE">Cửa hàng (Store)</option>
+                    <option value="WAREHOUSE">Kho phụ (Warehouse)</option>
+                  </select>
                 </label>
                 <label className="block font-semibold text-slate-700">
                   Trạng thái *
@@ -611,8 +829,8 @@ export default function LocationsView({
                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                     className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-2.5 font-normal text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   >
-                    <option value="Active">Đang hoạt động (Active)</option>
-                    <option value="Inactive">Tạm dừng (Inactive)</option>
+                    <option value="Active">Đang hoạt động</option>
+                    <option value="Inactive">Tạm dừng</option>
                   </select>
                 </label>
               </div>
@@ -994,6 +1212,154 @@ export default function LocationsView({
                 className="rounded-xl bg-emerald-600 px-6 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-sm cursor-pointer"
               >
                 Đã hiểu & Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 4: Chi tiết Lệnh Điều Chuyển & Audit Trail (T-65) */}
+      {detailModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 gaussian-backdrop animate-fade-in">
+          <div className="animate-modal-in modal-card-glow w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-7 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                  <ShieldCheck size={18} />
+                </span>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Chi tiết Lệnh Điều Chuyển Nội Bộ
+                  </h3>
+                  <span className="font-mono text-xs text-emerald-700 font-semibold">
+                    {selectedTransferDetail?.transfer_code || "Đang tải..."}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {detailLoading ? (
+              <div className="py-12 text-center text-xs text-slate-400">
+                Đang tải thông tin chi tiết và bằng chứng toàn vẹn...
+              </div>
+            ) : selectedTransferDetail ? (
+              <div className="mt-4 space-y-4 text-xs">
+                {/* Thông tin lệnh */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
+                  <div>
+                    <span className="text-[11px] text-slate-500 block">Thời gian thực hiện:</span>
+                    <strong className="text-slate-800 font-mono">
+                      {selectedTransferDetail.created_at
+                        ? new Date(selectedTransferDetail.created_at).toLocaleString("vi-VN")
+                        : "--"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-slate-500 block">Người phụ trách điều chuyển:</span>
+                    <strong className="text-slate-800">
+                      {selectedTransferDetail.actor_name || "Quản trị viên NPP"} (
+                      {selectedTransferDetail.actor_email || "NPP"})
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-slate-500 block">Khối lượng điều chuyển:</span>
+                    <strong className="text-emerald-700 font-mono text-sm">
+                      {Number(selectedTransferDetail.quantity).toLocaleString()}{" "}
+                      {selectedTransferDetail.product_unit || "kg"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-slate-500 block">Sản phẩm:</span>
+                    <strong className="text-slate-800">
+                      {selectedTransferDetail.product_name || "Nông sản"}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Phả hệ chuyển giao */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+                    <span className="text-[11px] font-bold uppercase text-slate-400 block mb-1">
+                      📤 Lô Nguồn (Kho tổng)
+                    </span>
+                    <div className="font-mono font-bold text-slate-900 text-sm">
+                      {selectedTransferDetail.source_batch_code}
+                    </div>
+                    <div className="text-slate-500 text-[11px] mt-1">Kho trung tâm Nhà phân phối</div>
+                  </div>
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-3.5">
+                    <span className="text-[11px] font-bold uppercase text-emerald-700 block mb-1">
+                      📥 Lô Đích (Cửa hàng nhận)
+                    </span>
+                    <div className="font-mono font-bold text-emerald-800 text-sm">
+                      {selectedTransferDetail.target_batch_code || "(Lô con mới)"}
+                    </div>
+                    <div className="text-slate-700 font-semibold text-[11px] mt-1">
+                      {selectedTransferDetail.location_name} [{selectedTransferDetail.location_code}]
+                    </div>
+                    <div className="text-slate-500 text-[11px]">
+                      {selectedTransferDetail.location_address}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ghi chú */}
+                {selectedTransferDetail.note && (
+                  <div className="rounded-xl bg-slate-50 p-3 border border-slate-200/80">
+                    <span className="text-[11px] font-semibold text-slate-500 block">Ghi chú:</span>
+                    <p className="text-slate-700 italic mt-0.5">{selectedTransferDetail.note}</p>
+                  </div>
+                )}
+
+                {/* Audit Trail & Hash Chaining */}
+                <div>
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
+                    <Hash size={14} className="text-emerald-600" />
+                    <span>Lịch sử Hash Chain & Bằng chứng Toàn vẹn (SHA-256)</span>
+                  </div>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {selectedTransferDetail.events?.length === 0 ? (
+                      <div className="text-slate-400 italic">Chưa có bản ghi hash chain.</div>
+                    ) : (
+                      selectedTransferDetail.events?.map((e) => (
+                        <div
+                          key={e.id}
+                          className="rounded-xl border border-slate-200 bg-slate-50/80 p-2.5 font-mono text-[10px]"
+                        >
+                          <div className="flex items-center justify-between text-slate-500">
+                            <span className="font-bold text-emerald-700 uppercase">
+                              {e.event_type}
+                            </span>
+                            <span>{new Date(e.timestamp).toLocaleString("vi-VN")}</span>
+                          </div>
+                          <div className="mt-1 truncate text-slate-600" title={e.current_hash}>
+                            <strong>Current Hash:</strong> {e.current_hash}
+                          </div>
+                          <div className="truncate text-slate-400" title={e.previous_hash}>
+                            <strong>Previous Hash:</strong> {e.previous_hash || "0 (Genesis)"}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex justify-end border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => setDetailModalOpen(false)}
+                className="rounded-xl bg-slate-800 px-5 py-2 text-xs font-semibold text-white hover:bg-slate-900 transition cursor-pointer"
+              >
+                Đóng
               </button>
             </div>
           </div>

@@ -75,7 +75,8 @@ export function runMigrations() {
       name TEXT NOT NULL,
       address TEXT,
       phone TEXT,
-      status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active','Inactive','active','inactive')),
+      type TEXT NOT NULL DEFAULT 'STORE' CHECK(type IN ('STORE','WAREHOUSE','store','warehouse')),
+      status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active','Inactive','active','inactive','ACTIVE','INACTIVE')),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (organization_id) REFERENCES organizations(id)
@@ -498,6 +499,9 @@ export function runMigrations() {
   if (!locationColumns.includes("phone")) {
     db.exec("ALTER TABLE locations ADD COLUMN phone TEXT");
   }
+  if (!locationColumns.includes("type")) {
+    db.exec("ALTER TABLE locations ADD COLUMN type TEXT NOT NULL DEFAULT 'STORE'");
+  }
   if (!locationColumns.includes("status")) {
     db.exec("ALTER TABLE locations ADD COLUMN status TEXT NOT NULL DEFAULT 'Active'");
   }
@@ -528,6 +532,39 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_internal_transfers_org ON internal_batch_transfers(organization_id);
     CREATE INDEX IF NOT EXISTS idx_internal_transfers_batch ON internal_batch_transfers(source_batch_id);
     CREATE INDEX IF NOT EXISTS idx_internal_transfers_location ON internal_batch_transfers(location_id);
+
+    CREATE TABLE IF NOT EXISTS stock_transfers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transfer_code TEXT NOT NULL UNIQUE,
+      organization_id INTEGER NOT NULL,
+      source_location_id INTEGER,
+      destination_location_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'COMPLETED' CHECK(status IN ('PENDING','COMPLETED','CANCELLED','pending','completed','cancelled')),
+      note TEXT,
+      created_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT,
+      FOREIGN KEY (organization_id) REFERENCES organizations(id),
+      FOREIGN KEY (source_location_id) REFERENCES locations(id),
+      FOREIGN KEY (destination_location_id) REFERENCES locations(id),
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_transfers_org ON stock_transfers(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_transfers_dest ON stock_transfers(destination_location_id);
+
+    CREATE TABLE IF NOT EXISTS stock_transfer_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transfer_id INTEGER NOT NULL,
+      batch_id INTEGER NOT NULL,
+      target_batch_id INTEGER,
+      quantity REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (transfer_id) REFERENCES stock_transfers(id) ON DELETE CASCADE,
+      FOREIGN KEY (batch_id) REFERENCES batches(id),
+      FOREIGN KEY (target_batch_id) REFERENCES batches(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_transfer_items_tid ON stock_transfer_items(transfer_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_transfer_items_bid ON stock_transfer_items(batch_id);
   `);
 
   const batchIndexes = [

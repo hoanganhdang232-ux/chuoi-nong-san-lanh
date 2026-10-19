@@ -161,15 +161,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  getLocationById: (id) => request(`/v1/locations/${id}`),
   updateLocation: (id, payload) =>
     request(`/v1/locations/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  toggleLocationStatus: (id, status) =>
+    request(`/v1/locations/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(status ? { status } : {}),
+    }),
   deleteLocation: (id) =>
     request(`/v1/locations/${id}`, {
       method: "DELETE",
     }),
+  getTransferDetail: (id) => request(`/v1/batches/transfers/${id}`),
   assignBatchLocation: (batchId, payload) =>
     request(`/v1/batches/${batchId}/assign-location`, {
       method: "POST",

@@ -5,93 +5,207 @@ import { createEventLog } from "./batchService.js";
  * T-64 / S-30: Quản lý Địa điểm/Cửa hàng nội bộ của tổ chức (NPP).
  */
 
-export function listLocations(organizationId, { status = null, search = "" } = {}) {
-  let sql = `
-    SELECT l.id, l.organization_id, l.code, l.name, l.address, l.phone, l.status,
-           l.created_at, l.updated_at,
-           COUNT(b.id) AS batch_count,
-           COALESCE(SUM(CASE WHEN b.remaining_quantity > 0 AND b.status != 'consumed' THEN b.remaining_quantity ELSE 0 END), 0) AS total_inventory
+const PHONE_REGEX = /^[0-9+\-\s().]{7,20}$/;
+
+export function listLocations(
+  organizationId,
+  {
+    status = null,
+    type = null,
+    search = "",
+    page = null,
+    pageSize = null,
+    limit = null,
+    offset = null,
+    withPagination = false,
+  } = {},
+) {
+  const db = getDb();
+  let baseSql = `
     FROM locations l
     LEFT JOIN batches b ON b.location_id = l.id
     WHERE l.organization_id = ?
   `;
   const params = [organizationId];
 
-  if (status) {
-    sql += " AND lower(l.status) = lower(?)";
-    params.push(status);
+  if (status && String(status).trim() && status !== "all") {
+    baseSql += " AND upper(trim(l.status)) = upper(trim(?))";
+    params.push(String(status).trim());
+  }
+
+  if (type && String(type).trim() && type !== "all") {
+    baseSql += " AND upper(trim(l.type)) = upper(trim(?))";
+    params.push(String(type).trim());
   }
 
   if (search && String(search).trim()) {
-    sql += " AND (lower(l.name) LIKE ? OR lower(l.code) LIKE ? OR lower(coalesce(l.address, '')) LIKE ?)";
+    baseSql += " AND (lower(l.name) LIKE ? OR lower(l.code) LIKE ? OR lower(coalesce(l.address, '')) LIKE ? OR lower(coalesce(l.phone, '')) LIKE ?)";
     const term = `%${String(search).trim().toLowerCase()}%`;
-    params.push(term, term, term);
+    params.push(term, term, term, term);
   }
 
-  sql += " GROUP BY l.id ORDER BY l.id DESC";
+  // Đếm tổng số lượng nếu có yêu cầu phân trang
+  let paginationMeta = null;
+  const isPaging = page !== null || pageSize !== null || withPagination;
+  if (isPaging) {
+    const countSql = `SELECT COUNT(DISTINCT l.id) AS total ${baseSql}`;
+    const totalItems = db.prepare(countSql).get(...params)?.total || 0;
+    const curPage = Math.max(1, Number(page) || 1);
+    const curPageSize = Math.min(100, Math.max(1, Number(pageSize) || 10));
+    const totalPages = Math.ceil(totalItems / curPageSize) || 1;
 
-  return getDb().prepare(sql).all(...params);
+    paginationMeta = {
+      page: curPage,
+      pageSize: curPageSize,
+      totalItems,
+      totalPages,
+    };
+  }
+
+  let selectSql = `
+    SELECT l.id, l.organization_id, l.code, l.name, l.address, l.phone,
+           coalesce(l.type, 'STORE') AS type,
+           l.status, l.created_at, l.updated_at,
+           COUNT(b.id) AS batch_count,
+           COALESCE(SUM(CASE WHEN b.remaining_quantity > 0 AND b.status != 'consumed' THEN b.remaining_quantity ELSE 0 END), 0) AS total_inventory
+    ${baseSql}
+    GROUP BY l.id
+    ORDER BY l.id DESC
+  `;
+
+  const queryParams = [...params];
+
+  if (isPaging && paginationMeta) {
+    selectSql += " LIMIT ? OFFSET ?";
+    queryParams.push(paginationMeta.pageSize, (paginationMeta.page - 1) * paginationMeta.pageSize);
+  } else if (limit !== null) {
+    selectSql += " LIMIT ? OFFSET ?";
+    queryParams.push(Number(limit), Math.max(0, Number(offset) || 0));
+  }
+
+  const rows = db.prepare(selectSql).all(...queryParams);
+
+  // Trả về cấu trúc hỗ trợ cả array và object { data, pagination }
+  if (isPaging && paginationMeta) {
+    const result = {
+      data: rows,
+      pagination: paginationMeta,
+    };
+    // Gán để tương thích ngược nếu caller coi result là array
+    Object.assign(rows, result);
+    return result;
+  }
+
+  return rows;
 }
 
 export function getLocationById(id, organizationId) {
   const db = getDb();
+  let sql = `
+    SELECT l.id, l.organization_id, l.code, l.name, l.address, l.phone,
+           coalesce(l.type, 'STORE') AS type,
+           l.status, l.created_at, l.updated_at,
+           COUNT(b.id) AS batch_count,
+           COALESCE(SUM(CASE WHEN b.remaining_quantity > 0 AND b.status != 'consumed' THEN b.remaining_quantity ELSE 0 END), 0) AS total_inventory
+    FROM locations l
+    LEFT JOIN batches b ON b.location_id = l.id
+    WHERE l.id = ?
+  `;
+  const params = [Number(id)];
   if (organizationId) {
-    return db.prepare("SELECT * FROM locations WHERE id = ? AND organization_id = ?").get(id, organizationId);
+    sql += " AND l.organization_id = ?";
+    params.push(organizationId);
   }
-  return db.prepare("SELECT * FROM locations WHERE id = ?").get(id);
+  sql += " GROUP BY l.id";
+
+  const location = db.prepare(sql).get(...params);
+  if (!location) {
+    const err = new Error("Không tìm thấy địa điểm/cửa hàng.");
+    err.statusCode = 404;
+    throw err;
+  }
+  return location;
 }
 
-export function createLocation({ organizationId, code, name, address, phone, status }) {
+export function createLocation({ organizationId, code, name, address, phone, type, status }) {
   if (!name || String(name).trim().length === 0) {
     const err = new Error("Tên địa điểm/cửa hàng là bắt buộc.");
     err.statusCode = 400;
     throw err;
   }
 
+  let storeAddress = "Chưa cập nhật";
+  if (address !== undefined) {
+    if (String(address).trim().length === 0) {
+      const err = new Error("Địa chỉ cửa hàng là bắt buộc.");
+      err.statusCode = 400;
+      throw err;
+    }
+    storeAddress = String(address).trim();
+  }
+
+  if (phone && String(phone).trim().length > 0) {
+    const cleanPhone = String(phone).trim();
+    if (!PHONE_REGEX.test(cleanPhone)) {
+      const err = new Error("Số điện thoại không đúng định dạng.");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
   const db = getDb();
 
-  // Tạo mã cửa hàng duy nhất nếu người dùng không nhập
+  // Chuẩn hóa mã cửa hàng
   let storeCode = code ? String(code).trim().toUpperCase() : null;
   if (!storeCode) {
     const count = db
       .prepare("SELECT COUNT(*) AS c FROM locations WHERE organization_id = ?")
       .get(organizationId).c;
     storeCode = `CH-${String(count + 1).padStart(3, "0")}`;
-    // Kiểm tra xem mã tự tạo có trùng không, nếu trùng thì cộng thêm timestamp
-    const dupCheck = db.prepare("SELECT id FROM locations WHERE code = ?").get(storeCode);
+    const dupCheck = db
+      .prepare("SELECT id FROM locations WHERE upper(trim(code)) = upper(trim(?))")
+      .get(storeCode);
     if (dupCheck) {
       storeCode = `CH-${Date.now().toString().slice(-4)}`;
     }
   } else {
-    const existingCode = db.prepare("SELECT id FROM locations WHERE code = ?").get(storeCode);
+    // Kiểm tra trùng mã (Case-insensitive) trong cùng tổ chức hoặc toàn hệ thống
+    const existingCode = db
+      .prepare("SELECT id FROM locations WHERE upper(trim(code)) = upper(trim(?)) AND organization_id = ?")
+      .get(storeCode, organizationId);
     if (existingCode) {
       const err = new Error(`Mã cửa hàng '${storeCode}' đã tồn tại.`);
-      err.statusCode = 400;
+      err.statusCode = 409; // HTTP 409 Conflict
+      err.code = "DUPLICATE_CODE";
       throw err;
     }
   }
 
   const storeStatus =
-    status && ["inactive", "Inactive"].includes(status) ? "Inactive" : "Active";
+    status && ["inactive", "Inactive", "INACTIVE"].includes(status) ? "INACTIVE" : "ACTIVE";
+
+  const storeType =
+    type && ["warehouse", "Warehouse", "WAREHOUSE"].includes(type) ? "WAREHOUSE" : "STORE";
 
   const result = db
     .prepare(
-      `INSERT INTO locations(organization_id, code, name, address, phone, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      `INSERT INTO locations(organization_id, code, name, address, phone, type, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
     )
     .run(
       organizationId,
       storeCode,
       String(name).trim(),
-      address ? String(address).trim() : null,
+      storeAddress,
       phone ? String(phone).trim() : null,
+      storeType,
       storeStatus,
     );
 
-  return db.prepare("SELECT * FROM locations WHERE id = ?").get(result.lastInsertRowid);
+  return getLocationById(result.lastInsertRowid, organizationId);
 }
 
-export function updateLocation({ id, organizationId, code, name, address, phone, status }) {
+export function updateLocation({ id, organizationId, code, name, address, phone, type, status }) {
   const db = getDb();
   const existing = db
     .prepare("SELECT * FROM locations WHERE id = ? AND organization_id = ?")
@@ -109,30 +223,76 @@ export function updateLocation({ id, organizationId, code, name, address, phone,
     throw err;
   }
 
-  let storeCode = code !== undefined ? (code ? String(code).trim().toUpperCase() : existing.code) : existing.code;
-  if (storeCode !== existing.code) {
-    const dup = db.prepare("SELECT id FROM locations WHERE code = ? AND id != ?").get(storeCode, id);
-    if (dup) {
-      const err = new Error(`Mã cửa hàng '${storeCode}' đã được sử dụng.`);
+  if (address !== undefined && String(address).trim().length === 0) {
+    const err = new Error("Địa chỉ địa điểm/cửa hàng không được để trống.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (phone !== undefined && String(phone).trim().length > 0) {
+    const cleanPhone = String(phone).trim();
+    if (!PHONE_REGEX.test(cleanPhone)) {
+      const err = new Error("Số điện thoại không đúng định dạng.");
       err.statusCode = 400;
       throw err;
     }
   }
 
+  let storeCode = code !== undefined ? (code ? String(code).trim().toUpperCase() : existing.code) : existing.code;
+  if (storeCode && storeCode !== existing.code) {
+    const dup = db
+      .prepare("SELECT id FROM locations WHERE upper(trim(code)) = upper(trim(?)) AND id != ? AND organization_id = ?")
+      .get(storeCode, id, organizationId);
+    if (dup) {
+      const err = new Error(`Mã cửa hàng '${storeCode}' đã được sử dụng.`);
+      err.statusCode = 409;
+      err.code = "DUPLICATE_CODE";
+      throw err;
+    }
+  }
+
   const storeName = name !== undefined ? String(name).trim() : existing.name;
-  const storeAddress = address !== undefined ? (address ? String(address).trim() : null) : existing.address;
+  const storeAddress = address !== undefined ? String(address).trim() : existing.address;
   const storePhone = phone !== undefined ? (phone ? String(phone).trim() : null) : existing.phone;
+  const storeType = type !== undefined ? (["warehouse", "Warehouse", "WAREHOUSE"].includes(type) ? "WAREHOUSE" : "STORE") : (existing.type || "STORE");
   const storeStatus = status !== undefined
-    ? (["inactive", "Inactive"].includes(status) ? "Inactive" : "Active")
-    : (existing.status || "Active");
+    ? (["inactive", "Inactive", "INACTIVE"].includes(status) ? "INACTIVE" : "ACTIVE")
+    : (existing.status || "ACTIVE");
 
   db.prepare(
     `UPDATE locations
-     SET code = ?, name = ?, address = ?, phone = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+     SET code = ?, name = ?, address = ?, phone = ?, type = ?, status = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-  ).run(storeCode, storeName, storeAddress, storePhone, storeStatus, id);
+  ).run(storeCode, storeName, storeAddress, storePhone, storeType, storeStatus, id);
 
-  return db.prepare("SELECT * FROM locations WHERE id = ?").get(id);
+  return getLocationById(id, organizationId);
+}
+
+export function toggleLocationStatus({ id, organizationId, status = null }) {
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT * FROM locations WHERE id = ? AND organization_id = ?")
+    .get(id, organizationId);
+
+  if (!existing) {
+    const err = new Error("Không tìm thấy địa điểm/cửa hàng.");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  let nextStatus;
+  if (status && String(status).trim()) {
+    nextStatus = ["inactive", "Inactive", "INACTIVE"].includes(status) ? "INACTIVE" : "ACTIVE";
+  } else {
+    const current = String(existing.status || "ACTIVE").toUpperCase();
+    nextStatus = current === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+  }
+
+  db.prepare(
+    "UPDATE locations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+  ).run(nextStatus, id);
+
+  return getLocationById(id, organizationId);
 }
 
 export function deleteLocation({ id, organizationId }) {
@@ -164,9 +324,9 @@ export function deleteLocation({ id, organizationId }) {
     .get(id)?.cnt || 0;
 
   if (transferCount > 0) {
-    // Nếu có lịch sử giao dịch thì chuyển trạng thái sang Inactive thay vì xóa cứng
-    db.prepare("UPDATE locations SET status = 'Inactive', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
-    return { deleted: false, status: "Inactive", message: "Địa điểm đã có lịch sử điều chuyển, đã chuyển trạng thái sang Inactive." };
+    // Nếu có lịch sử giao dịch thì chuyển trạng thái sang INACTIVE thay vì xóa cứng (Soft Delete)
+    db.prepare("UPDATE locations SET status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+    return { deleted: false, status: "INACTIVE", message: "Địa điểm đã có lịch sử điều chuyển, đã chuyển trạng thái sang INACTIVE." };
   }
 
   db.prepare("DELETE FROM locations WHERE id = ?").run(id);

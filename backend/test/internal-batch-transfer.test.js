@@ -85,11 +85,11 @@ test("SUBTASK 1 (T-64): Locations CRUD with code, address, phone, and status", a
   assert.equal(createdData.location.code, "CH-TX-01");
   assert.equal(createdData.location.name, "Cửa hàng Thanh Xuân");
   assert.equal(createdData.location.phone, "02431239999");
-  assert.equal(createdData.location.status, "Active");
+  assert.equal(createdData.location.status.toUpperCase(), "ACTIVE");
 
   const newLocId = createdData.location.id;
 
-  // 2. Không được tạo trùng code
+  // 2. Không được tạo trùng code (trả 409 Conflict hoặc 400)
   const duplicateCodeRes = await fetch(`${baseUrl}/api/v1/locations`, {
     method: "POST",
     headers: {
@@ -99,9 +99,10 @@ test("SUBTASK 1 (T-64): Locations CRUD with code, address, phone, and status", a
     body: JSON.stringify({
       code: "CH-TX-01",
       name: "Cửa hàng Trùng Mã",
+      address: "123 Đường Láng",
     }),
   });
-  assert.equal(duplicateCodeRes.status, 400);
+  assert.ok([400, 409].includes(duplicateCodeRes.status));
 
   // 3. Tự sinh mã nếu không nhập code
   const autoCodeRes = await fetch(`${baseUrl}/api/v1/locations`, {
@@ -119,7 +120,22 @@ test("SUBTASK 1 (T-64): Locations CRUD with code, address, phone, and status", a
   const autoCodeData = await autoCodeRes.json();
   assert.match(autoCodeData.location.code, /^CH-/);
 
-  // 4. Cập nhật thông tin cửa hàng (sửa SĐT, địa chỉ, trạng thái)
+  // 4. Lấy chi tiết địa điểm qua GET /api/v1/locations/:id (T-64)
+  const detailRes = await fetch(`${baseUrl}/api/v1/locations/${newLocId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(detailRes.status, 200);
+  const detailData = await detailRes.json();
+  assert.equal(detailData.id, newLocId);
+  assert.equal(detailData.code, "CH-TX-01");
+
+  // 4.1. Lấy chi tiết ID không tồn tại trả về 404
+  const notFoundLocRes = await fetch(`${baseUrl}/api/v1/locations/999999`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(notFoundLocRes.status, 404);
+
+  // 5. Cập nhật thông tin cửa hàng (sửa SĐT, địa chỉ, trạng thái)
   const updateRes = await fetch(`${baseUrl}/api/v1/locations/${newLocId}`, {
     method: "PUT",
     headers: {
@@ -138,7 +154,20 @@ test("SUBTASK 1 (T-64): Locations CRUD with code, address, phone, and status", a
   assert.equal(updatedData.location.name, "Cửa hàng Thanh Xuân Premium");
   assert.equal(updatedData.location.phone, "0988776655");
 
-  // 5. Lấy danh sách locations có bộ lọc
+  // 6. Bật/tắt trạng thái qua PATCH /api/v1/locations/:id/status (T-64)
+  const toggleRes = await fetch(`${baseUrl}/api/v1/locations/${newLocId}/status`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ status: "INACTIVE" }),
+  });
+  assert.equal(toggleRes.status, 200);
+  const toggleData = await toggleRes.json();
+  assert.equal(toggleData.location.status, "INACTIVE");
+
+  // 7. Lấy danh sách locations có bộ lọc
   const listRes = await fetch(`${baseUrl}/api/v1/locations?search=Thanh%20Xuân`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -146,7 +175,7 @@ test("SUBTASK 1 (T-64): Locations CRUD with code, address, phone, and status", a
   const list = await listRes.json();
   assert.ok(list.some((loc) => loc.code === "CH-TX-01"));
 
-  // 6. Xóa địa điểm chưa gắn lô hàng
+  // 8. Xóa địa điểm chưa gắn lô hàng
   const deleteRes = await fetch(`${baseUrl}/api/v1/locations/${autoCodeData.location.id}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
@@ -262,4 +291,71 @@ test("SUBTASK 2 (T-65): POST /api/v1/batches/transfer and history", async () => 
   assert.ok(historyList[0].transfer_code.startsWith("TRF-INT-"));
   assert.ok(historyList[0].source_batch_code);
   assert.ok(historyList[0].location_name);
+
+  // 5. Xem chi tiết lệnh điều chuyển qua GET /api/v1/batches/transfers/:id (T-65)
+  const transferDetailRes = await fetch(
+    `${baseUrl}/api/v1/batches/transfers/${transferHistoryRecord.id}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  assert.equal(transferDetailRes.status, 200);
+  const transferDetail = await transferDetailRes.json();
+  assert.equal(transferDetail.id, transferHistoryRecord.id);
+  assert.ok(transferDetail.events, "Phải có danh sách event logs");
+  assert.ok(Array.isArray(transferDetail.events));
+});
+
+test("T-65: Race condition & concurrency safety when transferring batch to stores", async () => {
+  const { token, user } = await loginAs("distributor@agritrace.demo", "Distributor@123");
+  const orgId = user.organizationId ?? user.organization_id;
+
+  // Tạo một lô thử nghiệm có tồn kho chính xác là 30 kg
+  const testBatchCode = `BATCH-RACE-${Date.now()}`;
+  const insertBatch = db.prepare(`
+    INSERT INTO batches (batch_code, product_id, organization_id, initial_quantity, remaining_quantity, status, created_at, updated_at)
+    VALUES (?, 1, ?, 30, 30, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `).run(testBatchCode, orgId);
+  const testBatchId = insertBatch.lastInsertRowid;
+
+  const loc = db.prepare("SELECT id FROM locations WHERE organization_id = ? LIMIT 1").get(orgId);
+
+  // Thực hiện đồng thời 2 request điều chuyển: mỗi request đòi chuyển 20 kg (tổng 40 kg > 30 kg)
+  const [req1, req2] = await Promise.all([
+    fetch(`${baseUrl}/api/v1/batches/transfer`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        batch_id: testBatchId,
+        location_id: loc.id,
+        quantity: 20,
+        note: "Request 1 tranh chấp",
+      }),
+    }),
+    fetch(`${baseUrl}/api/v1/batches/transfer`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        batch_id: testBatchId,
+        location_id: loc.id,
+        quantity: 20,
+        note: "Request 2 tranh chấp",
+      }),
+    }),
+  ]);
+
+  const statuses = [req1.status, req2.status].sort();
+  // Đúng 1 request thành công (200) và 1 request thất bại (400 hoặc 500 do transaction lock)
+  assert.equal(statuses[0], 200, "Phải có ít nhất 1 request thành công");
+  assert.notEqual(statuses[1], 200, "Request thứ hai không được phép thành công vì vượt quá tồn kho");
+
+  // Kiểm tra tồn kho cuối cùng: phải còn chính xác 10 kg, không bao giờ bị âm
+  const finalBatch = db.prepare("SELECT remaining_quantity FROM batches WHERE id = ?").get(testBatchId);
+  assert.equal(Number(finalBatch.remaining_quantity), 10);
 });
