@@ -25,8 +25,6 @@ import {
   Boxes,
   X,
   XCircle,
-  Sun,
-  Moon,
   Upload,
   FileSpreadsheet,
   GitBranch,
@@ -44,7 +42,6 @@ import ConfirmSaveModal from "../components/ConfirmSaveModal.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
-import { useTheme } from "../context/ThemeContext.jsx";
 
 const EVENT_META = {
   batch_harvested:           { label: "Thu hoạch",           color: "bg-emerald-100 text-emerald-700",  icon: Tractor },
@@ -219,7 +216,6 @@ const MERGE_PREVIEW_SCHEMA = [
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const toast = useToast();
-  const { isDark, toggleTheme } = useTheme();
   const [dashboard, setDashboard] = useState(null);
   const [batches, setBatches] = useState([]);
   const [transferRequests, setTransferRequests] = useState([]);
@@ -1110,26 +1106,6 @@ export default function DashboardPage() {
                 </span>
               </div>
             </div>
-
-            {/* Nút chuyển đổi giao diện Sáng / Tối chính thức của hệ thống */}
-            <button
-              type="button"
-              onClick={toggleTheme}
-              title={isDark ? "Chuyển sang giao diện Sáng" : "Chuyển sang giao diện Tối"}
-              className="flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer active:scale-95"
-            >
-              {isDark ? (
-                <>
-                  <Sun size={15} className="text-amber-400" />
-                  <span>Sáng</span>
-                </>
-              ) : (
-                <>
-                  <Moon size={15} className="text-slate-600" />
-                  <span>Tối</span>
-                </>
-              )}
-            </button>
           </div>
         </header>
 

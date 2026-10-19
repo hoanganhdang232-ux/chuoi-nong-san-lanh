@@ -132,7 +132,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  getLocations: () => request("/v1/locations"),
+  getLocations: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/locations${q ? "?" + q : ""}`);
+  },
+  transferBatchToStore: (payload) =>
+    request("/v1/batches/transfer", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getInternalTransfers: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/batches/transfers${q ? "?" + q : ""}`);
+  },
   distributeBatchToStores: (batchId, allocations) =>
     request("/v1/locations/distribute-batch", {
       method: "POST",

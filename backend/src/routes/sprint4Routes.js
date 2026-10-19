@@ -13,6 +13,10 @@ import {
   deleteLocation,
   assignBatchToLocation,
 } from "../services/locationService.js";
+import {
+  transferBatchToStore,
+  listInternalTransfers,
+} from "../services/internalTransferService.js";
 import { batchSplitMergeService } from "../services/batchSplitMergeService.js";
 import { listAuditLogs } from "../services/auditLogService.js";
 import {
@@ -132,7 +136,10 @@ router.post(
  */
 router.get("/locations", (req, res) => {
   try {
-    const locations = listLocations(req.user.organization_id);
+    const locations = listLocations(req.user.organization_id, {
+      status: req.query.status,
+      search: req.query.search,
+    });
     return res.json(locations);
   } catch (err) {
     return res.status(err.statusCode || 500).json({ message: err.message });
@@ -141,14 +148,17 @@ router.get("/locations", (req, res) => {
 
 /**
  * POST /locations
- * Thêm mới địa điểm/cửa hàng cho tổ chức.
+ * Thêm mới địa điểm/cửa hàng cho tổ chức (T-64).
  */
 router.post("/locations", requireRole(...adminRoles), (req, res) => {
   try {
     const location = createLocation({
       organizationId: req.user.organization_id,
+      code: req.body?.code,
       name: req.body?.name,
       address: req.body?.address,
+      phone: req.body?.phone,
+      status: req.body?.status,
     });
     return res.status(201).json({ message: "Tạo địa điểm thành công.", location });
   } catch (err) {
@@ -158,15 +168,18 @@ router.post("/locations", requireRole(...adminRoles), (req, res) => {
 
 /**
  * PUT /locations/:id
- * Cập nhật địa điểm/cửa hàng.
+ * Cập nhật địa điểm/cửa hàng (T-64).
  */
 router.put("/locations/:id", requireRole(...adminRoles), (req, res) => {
   try {
     const location = updateLocation({
       id: Number(req.params.id),
       organizationId: req.user.organization_id,
+      code: req.body?.code,
       name: req.body?.name,
       address: req.body?.address,
+      phone: req.body?.phone,
+      status: req.body?.status,
     });
     return res.json({ message: "Cập nhật địa điểm thành công.", location });
   } catch (err) {
@@ -176,7 +189,7 @@ router.put("/locations/:id", requireRole(...adminRoles), (req, res) => {
 
 /**
  * DELETE /locations/:id
- * Xóa địa điểm/cửa hàng.
+ * Xóa hoặc chuyển trạng thái địa điểm/cửa hàng (T-64).
  */
 router.delete("/locations/:id", requireRole(...adminRoles), (req, res) => {
   try {
@@ -187,6 +200,52 @@ router.delete("/locations/:id", requireRole(...adminRoles), (req, res) => {
     return res.json({ message: "Xóa địa điểm thành công.", ...result });
   } catch (err) {
     return res.status(err.statusCode || 400).json({ message: err.message });
+  }
+});
+
+/**
+ * T-65: API điều chuyển lô hàng nội bộ từ kho tổng về các cửa hàng trực thuộc.
+ * POST /api/v1/batches/transfer
+ */
+router.post("/batches/transfer", requireRole(...adminRoles), (req, res) => {
+  try {
+    const batchId = req.body?.batch_id ?? req.body?.batchId;
+    const locationId = req.body?.location_id ?? req.body?.locationId;
+    const quantity = req.body?.quantity;
+    const allocations = req.body?.allocations;
+    const note = req.body?.note;
+
+    const result = transferBatchToStore({
+      batchId,
+      locationId,
+      quantity,
+      allocations,
+      note,
+      actorId: req.user.id,
+      organizationId: req.user.organization_id,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ message: err.message });
+  }
+});
+
+/**
+ * T-65: Lấy danh sách lịch sử các lệnh điều chuyển lô hàng nội bộ.
+ * GET /api/v1/batches/transfers
+ */
+router.get("/batches/transfers", requireRole(...adminRoles, "auditor"), (req, res) => {
+  try {
+    const history = listInternalTransfers(req.user.organization_id, {
+      batchId: req.query.batch_id ?? req.query.batchId,
+      locationId: req.query.location_id ?? req.query.locationId,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    return res.json(history);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ message: err.message });
   }
 });
 

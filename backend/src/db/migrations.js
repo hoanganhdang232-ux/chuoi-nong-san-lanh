@@ -71,9 +71,13 @@ export function runMigrations() {
     CREATE TABLE IF NOT EXISTS locations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       organization_id INTEGER NOT NULL,
+      code TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       address TEXT,
+      phone TEXT,
+      status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active','Inactive','active','inactive')),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
 
@@ -476,6 +480,56 @@ export function runMigrations() {
     );
   }
 
+  const locationColumns = db
+    .prepare("PRAGMA table_info(locations)")
+    .all()
+    .map((c) => c.name);
+
+  if (!locationColumns.includes("code")) {
+    db.exec("ALTER TABLE locations ADD COLUMN code TEXT");
+    const existingLocs = db.prepare("SELECT id FROM locations").all();
+    for (const loc of existingLocs) {
+      db.prepare("UPDATE locations SET code = ? WHERE id = ?").run(
+        `CH-${String(loc.id).padStart(3, "0")}`,
+        loc.id,
+      );
+    }
+  }
+  if (!locationColumns.includes("phone")) {
+    db.exec("ALTER TABLE locations ADD COLUMN phone TEXT");
+  }
+  if (!locationColumns.includes("status")) {
+    db.exec("ALTER TABLE locations ADD COLUMN status TEXT NOT NULL DEFAULT 'Active'");
+  }
+  if (!locationColumns.includes("updated_at")) {
+    db.exec("ALTER TABLE locations ADD COLUMN updated_at TEXT");
+    db.exec("UPDATE locations SET updated_at = datetime('now') WHERE updated_at IS NULL");
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS internal_batch_transfers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transfer_code TEXT NOT NULL UNIQUE,
+      source_batch_id INTEGER NOT NULL,
+      target_batch_id INTEGER,
+      location_id INTEGER NOT NULL,
+      organization_id INTEGER NOT NULL,
+      quantity REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'completed',
+      note TEXT,
+      actor_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (source_batch_id) REFERENCES batches(id),
+      FOREIGN KEY (target_batch_id) REFERENCES batches(id),
+      FOREIGN KEY (location_id) REFERENCES locations(id),
+      FOREIGN KEY (organization_id) REFERENCES organizations(id),
+      FOREIGN KEY (actor_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_internal_transfers_org ON internal_batch_transfers(organization_id);
+    CREATE INDEX IF NOT EXISTS idx_internal_transfers_batch ON internal_batch_transfers(source_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_internal_transfers_location ON internal_batch_transfers(location_id);
+  `);
+
   const batchIndexes = [
     {
       name: "idx_batches_parent",
@@ -552,5 +606,8 @@ export function runMigrations() {
   );
   db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
     "004_sprint4_schema",
+  );
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+    "005_internal_batch_distribution",
   );
 }
