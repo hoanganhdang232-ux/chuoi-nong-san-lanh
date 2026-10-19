@@ -3,8 +3,8 @@ import "dotenv/config";
 const isTest =
   process.env.NODE_ENV === "test" ||
   process.env.npm_lifecycle_event === "test" ||
-  process.execArgv.some((arg) => arg.includes("test")) ||
-  process.argv.some((arg) => arg.includes("test") || arg.includes(".test.js"));
+  process.execArgv.includes("--test") ||
+  (typeof process.argv[1] === "string" && process.argv[1].endsWith(".test.js"));
 
 export const config = {
   port: Number(process.env.PORT || 3001),
