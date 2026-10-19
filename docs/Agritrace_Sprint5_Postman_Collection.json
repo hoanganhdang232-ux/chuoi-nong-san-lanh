@@ -369,6 +369,181 @@
           }
         }
       ]
+    },
+    {
+      "name": "3. Thu Hồi Lô Hàng & Niêm Phong Cách Ly (SCRUM-169 -> SCRUM-174)",
+      "item": [
+        {
+          "name": "POST Tạo Lệnh Thu Hồi Khẩn Cấp (T-71)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rootBatchId\": 1,\n  \"reason\": \"Phát hiện dư lượng thuốc BVTV vượt ngưỡng cho phép 500% tại khâu kiểm nghiệm chất lượng định kỳ.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls"]
+            }
+          }
+        },
+        {
+          "name": "GET Danh sách các Lệnh Thu Hồi",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls"]
+            }
+          }
+        },
+        {
+          "name": "GET Danh sách Lô bị ảnh hưởng & Summary Tồn kho (T-76)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls/1/affected-batches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls", "1", "affected-batches"]
+            }
+          }
+        },
+        {
+          "name": "GET Xuất Báo Cáo Thu Hồi Ra File CSV (T-78)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls/1/export-csv",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls", "1", "export-csv"]
+            }
+          }
+        },
+        {
+          "name": "POST Niêm Phong & Cách Ly Lô Hàng (T-79, T-81)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quarantineLocation\": \"Kho cách ly chuyên dụng K01 - Kệ cách ly số 4\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/batches/1/quarantine",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "batches", "1", "quarantine"]
+            }
+          }
+        },
+        {
+          "name": "GET Danh Sách Thông Báo In-app (T-85)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications?limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH Đánh Dấu 1 Thông Báo Đã Đọc",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/1/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", "1", "read"]
+            }
+          }
+        },
+        {
+          "name": "POST Đánh Dấu Tất Cả Thông Báo Đã Đọc",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/mark-all-read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", "mark-all-read"]
+            }
+          }
+        },
+        {
+          "name": "GET Real-time SSE Stream (T-83)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls/stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls", "stream"]
+            }
+          }
+        }
+      ]
     }
   ]
 }

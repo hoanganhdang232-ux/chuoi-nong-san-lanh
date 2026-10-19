@@ -627,6 +627,139 @@ export function runMigrations() {
     }
   }
 
+  // ─── SPRINT 5 MIGRATIONS (T-70, T-84) ──────────────────────────────────────
+  const currentBatchSql =
+    db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'batches'",
+      )
+      .get()?.sql || "";
+
+  if (!currentBatchSql.includes("'QUARANTINED'")) {
+    db.exec("PRAGMA foreign_keys = OFF;");
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE batches_v5 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          batch_code TEXT NOT NULL UNIQUE,
+          product_id INTEGER NOT NULL,
+          organization_id INTEGER NOT NULL,
+          source_farm_id INTEGER,
+          parent_batch_id INTEGER,
+          root_batch_id INTEGER,
+          source_batch_ids TEXT,
+          initial_quantity REAL NOT NULL,
+          remaining_quantity REAL NOT NULL,
+          consumed_quantity REAL NOT NULL DEFAULT 0,
+          current_location TEXT,
+          location_id INTEGER,
+          temperature_c REAL,
+          cold_chain_alert INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE','QUARANTINED','quarantined','RECALLED')),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (product_id) REFERENCES products(id),
+          FOREIGN KEY (organization_id) REFERENCES organizations(id),
+          FOREIGN KEY (source_farm_id) REFERENCES farms(id),
+          FOREIGN KEY (parent_batch_id) REFERENCES batches(id),
+          FOREIGN KEY (root_batch_id) REFERENCES batches(id),
+          FOREIGN KEY (location_id) REFERENCES locations(id)
+        );
+      `);
+
+      db.exec(`
+        INSERT INTO batches_v5 (
+          id, batch_code, product_id, organization_id, source_farm_id,
+          parent_batch_id, root_batch_id, source_batch_ids,
+          initial_quantity, remaining_quantity, consumed_quantity,
+          current_location, location_id, temperature_c, cold_chain_alert,
+          status, created_at, updated_at
+        )
+        SELECT
+          id, batch_code, product_id, organization_id, source_farm_id,
+          parent_batch_id, root_batch_id, source_batch_ids,
+          initial_quantity, remaining_quantity, coalesce(consumed_quantity, 0),
+          current_location, location_id, temperature_c, coalesce(cold_chain_alert, 0),
+          status, created_at, updated_at
+        FROM batches;
+      `);
+
+      db.exec("DROP VIEW IF EXISTS lots;");
+      db.exec("DROP TABLE batches;");
+      db.exec("ALTER TABLE batches_v5 RENAME TO batches;");
+      db.exec("CREATE VIEW IF NOT EXISTS lots AS SELECT * FROM batches;");
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    } finally {
+      db.exec("PRAGMA foreign_keys = ON;");
+    }
+  }
+
+  // T-84: Migration cho bảng notifications (org_id, type, is_read)
+  const notifCols = db
+    .prepare("PRAGMA table_info(notifications)")
+    .all()
+    .map((c) => c.name);
+
+  if (!notifCols.includes("org_id")) {
+    db.exec("ALTER TABLE notifications ADD COLUMN org_id INTEGER REFERENCES organizations(id)");
+    db.exec("UPDATE notifications SET org_id = organization_id WHERE org_id IS NULL");
+  }
+  if (!notifCols.includes("type")) {
+    db.exec("ALTER TABLE notifications ADD COLUMN type TEXT DEFAULT 'recall'");
+    db.exec("UPDATE notifications SET type = kind WHERE type IS NULL");
+  }
+  if (!notifCols.includes("is_read")) {
+    db.exec("ALTER TABLE notifications ADD COLUMN is_read INTEGER DEFAULT 0");
+    db.exec("UPDATE notifications SET is_read = CASE WHEN read_at IS NOT NULL THEN 1 ELSE 0 END WHERE is_read IS NULL");
+  }
+
+  // T-70: Migration cho bảng recalls và recall_affected_batches
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS recalls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recall_code TEXT NOT NULL UNIQUE,
+      root_batch_id INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'CLOSED', 'active', 'closed')),
+      created_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (root_batch_id) REFERENCES batches(id),
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_recalls_code ON recalls(recall_code);
+    CREATE INDEX IF NOT EXISTS idx_recalls_root ON recalls(root_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_recalls_status ON recalls(status);
+
+    CREATE TABLE IF NOT EXISTS recall_affected_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recall_id INTEGER NOT NULL,
+      batch_id INTEGER NOT NULL,
+      organization_id INTEGER NOT NULL,
+      current_location TEXT,
+      remaining_quantity REAL NOT NULL,
+      consumed_quantity REAL NOT NULL DEFAULT 0,
+      is_blended INTEGER NOT NULL DEFAULT 0,
+      quarantine_status TEXT NOT NULL DEFAULT 'PENDING' CHECK(quarantine_status IN ('PENDING', 'QUARANTINED', 'pending', 'quarantined')),
+      quarantine_location TEXT,
+      quarantined_at TEXT,
+      quarantined_by INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (recall_id) REFERENCES recalls(id) ON DELETE CASCADE,
+      FOREIGN KEY (batch_id) REFERENCES batches(id),
+      FOREIGN KEY (organization_id) REFERENCES organizations(id),
+      FOREIGN KEY (quarantined_by) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_recall_affected_recall ON recall_affected_batches(recall_id);
+    CREATE INDEX IF NOT EXISTS idx_recall_affected_batch ON recall_affected_batches(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_recall_affected_org ON recall_affected_batches(organization_id);
+  `);
+
   const migration = db
     .prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'",
@@ -646,5 +779,8 @@ export function runMigrations() {
   );
   db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
     "005_internal_batch_distribution",
+  );
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+    "006_sprint5_recalls_and_notifications",
   );
 }

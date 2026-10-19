@@ -8,6 +8,7 @@ import transferRoutes from "./routes/transferRoutes.js";
 import v1TransferRoutes from "./routes/v1TransferRoutes.js";
 import featureRoutes from "./routes/featureRoutes.js";
 import sprint4Routes from "./routes/sprint4Routes.js";
+import sprint5Routes from "./routes/sprint5Routes.js";
 import { auditLogMiddleware } from "./middleware/auditLog.js";
 import { runMigrations } from "./db/migrations.js";
 import { ensureDemoFarmerAccount } from "./db/seed.js";
@@ -40,6 +41,7 @@ export function createApp() {
     }
   });
 
+  app.use("/api/v1", sprint5Routes);
   app.use("/api/v1", sprint4Routes);
   app.use("/api/auth", authRoutes);
   app.use("/api/batches", batchRoutes);

@@ -199,4 +199,52 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ csvContent }),
     }),
+  // ─── SPRINT 5 APIs: RECALL & NOTIFICATIONS ──────────────────────────────
+  createRecallV1: (payload) =>
+    request("/v1/recalls", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getRecallsV1: () => request("/v1/recalls"),
+  getRecallAffectedBatches: (recallId, params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/recalls/${recallId}/affected-batches${q ? "?" + q : ""}`);
+  },
+  quarantineBatch: (batchId, payload) =>
+    request(`/v1/batches/${batchId}/quarantine`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  downloadRecallCsv: async (recallId, recallCode) => {
+    const token = localStorage.getItem("agritrace_token");
+    const response = await fetch(`${API_URL}/v1/recalls/${recallId}/export-csv`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      throw new Error("Không thể tải báo cáo thu hồi dạng CSV.");
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Recall_${recallCode || recallId}_Affected_Batches.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+  getNotificationsV1: (limit = 50) => request(`/v1/notifications?limit=${limit}`),
+  markNotificationRead: (id) =>
+    request(`/v1/notifications/${id}/read`, {
+      method: "PATCH",
+    }),
+  markAllNotificationsRead: () =>
+    request("/v1/notifications/read-all", {
+      method: "POST",
+    }),
 };

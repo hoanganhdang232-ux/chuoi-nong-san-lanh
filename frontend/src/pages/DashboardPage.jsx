@@ -39,6 +39,8 @@ import AuditLogsView from "../components/AuditLogsView.jsx";
 import CsvImportView from "../components/CsvImportView.jsx";
 import ConsumeModal from "../components/ConsumeModal.jsx";
 import ConfirmSaveModal from "../components/ConfirmSaveModal.jsx";
+import NotificationBell from "../components/NotificationBell.jsx";
+import RecallManagementView from "../components/RecallManagementView.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
@@ -222,7 +224,7 @@ export default function DashboardPage() {
   const [landPlots, setLandPlots] = useState([]);
   const [products, setProducts] = useState([]);
   const [temperatureLogs, setTemperatureLogs] = useState([]);
-  const [recallReports, setRecallReports] = useState([]);
+  const [, setRecallReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [, setActivity] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState(null);
@@ -283,7 +285,6 @@ export default function DashboardPage() {
       toast.success(message);
     }
   };
-  const [recallForm, setRecallForm] = useState({ batchId: "", reason: "" });
   const [transferFilter, setTransferFilter] = useState("all");
   const [decisionModal, setDecisionModal] = useState({
     open: false,
@@ -994,25 +995,6 @@ export default function DashboardPage() {
     }
   };
 
-  const handleRecallSubmit = async (event) => {
-    event.preventDefault();
-    try {
-      const report = await api.activateRecall({
-        rootBatchId: Number(recallForm.batchId),
-        reason: recallForm.reason,
-      });
-      setRecallReports([report, ...recallReports]);
-      setRecallForm({ batchId: "", reason: "" });
-      await loadData();
-      setNotifications(await api.getNotifications());
-      setSubmission({
-        message: `Đã thu hồi ${report.items.length} lô liên quan.`,
-        tone: "success",
-      });
-    } catch (submitError) {
-      setSubmission({ message: submitError.message, tone: "error" });
-    }
-  };
 
   const handleAuditExport = async (batchId) => {
     try {
@@ -1106,6 +1088,8 @@ export default function DashboardPage() {
                 </span>
               </div>
             </div>
+            {/* T-86: Chuông thông báo in-app */}
+            <NotificationBell user={user} />
           </div>
         </header>
 
@@ -2095,128 +2079,7 @@ export default function DashboardPage() {
           )}
 
         {selectedView === "Thu hồi" && (
-          <section className="space-y-6">
-            {user?.role !== "auditor" && (
-              <form
-                onSubmit={handleRecallSubmit}
-                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
-              >
-                <div className="mb-4 flex items-center gap-3">
-                  <Siren className="text-rose-700" size={21} />
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Kích hoạt lệnh thu hồi
-                  </h2>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-[1fr_2fr_auto]">
-                  <select
-                    required
-                    className="rounded-xl border px-3 py-2"
-                    value={recallForm.batchId}
-                    onChange={(event) =>
-                      setRecallForm({
-                        ...recallForm,
-                        batchId: event.target.value,
-                      })
-                    }
-                  >
-                    <option value="">Chọn lô gốc</option>
-                    {filteredBatches.map((batch) => (
-                      <option key={batch.id} value={batch.id}>
-                        {batch.batch_code}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    required
-                    minLength={5}
-                    className="rounded-xl border px-3 py-2"
-                    placeholder="Lý do thu hồi nghiêm trọng"
-                    value={recallForm.reason}
-                    onChange={(event) =>
-                      setRecallForm({
-                        ...recallForm,
-                        reason: event.target.value,
-                      })
-                    }
-                  />
-                  <button
-                    className="rounded-xl bg-rose-700 px-4 py-2 font-semibold text-white hover:bg-rose-800"
-                    type="submit"
-                  >
-                    Thu hồi toàn bộ
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {recallReports.map((report) => (
-              <article
-                key={report.id}
-                className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200"
-              >
-                <div className="flex flex-col gap-2 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="font-bold text-slate-900">
-                      Thu hồi #{report.id} · {report.root_batch_code}
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {report.reason}
-                    </p>
-                  </div>
-                  <div className="text-sm text-slate-600">
-                    Còn tại điểm bán:{" "}
-                    <strong>
-                      {Number(report.totals.remainingQuantity).toLocaleString()}{" "}
-                      kg
-                    </strong>{" "}
-                    · Đã tiêu thụ:{" "}
-                    <strong>
-                      {Number(report.totals.consumedQuantity).toLocaleString()}{" "}
-                      kg
-                    </strong>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-500">
-                      <tr>
-                        <th className="px-5 py-3">Mã lô</th>
-                        <th className="px-5 py-3">Đơn vị đang giữ</th>
-                        <th className="px-5 py-3">Kho / cửa hàng</th>
-                        <th className="px-5 py-3">Còn lại</th>
-                        <th className="px-5 py-3">Đã tiêu thụ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {report.items.map((item) => (
-                        <tr
-                          key={item.batch_id}
-                          className="border-t border-slate-100"
-                        >
-                          <td className="px-5 py-3 font-semibold">
-                            {item.batch_code}
-                          </td>
-                          <td className="px-5 py-3">
-                            {item.organization_name}
-                          </td>
-                          <td className="px-5 py-3">
-                            {item.current_location || "Chưa cập nhật"}
-                          </td>
-                          <td className="px-5 py-3">
-                            {Number(item.remaining_quantity).toLocaleString()}{" "}
-                            kg
-                          </td>
-                          <td className="px-5 py-3">
-                            {Number(item.consumed_quantity).toLocaleString()} kg
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </article>
-            ))}
-          </section>
+          <RecallManagementView user={user} batches={batches} />
         )}
 
         {(selectedView === "Báo cáo kiểm tra" ||
