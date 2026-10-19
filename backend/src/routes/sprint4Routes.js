@@ -8,11 +8,18 @@ import {
 import { consumeBatch } from "../services/consumeService.js";
 import {
   listLocations,
+  getLocationById,
   createLocation,
   updateLocation,
+  toggleLocationStatus,
   deleteLocation,
   assignBatchToLocation,
 } from "../services/locationService.js";
+import {
+  transferBatchToStore,
+  listInternalTransfers,
+  getTransferDetail,
+} from "../services/internalTransferService.js";
 import { batchSplitMergeService } from "../services/batchSplitMergeService.js";
 import { listAuditLogs } from "../services/auditLogService.js";
 import {
@@ -128,11 +135,20 @@ router.post(
 
 /**
  * GET /locations
- * Liệt kê địa điểm/cửa hàng của tổ chức.
+ * Liệt kê địa điểm/cửa hàng của tổ chức (T-64).
  */
 router.get("/locations", (req, res) => {
   try {
-    const locations = listLocations(req.user.organization_id);
+    const locations = listLocations(req.user.organization_id, {
+      status: req.query.status,
+      type: req.query.type,
+      search: req.query.search,
+      page: req.query.page,
+      pageSize: req.query.pageSize || req.query.page_size,
+      limit: req.query.limit,
+      offset: req.query.offset,
+      withPagination: req.query.withPagination === "true" || Boolean(req.query.page),
+    });
     return res.json(locations);
   } catch (err) {
     return res.status(err.statusCode || 500).json({ message: err.message });
@@ -140,15 +156,36 @@ router.get("/locations", (req, res) => {
 });
 
 /**
+ * GET /locations/:id
+ * Xem chi tiết địa điểm/cửa hàng (T-64).
+ */
+router.get("/locations/:id", (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      return res.status(400).json({ message: "ID địa điểm không hợp lệ." });
+    }
+    const location = getLocationById(id, req.user.organization_id);
+    return res.json(location);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ message: err.message });
+  }
+});
+
+/**
  * POST /locations
- * Thêm mới địa điểm/cửa hàng cho tổ chức.
+ * Thêm mới địa điểm/cửa hàng cho tổ chức (T-64).
  */
 router.post("/locations", requireRole(...adminRoles), (req, res) => {
   try {
     const location = createLocation({
       organizationId: req.user.organization_id,
+      code: req.body?.code,
       name: req.body?.name,
       address: req.body?.address,
+      phone: req.body?.phone,
+      type: req.body?.type,
+      status: req.body?.status,
     });
     return res.status(201).json({ message: "Tạo địa điểm thành công.", location });
   } catch (err) {
@@ -158,15 +195,19 @@ router.post("/locations", requireRole(...adminRoles), (req, res) => {
 
 /**
  * PUT /locations/:id
- * Cập nhật địa điểm/cửa hàng.
+ * Cập nhật địa điểm/cửa hàng (T-64).
  */
 router.put("/locations/:id", requireRole(...adminRoles), (req, res) => {
   try {
     const location = updateLocation({
       id: Number(req.params.id),
       organizationId: req.user.organization_id,
+      code: req.body?.code,
       name: req.body?.name,
       address: req.body?.address,
+      phone: req.body?.phone,
+      type: req.body?.type,
+      status: req.body?.status,
     });
     return res.json({ message: "Cập nhật địa điểm thành công.", location });
   } catch (err) {
@@ -175,8 +216,29 @@ router.put("/locations/:id", requireRole(...adminRoles), (req, res) => {
 });
 
 /**
+ * PATCH /locations/:id/status
+ * Bật/tắt trạng thái địa điểm/cửa hàng ACTIVE / INACTIVE (T-64).
+ */
+router.patch("/locations/:id/status", requireRole(...adminRoles), (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      return res.status(400).json({ message: "ID địa điểm không hợp lệ." });
+    }
+    const location = toggleLocationStatus({
+      id,
+      organizationId: req.user.organization_id,
+      status: req.body?.status,
+    });
+    return res.json({ message: "Cập nhật trạng thái thành công.", location });
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ message: err.message });
+  }
+});
+
+/**
  * DELETE /locations/:id
- * Xóa địa điểm/cửa hàng.
+ * Xóa hoặc chuyển trạng thái ngừng hoạt động địa điểm/cửa hàng (T-64).
  */
 router.delete("/locations/:id", requireRole(...adminRoles), (req, res) => {
   try {
@@ -187,6 +249,73 @@ router.delete("/locations/:id", requireRole(...adminRoles), (req, res) => {
     return res.json({ message: "Xóa địa điểm thành công.", ...result });
   } catch (err) {
     return res.status(err.statusCode || 400).json({ message: err.message });
+  }
+});
+
+/**
+ * T-65: API điều chuyển lô hàng nội bộ từ kho tổng về các cửa hàng trực thuộc.
+ * POST /api/v1/batches/transfer
+ */
+router.post("/batches/transfer", requireRole(...adminRoles), (req, res) => {
+  try {
+    const batchId = req.body?.batch_id ?? req.body?.batchId;
+    const locationId = req.body?.location_id ?? req.body?.locationId;
+    const quantity = req.body?.quantity;
+    const allocations = req.body?.allocations;
+    const note = req.body?.note;
+
+    const result = transferBatchToStore({
+      batchId,
+      locationId,
+      quantity,
+      allocations,
+      note,
+      actorId: req.user.id,
+      organizationId: req.user.organization_id,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ message: err.message });
+  }
+});
+
+/**
+ * T-65: Lấy danh sách lịch sử các lệnh điều chuyển lô hàng nội bộ.
+ * GET /api/v1/batches/transfers
+ */
+router.get("/batches/transfers", requireRole(...adminRoles, "auditor"), (req, res) => {
+  try {
+    const history = listInternalTransfers(req.user.organization_id, {
+      batchId: req.query.batch_id ?? req.query.batchId,
+      locationId: req.query.location_id ?? req.query.locationId,
+      search: req.query.search,
+      page: req.query.page,
+      pageSize: req.query.pageSize || req.query.page_size,
+      limit: req.query.limit,
+      offset: req.query.offset,
+      withPagination: req.query.withPagination === "true" || Boolean(req.query.page),
+    });
+    return res.json(history);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ message: err.message });
+  }
+});
+
+/**
+ * T-65: Xem chi tiết lệnh điều chuyển và hash audit log.
+ * GET /api/v1/batches/transfers/:id
+ */
+router.get("/batches/transfers/:id", requireRole(...adminRoles, "auditor"), (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      return res.status(400).json({ message: "ID lệnh điều chuyển không hợp lệ." });
+    }
+    const detail = getTransferDetail(id, req.user.organization_id);
+    return res.json(detail);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ message: err.message });
   }
 });
 

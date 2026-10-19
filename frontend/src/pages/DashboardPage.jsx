@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Activity,
+  AlertCircle,
   AlertTriangle,
   ArrowRight,
   ArrowRightLeft,
@@ -25,8 +26,6 @@ import {
   Boxes,
   X,
   XCircle,
-  Sun,
-  Moon,
   Upload,
   FileSpreadsheet,
   GitBranch,
@@ -41,10 +40,11 @@ import AuditLogsView from "../components/AuditLogsView.jsx";
 import CsvImportView from "../components/CsvImportView.jsx";
 import ConsumeModal from "../components/ConsumeModal.jsx";
 import ConfirmSaveModal from "../components/ConfirmSaveModal.jsx";
+import NotificationBell from "../components/NotificationBell.jsx";
+import RecallManagementView from "../components/RecallManagementView.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
-import { useTheme } from "../context/ThemeContext.jsx";
 
 const EVENT_META = {
   batch_harvested:           { label: "Thu hoạch",           color: "bg-emerald-100 text-emerald-700",  icon: Tractor },
@@ -142,9 +142,19 @@ const STATUS_META = {
     dot: "bg-emerald-500",
   },
   recalled: {
-    label: "Thu hồi",
-    color: "bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-700 ring-1 ring-rose-200 dark:ring-rose-900/40",
+    label: "Thu hồi khẩn cấp",
+    color: "bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800 ring-1 ring-rose-200 dark:ring-rose-900/40",
     dot: "bg-rose-500",
+  },
+  quarantined: {
+    label: "Đã niêm phong / Cách ly",
+    color: "bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800",
+    dot: "bg-emerald-600",
+  },
+  active: {
+    label: "Đang hoạt động",
+    color: "bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 border-teal-300 dark:border-teal-700",
+    dot: "bg-teal-500",
   },
   consumed: {
     label: "Đã tiêu thụ",
@@ -154,12 +164,13 @@ const STATUS_META = {
 };
 
 function BatchStatusBadge({ status }) {
-  const meta = STATUS_META[status] || {
+  const norm = String(status || "").toLowerCase();
+  const meta = STATUS_META[norm] || {
     label: status,
     color: "bg-slate-100 text-slate-700 border-slate-200",
     dot: "bg-slate-400",
   };
-  const isPulsing = ["pending_confirmation", "in_transit", "recalled"].includes(status);
+  const isPulsing = ["pending_confirmation", "in_transit", "recalled"].includes(norm);
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold shadow-2xs ${meta.color}`}
@@ -191,6 +202,11 @@ const PLOT_PREVIEW_SCHEMA = [
   { key: "name", label: "Tên thửa đất", icon: MapPin },
   { key: "areaHa", label: "Diện tích canh tác", format: (val) => `${val} ha` },
   { key: "coordinates", label: "Tọa độ GPS" },
+  {
+    key: "createdAt",
+    label: "Ngày khai báo",
+    format: (val) => (val ? new Date(val).toLocaleDateString("vi-VN") : "Thời điểm hiện tại"),
+  },
 ];
 
 const PRODUCT_PREVIEW_SCHEMA = [
@@ -216,17 +232,82 @@ const MERGE_PREVIEW_SCHEMA = [
   { key: "batchCount", label: "Tổng số lô gộp", icon: ArrowRightLeft },
 ];
 
+export function getTodayDateString() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function validateStandardDateString(dateStr) {
+  if (!dateStr || typeof dateStr !== "string" || !dateStr.trim()) {
+    return { valid: true };
+  }
+  const trimmed = dateStr.trim();
+  let year, month, day;
+
+  // Case 1: YYYY-MM-DD or YYYY/MM/DD
+  const ymdMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s].*)?$/);
+  // Case 2: DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[T\s].*)?$/);
+
+  if (ymdMatch) {
+    year = parseInt(ymdMatch[1], 10);
+    month = parseInt(ymdMatch[2], 10);
+    day = parseInt(ymdMatch[3], 10);
+  } else if (dmyMatch) {
+    day = parseInt(dmyMatch[1], 10);
+    month = parseInt(dmyMatch[2], 10);
+    year = parseInt(dmyMatch[3], 10);
+  } else {
+    return {
+      valid: false,
+      message: "Định dạng ngày tháng không đúng chuẩn (phải là YYYY-MM-DD hoặc DD/MM/YYYY).",
+    };
+  }
+
+  if (year < 1970 || year > 2100) {
+    return { valid: false, message: `Năm khai báo (${year}) không hợp lệ (hợp lệ từ 1970 đến 2100).` };
+  }
+  if (month < 1 || month > 12) {
+    return { valid: false, message: `Tháng khai báo (${month}) không hợp lệ (phải từ 01 đến 12).` };
+  }
+  const daysInMonth = new Date(year, month, 0).getDate();
+  if (day < 1 || day > daysInMonth) {
+    return {
+      valid: false,
+      message: `Ngày ${day} không hợp lệ trong tháng ${month}/${year} (tháng này chỉ có tối đa ${daysInMonth} ngày).`,
+    };
+  }
+
+  const now = new Date();
+  const todayYear = now.getFullYear();
+  const todayMonth = now.getMonth() + 1;
+  const todayDay = now.getDate();
+  const todayStr = `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(todayDay).padStart(2, "0")}`;
+  const inputDateOnly = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+  if (inputDateOnly > todayStr) {
+    return {
+      valid: false,
+      message: `Ngày khai báo không thể là ngày trong tương lai (hôm nay là ${todayDay}/${todayMonth}/${todayYear}). Vui lòng nhập lại phần ngày này.`,
+    };
+  }
+
+  return { valid: true, dateOnly: inputDateOnly };
+}
+
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const toast = useToast();
-  const { isDark, toggleTheme } = useTheme();
   const [dashboard, setDashboard] = useState(null);
   const [batches, setBatches] = useState([]);
   const [transferRequests, setTransferRequests] = useState([]);
   const [landPlots, setLandPlots] = useState([]);
   const [products, setProducts] = useState([]);
   const [temperatureLogs, setTemperatureLogs] = useState([]);
-  const [recallReports, setRecallReports] = useState([]);
+  const [, setRecallReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [, setActivity] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState(null);
@@ -256,8 +337,10 @@ export default function DashboardPage() {
     areaHa: "",
     latitude: "",
     longitude: "",
+    createdAt: "",
   });
   const [editingLandPlotId, setEditingLandPlotId] = useState(null);
+  const [landPlotErrors, setLandPlotErrors] = useState({});
   const [productForm, setProductForm] = useState({ name: "", unit: "kg" });
   const [editingProductId, setEditingProductId] = useState(null);
   const [splitBatchId, setSplitBatchId] = useState("");
@@ -287,7 +370,6 @@ export default function DashboardPage() {
       toast.success(message);
     }
   };
-  const [recallForm, setRecallForm] = useState({ batchId: "", reason: "" });
   const [transferFilter, setTransferFilter] = useState("all");
   const [decisionModal, setDecisionModal] = useState({
     open: false,
@@ -581,10 +663,49 @@ export default function DashboardPage() {
 
   const handleLandPlotSubmit = (event) => {
     event.preventDefault();
+    const errors = {};
+
     if (!landPlotForm.name?.trim()) {
-      toast.error("Vui lòng nhập tên thửa đất.");
+      errors.name = "Tên thửa đất không được để trống. Vui lòng nhập tên thửa.";
+    }
+
+    const area = Number(landPlotForm.areaHa);
+    if (!landPlotForm.areaHa || Number.isNaN(area) || area <= 0) {
+      errors.areaHa = "Diện tích thửa đất phải là số dương lớn hơn 0 (ha). Vui lòng nhập lại diện tích.";
+    }
+
+    if (landPlotForm.latitude && String(landPlotForm.latitude).trim()) {
+      const lat = Number(landPlotForm.latitude);
+      if (Number.isNaN(lat) || lat < -90 || lat > 90) {
+        errors.latitude = "Vĩ độ không hợp lệ (phải từ -90 đến 90). Vui lòng nhập lại vĩ độ.";
+      }
+    }
+
+    if (landPlotForm.longitude && String(landPlotForm.longitude).trim()) {
+      const lng = Number(landPlotForm.longitude);
+      if (Number.isNaN(lng) || lng < -180 || lng > 180) {
+        errors.longitude = "Kinh độ không hợp lệ (phải từ -180 đến 180). Vui lòng nhập lại kinh độ.";
+      }
+    }
+
+    if (landPlotForm.createdAt && String(landPlotForm.createdAt).trim()) {
+      const dateCheck = validateStandardDateString(landPlotForm.createdAt);
+      if (!dateCheck.valid) {
+        errors.createdAt = dateCheck.message;
+      }
+    }
+
+    setLandPlotErrors(errors);
+
+    const errorKeys = Object.keys(errors);
+    if (errorKeys.length > 0) {
+      const firstKey = errorKeys[0];
+      toast.error(errors[firstKey]);
+      const el = document.getElementById(`plot-input-${firstKey}`);
+      if (el) el.focus();
       return;
     }
+
     setConfirmPlotModal({
       open: true,
       data: {
@@ -608,7 +729,8 @@ export default function DashboardPage() {
       } else {
         await api.createLandPlot(landPlotForm);
       }
-      setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "" });
+      setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "", createdAt: "" });
+      setLandPlotErrors({});
       setEditingLandPlotId(null);
       const nextPlots = await api.getLandPlots();
       setLandPlots(nextPlots);
@@ -619,7 +741,15 @@ export default function DashboardPage() {
       });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
-      setConfirmPlotModal((prev) => ({ ...prev, submitting: false }));
+      setConfirmPlotModal((prev) => ({ ...prev, submitting: false, open: false }));
+      if (submitError.field) {
+        setLandPlotErrors((prev) => ({
+          ...prev,
+          [submitError.field]: submitError.message,
+        }));
+        const el = document.getElementById(`plot-input-${submitError.field}`);
+        if (el) el.focus();
+      }
     }
   };
 
@@ -998,25 +1128,6 @@ export default function DashboardPage() {
     }
   };
 
-  const handleRecallSubmit = async (event) => {
-    event.preventDefault();
-    try {
-      const report = await api.activateRecall({
-        rootBatchId: Number(recallForm.batchId),
-        reason: recallForm.reason,
-      });
-      setRecallReports([report, ...recallReports]);
-      setRecallForm({ batchId: "", reason: "" });
-      await loadData();
-      setNotifications(await api.getNotifications());
-      setSubmission({
-        message: `Đã thu hồi ${report.items.length} lô liên quan.`,
-        tone: "success",
-      });
-    } catch (submitError) {
-      setSubmission({ message: submitError.message, tone: "error" });
-    }
-  };
 
   const handleAuditExport = async (batchId) => {
     try {
@@ -1065,7 +1176,7 @@ export default function DashboardPage() {
 
       <main className="flex-1 p-4 sm:p-7 lg:p-8 overflow-x-hidden">
         {/* Header */}
-        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-4 sm:p-5 card-shadow backdrop-blur-md">
+        <header className="relative z-40 mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-4 sm:p-5 card-shadow backdrop-blur-md">
           <div>
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
@@ -1110,26 +1221,8 @@ export default function DashboardPage() {
                 </span>
               </div>
             </div>
-
-            {/* Nút chuyển đổi giao diện Sáng / Tối chính thức của hệ thống */}
-            <button
-              type="button"
-              onClick={toggleTheme}
-              title={isDark ? "Chuyển sang giao diện Sáng" : "Chuyển sang giao diện Tối"}
-              className="flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer active:scale-95"
-            >
-              {isDark ? (
-                <>
-                  <Sun size={15} className="text-amber-400" />
-                  <span>Sáng</span>
-                </>
-              ) : (
-                <>
-                  <Moon size={15} className="text-slate-600" />
-                  <span>Tối</span>
-                </>
-              )}
-            </button>
+            {/* T-86: Chuông thông báo in-app */}
+            <NotificationBell user={user} />
           </div>
         </header>
 
@@ -1304,6 +1397,7 @@ export default function DashboardPage() {
                           <tr>
                             <th className="px-4 py-3">Mã lô</th>
                             <th className="px-4 py-3">Sản phẩm</th>
+                            <th className="px-4 py-3">Khai báo / Thu hoạch</th>
                             <th className="px-4 py-3">Trạng thái</th>
                             <th className="px-4 py-3 text-right">Khối lượng</th>
                             <th className="px-4 py-3 text-center">Chi tiết</th>
@@ -1339,6 +1433,15 @@ export default function DashboardPage() {
                                 </td>
                                 <td className="px-4 py-3.5 font-medium text-slate-800 dark:text-slate-200">
                                   {batch.product_name}
+                                </td>
+                                <td className="px-4 py-3.5 font-mono text-xs text-slate-600 dark:text-slate-300">
+                                  {batch.harvested_at || batch.created_at
+                                    ? new Date(batch.harvested_at || batch.created_at).toLocaleDateString("vi-VN", {
+                                        day: "2-digit",
+                                        month: "2-digit",
+                                        year: "numeric",
+                                      })
+                                    : "--"}
                                 </td>
                                 <td className="px-4 py-3.5">
                                   <BatchStatusBadge status={batch.status} />
@@ -1461,64 +1564,223 @@ export default function DashboardPage() {
                 </h2>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  placeholder="Tên thửa"
-                  value={landPlotForm.name}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      name: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  placeholder="Diện tích (ha)"
-                  value={landPlotForm.areaHa}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      areaHa: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  step="0.000001"
-                  placeholder="Vĩ độ"
-                  value={landPlotForm.latitude}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      latitude: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  step="0.000001"
-                  placeholder="Kinh độ"
-                  value={landPlotForm.longitude}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      longitude: event.target.value,
-                    })
-                  }
-                />
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
+                    Tên thửa đất <span className="text-rose-500">*</span>:
+                  </label>
+                  <input
+                    id="plot-input-name"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm transition-colors ${
+                      landPlotErrors.name
+                        ? "border-rose-500 bg-rose-50/70 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    placeholder="Tên thửa đất (vd: Vùng trồng xoài A1)"
+                    value={landPlotForm.name}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, name: val }));
+                      if (landPlotErrors.name) {
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          name: val.trim() ? "" : "Tên thửa đất không được để trống. Vui lòng nhập tên thửa.",
+                        }));
+                      }
+                    }}
+                  />
+                  {landPlotErrors.name && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-rose-600">
+                      <AlertCircle size={13} className="flex-shrink-0" />
+                      {landPlotErrors.name}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
+                    Diện tích (ha) <span className="text-rose-500">*</span>:
+                  </label>
+                  <input
+                    id="plot-input-areaHa"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm transition-colors ${
+                      landPlotErrors.areaHa
+                        ? "border-rose-500 bg-rose-50/70 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    placeholder="Diện tích (ha)"
+                    value={landPlotForm.areaHa}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, areaHa: val }));
+                      if (landPlotErrors.areaHa) {
+                        const area = Number(val);
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          areaHa: !val || Number.isNaN(area) || area <= 0
+                            ? "Diện tích thửa đất phải là số dương lớn hơn 0 (ha). Vui lòng nhập lại diện tích."
+                            : "",
+                        }));
+                      }
+                    }}
+                  />
+                  {landPlotErrors.areaHa && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-rose-600">
+                      <AlertCircle size={13} className="flex-shrink-0" />
+                      {landPlotErrors.areaHa}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
+                    Vĩ độ GPS (tùy chọn):
+                  </label>
+                  <input
+                    id="plot-input-latitude"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm transition-colors ${
+                      landPlotErrors.latitude
+                        ? "border-rose-500 bg-rose-50/70 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    type="number"
+                    step="0.000001"
+                    placeholder="Vĩ độ (vd: 10.8231)"
+                    value={landPlotForm.latitude}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, latitude: val }));
+                      if (landPlotErrors.latitude) {
+                        const lat = Number(val);
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          latitude: val.trim() && (Number.isNaN(lat) || lat < -90 || lat > 90)
+                            ? "Vĩ độ không hợp lệ (phải từ -90 đến 90). Vui lòng nhập lại vĩ độ."
+                            : "",
+                        }));
+                      }
+                    }}
+                  />
+                  {landPlotErrors.latitude && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-rose-600">
+                      <AlertCircle size={13} className="flex-shrink-0" />
+                      {landPlotErrors.latitude}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
+                    Kinh độ GPS (tùy chọn):
+                  </label>
+                  <input
+                    id="plot-input-longitude"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm transition-colors ${
+                      landPlotErrors.longitude
+                        ? "border-rose-500 bg-rose-50/70 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    type="number"
+                    step="0.000001"
+                    placeholder="Kinh độ (vd: 106.6297)"
+                    value={landPlotForm.longitude}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, longitude: val }));
+                      if (landPlotErrors.longitude) {
+                        const lng = Number(val);
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          longitude: val.trim() && (Number.isNaN(lng) || lng < -180 || lng > 180)
+                            ? "Kinh độ không hợp lệ (phải từ -180 đến 180). Vui lòng nhập lại kinh độ."
+                            : "",
+                        }));
+                      }
+                    }}
+                  />
+                  {landPlotErrors.longitude && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-rose-600">
+                      <AlertCircle size={13} className="flex-shrink-0" />
+                      {landPlotErrors.longitude}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                      Ngày khai báo thửa đất <span className="font-normal text-slate-400">(để trống nếu là thời điểm hiện tại):</span>
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      Hôm nay: {new Date().toLocaleDateString("vi-VN")}
+                    </span>
+                  </div>
+                  <input
+                    id="plot-input-createdAt"
+                    className={`w-full rounded-xl border px-3 py-2 text-xs transition-colors ${
+                      landPlotErrors.createdAt
+                        ? "border-rose-500 bg-rose-50/80 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    type="date"
+                    max={getTodayDateString()}
+                    value={landPlotForm.createdAt || ""}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, createdAt: val }));
+                      if (val) {
+                        const check = validateStandardDateString(val);
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          createdAt: check.valid ? "" : check.message,
+                        }));
+                      } else {
+                        setLandPlotErrors((prev) => ({ ...prev, createdAt: "" }));
+                      }
+                    }}
+                    placeholder="Ngày khai báo"
+                  />
+                  {landPlotErrors.createdAt ? (
+                    <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-rose-50 border border-rose-200 p-2 text-xs font-medium text-rose-700">
+                      <AlertCircle size={15} className="flex-shrink-0 mt-0.5 text-rose-600" />
+                      <div>
+                        <p>{landPlotErrors.createdAt}</p>
+                        <p className="text-[11px] text-rose-500 mt-0.5 font-normal">
+                          Lưu ý: Không thể chọn ngày trong tương lai. Vui lòng nhập hoặc chọn lại phần ngày này.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Định dạng chuẩn: ngày/tháng/năm. Không thể khai báo ngày trong tương lai so với thời điểm hiện tại.
+                    </p>
+                  )}
+                </div>
               </div>
-              <button
-                className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white"
-                type="submit"
-              >
-                Lưu thửa đất
-              </button>
+
+              <div className="mt-4 flex items-center gap-2">
+                <button
+                  className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700 active:scale-95 transition-all"
+                  type="submit"
+                >
+                  {editingLandPlotId ? "Cập nhật thửa đất" : "Lưu thửa đất"}
+                </button>
+                {editingLandPlotId && (
+                  <button
+                    type="button"
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                    onClick={() => {
+                      setEditingLandPlotId(null);
+                      setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "", createdAt: "" });
+                      setLandPlotErrors({});
+                    }}
+                  >
+                    Hủy sửa
+                  </button>
+                )}
+              </div>
             </form>
 
             <form
@@ -1692,10 +1954,12 @@ export default function DashboardPage() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {landPlots.map((plot) => {
-                  const batchCount = batches.filter(
-                    (b) => b.organization_id === user?.organizationId
-                  ).length;
+                  const plotBatches = batches.filter(
+                    (b) => b.land_plot_id === plot.id || b.current_location === `Thửa ${plot.name}`
+                  );
+                  const batchCount = plotBatches.length;
                   const hasCoords = plot.latitude && plot.longitude;
+                  const latestBatch = plotBatches[0];
                   return (
                     <article
                       key={plot.id}
@@ -1720,7 +1984,9 @@ export default function DashboardPage() {
                               areaHa: String(plot.area_ha),
                               latitude: plot.latitude ? String(plot.latitude) : "",
                               longitude: plot.longitude ? String(plot.longitude) : "",
+                              createdAt: plot.created_at ? plot.created_at.split("T")[0].split(" ")[0] : "",
                             });
+                            setLandPlotErrors({});
                             window.scrollTo({ top: 0, behavior: "smooth" });
                           }}
                         >
@@ -1766,11 +2032,28 @@ export default function DashboardPage() {
                         )}
                       </div>
 
-                      {/* Created date */}
-                      <p className="text-[10px] text-slate-400">
-                        Khai báo: {new Date(plot.created_at).toLocaleDateString("vi-VN", {
-                          day: "2-digit", month: "2-digit", year: "numeric"
-                        })}
+                      {/* Created / Harvest date */}
+                      <p className="text-[10px] text-slate-400 flex items-center justify-between">
+                        <span>
+                          {latestBatch && (latestBatch.harvested_at || latestBatch.created_at) ? (
+                            <>
+                              Thu hoạch: {new Date(latestBatch.harvested_at || latestBatch.created_at).toLocaleDateString("vi-VN", {
+                                day: "2-digit", month: "2-digit", year: "numeric"
+                              })}
+                            </>
+                          ) : (
+                            <>
+                              Khai báo: {new Date(plot.created_at).toLocaleDateString("vi-VN", {
+                                day: "2-digit", month: "2-digit", year: "numeric"
+                              })}
+                            </>
+                          )}
+                        </span>
+                        {latestBatch && (
+                          <span className="font-mono text-[9px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800">
+                            {latestBatch.batch_code}
+                          </span>
+                        )}
                       </p>
                     </article>
                   );
@@ -2119,128 +2402,7 @@ export default function DashboardPage() {
           )}
 
         {selectedView === "Thu hồi" && (
-          <section className="space-y-6">
-            {user?.role !== "auditor" && (
-              <form
-                onSubmit={handleRecallSubmit}
-                className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
-              >
-                <div className="mb-4 flex items-center gap-3">
-                  <Siren className="text-rose-700" size={21} />
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Kích hoạt lệnh thu hồi
-                  </h2>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-[1fr_2fr_auto]">
-                  <select
-                    required
-                    className="rounded-xl border px-3 py-2"
-                    value={recallForm.batchId}
-                    onChange={(event) =>
-                      setRecallForm({
-                        ...recallForm,
-                        batchId: event.target.value,
-                      })
-                    }
-                  >
-                    <option value="">Chọn lô gốc</option>
-                    {filteredBatches.map((batch) => (
-                      <option key={batch.id} value={batch.id}>
-                        {batch.batch_code}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    required
-                    minLength={5}
-                    className="rounded-xl border px-3 py-2"
-                    placeholder="Lý do thu hồi nghiêm trọng"
-                    value={recallForm.reason}
-                    onChange={(event) =>
-                      setRecallForm({
-                        ...recallForm,
-                        reason: event.target.value,
-                      })
-                    }
-                  />
-                  <button
-                    className="rounded-xl bg-rose-700 px-4 py-2 font-semibold text-white hover:bg-rose-800"
-                    type="submit"
-                  >
-                    Thu hồi toàn bộ
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {recallReports.map((report) => (
-              <article
-                key={report.id}
-                className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200"
-              >
-                <div className="flex flex-col gap-2 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="font-bold text-slate-900">
-                      Thu hồi #{report.id} · {report.root_batch_code}
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {report.reason}
-                    </p>
-                  </div>
-                  <div className="text-sm text-slate-600">
-                    Còn tại điểm bán:{" "}
-                    <strong>
-                      {Number(report.totals.remainingQuantity).toLocaleString()}{" "}
-                      kg
-                    </strong>{" "}
-                    · Đã tiêu thụ:{" "}
-                    <strong>
-                      {Number(report.totals.consumedQuantity).toLocaleString()}{" "}
-                      kg
-                    </strong>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-500">
-                      <tr>
-                        <th className="px-5 py-3">Mã lô</th>
-                        <th className="px-5 py-3">Đơn vị đang giữ</th>
-                        <th className="px-5 py-3">Kho / cửa hàng</th>
-                        <th className="px-5 py-3">Còn lại</th>
-                        <th className="px-5 py-3">Đã tiêu thụ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {report.items.map((item) => (
-                        <tr
-                          key={item.batch_id}
-                          className="border-t border-slate-100"
-                        >
-                          <td className="px-5 py-3 font-semibold">
-                            {item.batch_code}
-                          </td>
-                          <td className="px-5 py-3">
-                            {item.organization_name}
-                          </td>
-                          <td className="px-5 py-3">
-                            {item.current_location || "Chưa cập nhật"}
-                          </td>
-                          <td className="px-5 py-3">
-                            {Number(item.remaining_quantity).toLocaleString()}{" "}
-                            kg
-                          </td>
-                          <td className="px-5 py-3">
-                            {Number(item.consumed_quantity).toLocaleString()} kg
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </article>
-            ))}
-          </section>
+          <RecallManagementView user={user} batches={batches} onBatchUpdated={loadData} />
         )}
 
         {(selectedView === "Báo cáo kiểm tra" ||

@@ -1,0 +1,549 @@
+{
+  "info": {
+    "name": "Agritrace - Sprint 5 (T-64 Locations & T-65 Stock Transfers)",
+    "_postman_id": "c1f7a421-98a0-4bb5-86dc-9b9868bf9fa1",
+    "description": "Postman Collection đầy đủ cho Sprint 5: Quản lý danh sách địa điểm/cửa hàng (T-64) và Luồng điều chuyển lô hàng nội bộ kho tổng về cửa hàng (T-65) với Transaction Locking và Hash Chaining.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "createdLocationId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "createdTransferId",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Authentication",
+      "item": [
+        {
+          "name": "Login as Distributor Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set('token', json.token);",
+                  "    pm.environment.set('token', json.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"distributor@agritrace.demo\",\n  \"password\": \"Distributor@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Task T-64 - Quản lý Cửa hàng / Địa điểm",
+      "item": [
+        {
+          "name": "GET Danh sách Cửa hàng (Phân trang & Tìm kiếm)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/locations?search=&status=ACTIVE&page=1&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "locations"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST Tạo Cửa hàng Mới",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.location && json.location.id) {",
+                  "    pm.collectionVariables.set('createdLocationId', json.location.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"CH-TN-01\",\n  \"name\": \"Cửa hàng Nông sản Thái Nguyên\",\n  \"address\": \"Số 18 đường Hoàng Văn Thụ, TP Thái Nguyên\",\n  \"phone\": \"0987654321\",\n  \"type\": \"STORE\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/locations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "locations"]
+            }
+          }
+        },
+        {
+          "name": "POST Test Trùng Mã (Kỳ vọng 409 Conflict)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"CH-TN-01\",\n  \"name\": \"Cửa hàng Trùng Mã\",\n  \"address\": \"Thái Nguyên, Việt Nam\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/locations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "locations"]
+            }
+          }
+        },
+        {
+          "name": "GET Xem Chi tiết Địa điểm",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/locations/{{createdLocationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "locations", "{{createdLocationId}}"]
+            }
+          }
+        },
+        {
+          "name": "PUT Cập nhật Địa điểm",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cửa hàng Thái Nguyên Flagship\",\n  \"address\": \"Số 20 đường Hoàng Văn Thụ, TP Thái Nguyên\",\n  \"phone\": \"0988998877\",\n  \"type\": \"STORE\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/locations/{{createdLocationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "locations", "{{createdLocationId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH Bật/Tắt Trạng thái (ACTIVE / INACTIVE)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/locations/{{createdLocationId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "locations", "{{createdLocationId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "DELETE Xóa / Ngừng Hoạt Động Địa điểm",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/locations/{{createdLocationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "locations", "{{createdLocationId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Task T-65 - Điều chuyển Lô hàng Nội bộ",
+      "item": [
+        {
+          "name": "POST Điều chuyển Lô hàng Đơn lẻ (1 Cửa hàng)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.transfers && json.transfers.length > 0) {",
+                  "    pm.collectionVariables.set('createdTransferId', json.transfers[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batch_id\": 7,\n  \"location_id\": 1,\n  \"quantity\": 25,\n  \"note\": \"Điều chuyển 25kg về Cửa hàng Ba Đình phục vụ bán lẻ\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/batches/transfer",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "batches", "transfer"]
+            }
+          }
+        },
+        {
+          "name": "POST Điều chuyển Phân bổ Đa Điểm (Multi-Allocations)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batch_id\": 7,\n  \"allocations\": [\n    {\n      \"location_id\": 1,\n      \"quantity\": 15\n    },\n    {\n      \"location_id\": 2,\n      \"quantity\": 20\n    }\n  ],\n  \"note\": \"Phân bổ đồng thời cho chi nhánh Ba Đình và Cầu Giấy\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/batches/transfer",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "batches", "transfer"]
+            }
+          }
+        },
+        {
+          "name": "GET Lịch sử Lệnh Điều chuyển",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/batches/transfers?page=1&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "batches", "transfers"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET Xem Chi tiết Lệnh Điều chuyển & Audit Hash Chain",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/batches/transfers/{{createdTransferId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "batches", "transfers", "{{createdTransferId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Thu Hồi Lô Hàng & Niêm Phong Cách Ly (SCRUM-169 -> SCRUM-174)",
+      "item": [
+        {
+          "name": "POST Tạo Lệnh Thu Hồi Khẩn Cấp (T-71)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rootBatchId\": 1,\n  \"reason\": \"Phát hiện dư lượng thuốc BVTV vượt ngưỡng cho phép 500% tại khâu kiểm nghiệm chất lượng định kỳ.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls"]
+            }
+          }
+        },
+        {
+          "name": "GET Danh sách các Lệnh Thu Hồi",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls"]
+            }
+          }
+        },
+        {
+          "name": "GET Danh sách Lô bị ảnh hưởng & Summary Tồn kho (T-76)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls/1/affected-batches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls", "1", "affected-batches"]
+            }
+          }
+        },
+        {
+          "name": "GET Xuất Báo Cáo Thu Hồi Ra File CSV (T-78)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls/1/export-csv",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls", "1", "export-csv"]
+            }
+          }
+        },
+        {
+          "name": "POST Niêm Phong & Cách Ly Lô Hàng (T-79, T-81)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quarantineLocation\": \"Kho cách ly chuyên dụng K01 - Kệ cách ly số 4\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/batches/1/quarantine",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "batches", "1", "quarantine"]
+            }
+          }
+        },
+        {
+          "name": "GET Danh Sách Thông Báo In-app (T-85)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications?limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH Đánh Dấu 1 Thông Báo Đã Đọc",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/1/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", "1", "read"]
+            }
+          }
+        },
+        {
+          "name": "POST Đánh Dấu Tất Cả Thông Báo Đã Đọc",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/mark-all-read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", "mark-all-read"]
+            }
+          }
+        },
+        {
+          "name": "GET Real-time SSE Stream (T-83)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recalls/stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "recalls", "stream"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

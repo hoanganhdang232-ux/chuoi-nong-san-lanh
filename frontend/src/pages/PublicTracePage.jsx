@@ -7,10 +7,7 @@ import {
   Leaf,
   ShieldAlert,
   Thermometer,
-  Sun,
-  Moon,
 } from "lucide-react";
-import { useTheme } from "../context/ThemeContext.jsx";
 
 function TemperatureChart({ readings }) {
   if (readings.length === 0) {
@@ -133,7 +130,6 @@ function TemperatureChart({ readings }) {
 
 export default function PublicTracePage() {
   const { batchCode } = useParams();
-  const { isDark, toggleTheme } = useTheme();
   const [trace, setTrace] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -182,14 +178,6 @@ export default function PublicTracePage() {
             <ArrowLeft size={18} /> Agritrace
           </a>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={toggleTheme}
-              title={isDark ? "Giao diện sáng" : "Giao diện tối"}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition"
-            >
-              {isDark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} />}
-            </button>
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">

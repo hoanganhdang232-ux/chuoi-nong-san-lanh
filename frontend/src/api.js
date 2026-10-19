@@ -16,7 +16,10 @@ async function request(path, options = {}) {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const details = Array.isArray(errorData.errors) ? ` ${errorData.errors.join(" ")}` : "";
-    throw new Error(`${errorData.message || "Yêu cầu không thành công."}${details}`);
+    const err = new Error(`${errorData.message || "Yêu cầu không thành công."}${details}`);
+    err.field = errorData.field;
+    err.data = errorData;
+    throw err;
   }
 
   return response.status === 204 ? null : response.json();
@@ -132,7 +135,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  getLocations: () => request("/v1/locations"),
+  getLocations: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/locations${q ? "?" + q : ""}`);
+  },
+  transferBatchToStore: (payload) =>
+    request("/v1/batches/transfer", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getInternalTransfers: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/batches/transfers${q ? "?" + q : ""}`);
+  },
   distributeBatchToStores: (batchId, allocations) =>
     request("/v1/locations/distribute-batch", {
       method: "POST",
@@ -143,15 +164,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  getLocationById: (id) => request(`/v1/locations/${id}`),
   updateLocation: (id, payload) =>
     request(`/v1/locations/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  toggleLocationStatus: (id, status) =>
+    request(`/v1/locations/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(status ? { status } : {}),
+    }),
   deleteLocation: (id) =>
     request(`/v1/locations/${id}`, {
       method: "DELETE",
     }),
+  getTransferDetail: (id) => request(`/v1/batches/transfers/${id}`),
   assignBatchLocation: (batchId, payload) =>
     request(`/v1/batches/${batchId}/assign-location`, {
       method: "POST",
@@ -173,5 +201,53 @@ export const api = {
     request("/v1/import/land-plots", {
       method: "POST",
       body: JSON.stringify({ csvContent }),
+    }),
+  // ─── SPRINT 5 APIs: RECALL & NOTIFICATIONS ──────────────────────────────
+  createRecallV1: (payload) =>
+    request("/v1/recalls", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getRecallsV1: () => request("/v1/recalls"),
+  getRecallAffectedBatches: (recallId, params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/recalls/${recallId}/affected-batches${q ? "?" + q : ""}`);
+  },
+  quarantineBatch: (batchId, payload) =>
+    request(`/v1/batches/${batchId}/quarantine`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  downloadRecallCsv: async (recallId, recallCode) => {
+    const token = localStorage.getItem("agritrace_token");
+    const response = await fetch(`${API_URL}/v1/recalls/${recallId}/export-csv`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      throw new Error("Không thể tải báo cáo thu hồi dạng CSV.");
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Recall_${recallCode || recallId}_Affected_Batches.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+  getNotificationsV1: (limit = 50) => request(`/v1/notifications?limit=${limit}`),
+  markNotificationRead: (id) =>
+    request(`/v1/notifications/${id}/read`, {
+      method: "PATCH",
+    }),
+  markAllNotificationsRead: () =>
+    request("/v1/notifications/read-all", {
+      method: "POST",
     }),
 };

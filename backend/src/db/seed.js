@@ -327,14 +327,41 @@ export function seedDemoData() {
 
     // Khởi tạo các điểm bán / cửa hàng nội bộ cho nhà phân phối
     const distributorStores = [
-      { name: "Cửa hàng Ba Đình", address: "12 Kim Mã, Ba Đình, Hà Nội" },
-      { name: "Cửa hàng Cầu Giấy", address: "88 Cầu Giấy, Cầu Giấy, Hà Nội" },
-      { name: "Cửa hàng Hoàn Kiếm", address: "36 Tràng Tiền, Hoàn Kiếm, Hà Nội" },
+      {
+        code: "CH-BD-01",
+        name: "Cửa hàng Ba Đình",
+        address: "12 Kim Mã, Ba Đình, Hà Nội",
+        phone: "02437890123",
+        status: "Active",
+      },
+      {
+        code: "CH-CG-02",
+        name: "Cửa hàng Cầu Giấy",
+        address: "88 Cầu Giấy, Cầu Giấy, Hà Nội",
+        phone: "02438654321",
+        status: "Active",
+      },
+      {
+        code: "CH-HK-03",
+        name: "Cửa hàng Hoàn Kiếm",
+        address: "36 Tràng Tiền, Hoàn Kiếm, Hà Nội",
+        phone: "02439123456",
+        status: "Active",
+      },
     ];
     const storeIds = distributorStores.map((store) => {
       const res = db
-        .prepare("INSERT INTO locations(organization_id, name, address) VALUES (?, ?, ?)")
-        .run(organizationIds.distributor, store.name, store.address);
+        .prepare(
+          "INSERT INTO locations(organization_id, code, name, address, phone, status) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          organizationIds.distributor,
+          store.code,
+          store.name,
+          store.address,
+          store.phone,
+          store.status,
+        );
       return Number(res.lastInsertRowid);
     });
 
