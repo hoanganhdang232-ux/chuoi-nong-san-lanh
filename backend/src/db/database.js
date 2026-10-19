@@ -27,6 +27,15 @@ database.exec("PRAGMA journal_mode = WAL;");
 database.exec("PRAGMA foreign_keys = ON;");
 database.exec("PRAGMA busy_timeout = 5000;");
 
+// Tự động checkpoint WAL vào file .db khi thoát tiến trình để đồng bộ trọn vẹn lên Git
+process.on("exit", () => {
+  try {
+    database.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+  } catch {
+    // Bỏ qua lỗi khi đã đóng
+  }
+});
+
 export function getDb() {
   return database;
 }

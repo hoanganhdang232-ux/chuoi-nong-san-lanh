@@ -1,10 +1,15 @@
 node_modules
 .env
-*.db
 *.db-journal
 *.db-shm
 *.db-wal
+*test*.db
+*.backup.db
 backend/data/*.db
+
+# Cho phép Git lưu trữ và đồng bộ CSDL chính (agritrace.db) cùng với mã nguồn
+!backend/src/data/agritrace.db
+
 frontend/dist
 coverage
 npm-debug.log*
