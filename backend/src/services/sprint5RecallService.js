@@ -16,7 +16,7 @@ function generateRecallCode() {
   return `REC-${dateStr}-${randomHex}`;
 }
 
-export function createRecall({ rootBatchId, reason, actorId, organizationId, userRole }) {
+export function createRecall({ rootBatchId, reason, actorId, organizationId: _organizationId, userRole }) {
   const db = getDb();
   const rootId = Number(rootBatchId);
   if (!Number.isSafeInteger(rootId) || rootId <= 0) {
@@ -39,9 +39,10 @@ export function createRecall({ rootBatchId, reason, actorId, organizationId, use
     throw err;
   }
 
-  // Kiểm tra quyền: Chỉ Auditor/Inspector hoặc quản trị viên tổ chức sở hữu lô gốc mới được kích hoạt lệnh
-  if (userRole !== "auditor" && rootBatch.organization_id !== organizationId) {
-    const err = new Error("Bạn không có quyền kích hoạt lệnh thu hồi cho lô hàng của tổ chức khác.");
+  // Kiểm tra quyền: Bất kỳ Admin hoặc Auditor/Inspector nào cũng có quyền kích hoạt lệnh thu hồi khẩn cấp
+  const allowedRecallRoles = ["farm_admin", "processor_admin", "distributor_admin", "auditor"];
+  if (!allowedRecallRoles.includes(userRole)) {
+    const err = new Error("Chỉ Quản trị viên (Admin) hoặc Kiểm toán viên (Auditor) mới có quyền kích hoạt lệnh thu hồi.");
     err.statusCode = 403;
     throw err;
   }
@@ -235,21 +236,35 @@ export function getRecallAffectedBatches(recallId, userOrgId, userRole) {
       ? allItems
       : allItems.filter((item) => item.organization_id === userOrgId);
 
+  const blendedBatchesCount = allItems.filter((item) => item.is_blended).length;
+
   return {
     recall,
     summary: {
       total_batches: totalBatches,
+      totalBatches,
       quarantined_batches: quarantinedBatches,
+      quarantinedBatches,
       unquarantined_batches: unquarantinedBatches,
+      unquarantinedBatches,
       total_remaining_quantity: totalRemaining,
+      totalRemainingKg: totalRemaining,
       quarantined_quantity: quarantinedQuantity,
+      quarantinedRemainingKg: quarantinedQuantity,
       total_consumed_quantity: totalConsumed,
+      totalConsumedKg: totalConsumed,
       quarantine_rate: quarantineRate,
+      quarantineProgressPercent: quarantineRate,
       weight_quarantine_rate: weightQuarantineRate,
+      quarantineWeightPercent: weightQuarantineRate,
+      blended_batches_count: blendedBatchesCount,
+      blendedBatchesCount,
       is_completed: totalBatches > 0 && quarantinedBatches === totalBatches,
     },
-    items: scopedItems,
+    batches: allItems,
+    items: allItems,
     allItemsForStats: allItems,
+    scopedItems,
   };
 }
 
