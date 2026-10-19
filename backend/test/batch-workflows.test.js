@@ -82,6 +82,82 @@ test("farm admins can create and update products and land plots within their org
   });
   assert.equal(plotResponse.status, 200);
   assert.equal((await plotResponse.json()).area_ha, 9.5);
+
+  // Validate: Rejects land plot with future date
+  const futurePlotRes = await fetch(`${baseUrl}/api/batches/land-plots`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      name: "Thửa đất tương lai",
+      areaHa: 2.5,
+      createdAt: "2099-12-31",
+    }),
+  });
+  assert.equal(futurePlotRes.status, 400);
+  const futurePlotErr = await futurePlotRes.json();
+  assert.equal(futurePlotErr.field, "createdAt");
+  assert.match(futurePlotErr.message, /tương lai/);
+
+  // Validate: Rejects invalid calendar date (e.g., Feb 30)
+  const invalidDateRes = await fetch(`${baseUrl}/api/batches/land-plots`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      name: "Thửa đất ngày sai",
+      areaHa: 1.5,
+      createdAt: "2025-02-30",
+    }),
+  });
+  assert.equal(invalidDateRes.status, 400);
+  const invalidDateErr = await invalidDateRes.json();
+  assert.equal(invalidDateErr.field, "createdAt");
+
+  // Validate: Rejects empty name
+  const emptyNameRes = await fetch(`${baseUrl}/api/batches/land-plots`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      name: "   ",
+      areaHa: 3.0,
+    }),
+  });
+  assert.equal(emptyNameRes.status, 400);
+  assert.equal((await emptyNameRes.json()).field, "name");
+
+  // Validate: Rejects negative area
+  const negativeAreaRes = await fetch(`${baseUrl}/api/batches/land-plots`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      name: "Thửa hợp lệ",
+      areaHa: -2,
+    }),
+  });
+  assert.equal(negativeAreaRes.status, 400);
+  assert.equal((await negativeAreaRes.json()).field, "areaHa");
+
+  // Validate: Accepts valid past date (both YYYY-MM-DD and DD/MM/YYYY)
+  const validYmdRes = await fetch(`${baseUrl}/api/batches/land-plots`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      name: "Thửa đất chuẩn YMD",
+      areaHa: 4.2,
+      createdAt: "2025-03-21",
+    }),
+  });
+  assert.equal(validYmdRes.status, 201);
+
+  const validDmyRes = await fetch(`${baseUrl}/api/batches/land-plots`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      name: "Thửa đất chuẩn DMY",
+      areaHa: 3.8,
+      createdAt: "21/03/2025",
+    }),
+  });
+  assert.equal(validDmyRes.status, 201);
 });
 
 test("creates a harvest batch with auto-generated unique code and validates input", async () => {

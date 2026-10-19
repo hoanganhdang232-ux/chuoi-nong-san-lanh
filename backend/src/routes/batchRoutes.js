@@ -352,13 +352,98 @@ router.get("/land-plots", requireRole("farm_admin"), (req, res) => {
   res.json(rows);
 });
 
+function validateStandardDate(dateStr) {
+  if (!dateStr || typeof dateStr !== "string") {
+    return { valid: false, message: "Ngày không được để trống." };
+  }
+  const trimmed = dateStr.trim();
+  let year, month, day;
+
+  // Case 1: YYYY-MM-DD or YYYY/MM/DD
+  const ymdMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s].*)?$/);
+  // Case 2: DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[T\s].*)?$/);
+
+  if (ymdMatch) {
+    year = parseInt(ymdMatch[1], 10);
+    month = parseInt(ymdMatch[2], 10);
+    day = parseInt(ymdMatch[3], 10);
+  } else if (dmyMatch) {
+    day = parseInt(dmyMatch[1], 10);
+    month = parseInt(dmyMatch[2], 10);
+    year = parseInt(dmyMatch[3], 10);
+  } else {
+    return {
+      valid: false,
+      message: "Định dạng ngày tháng không đúng chuẩn. Vui lòng nhập đúng định dạng ngày tháng chuẩn (YYYY-MM-DD hoặc DD/MM/YYYY).",
+    };
+  }
+
+  if (year < 1970 || year > 2100) {
+    return { valid: false, message: `Năm khai báo (${year}) không hợp lệ (hợp lệ từ 1970 đến 2100). Vui lòng nhập lại.` };
+  }
+  if (month < 1 || month > 12) {
+    return { valid: false, message: `Tháng khai báo (${month}) không hợp lệ (phải từ 01 đến 12). Vui lòng nhập lại.` };
+  }
+  const daysInMonth = new Date(year, month, 0).getDate();
+  if (day < 1 || day > daysInMonth) {
+    return {
+      valid: false,
+      message: `Ngày ${day} không hợp lệ trong tháng ${month}/${year} (tháng này chỉ có tối đa ${daysInMonth} ngày). Vui lòng nhập lại.`,
+    };
+  }
+
+  const now = new Date();
+  const todayYear = now.getFullYear();
+  const todayMonth = now.getMonth() + 1;
+  const todayDay = now.getDate();
+  const todayStr = `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(todayDay).padStart(2, "0")}`;
+  const inputDateOnly = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+  if (inputDateOnly > todayStr) {
+    return {
+      valid: false,
+      message: `Ngày khai báo thửa đất không thể là ngày trong tương lai (hôm nay là ${todayDay}/${todayMonth}/${todayYear}). Vui lòng nhập lại phần ngày này.`,
+    };
+  }
+
+  const validIso = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  return { valid: true, date: validIso, formattedDate: inputDateOnly };
+}
+
 router.post("/land-plots", requireRole("farm_admin"), (req, res) => {
   const { name, areaHa, latitude, longitude, createdAt } = req.body || {};
   const area = Number(areaHa);
-  if (!name || !Number.isFinite(area) || area <= 0) {
+  if (!name || typeof name !== "string" || !name.trim()) {
     return res
       .status(400)
-      .json({ message: "Tên thửa và diện tích hợp lệ là bắt buộc." });
+      .json({ message: "Tên thửa đất là bắt buộc. Vui lòng nhập lại tên thửa.", field: "name" });
+  }
+  if (!Number.isFinite(area) || area <= 0) {
+    return res
+      .status(400)
+      .json({ message: "Diện tích thửa đất phải là số dương lớn hơn 0 (ha). Vui lòng nhập lại diện tích.", field: "areaHa" });
+  }
+  if (latitude !== undefined && latitude !== null && latitude !== "") {
+    const lat = Number(latitude);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      return res.status(400).json({ message: "Vĩ độ không hợp lệ (phải từ -90 đến 90). Vui lòng nhập lại vĩ độ.", field: "latitude" });
+    }
+  }
+  if (longitude !== undefined && longitude !== null && longitude !== "") {
+    const lng = Number(longitude);
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+      return res.status(400).json({ message: "Kinh độ không hợp lệ (phải từ -180 đến 180). Vui lòng nhập lại kinh độ.", field: "longitude" });
+    }
+  }
+
+  let customCreatedAt = null;
+  if (createdAt && typeof createdAt === "string" && createdAt.trim()) {
+    const dateCheck = validateStandardDate(createdAt);
+    if (!dateCheck.valid) {
+      return res.status(400).json({ message: dateCheck.message, field: "createdAt" });
+    }
+    customCreatedAt = dateCheck.date.toISOString();
   }
 
   const farm = getDb()
@@ -368,11 +453,6 @@ router.post("/land-plots", requireRole("farm_admin"), (req, res) => {
     return res
       .status(404)
       .json({ message: "Không tìm thấy trang trại của tổ chức." });
-
-  const customCreatedAt =
-    createdAt && !Number.isNaN(new Date(createdAt).getTime())
-      ? new Date(createdAt).toISOString()
-      : null;
 
   const result = customCreatedAt
     ? getDb()
@@ -471,9 +551,37 @@ router.put("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
   const plotId = Number(req.params.id);
   const name = String(req.body?.name || "").trim();
   const area = Number(req.body?.areaHa);
-  if (!Number.isInteger(plotId) || plotId <= 0 || !name || !Number.isFinite(area) || area <= 0) {
-    return res.status(400).json({ message: "Tên thửa và diện tích hợp lệ là bắt buộc." });
+  if (!Number.isInteger(plotId) || plotId <= 0) {
+    return res.status(400).json({ message: "ID thửa đất không hợp lệ." });
   }
+  if (!name) {
+    return res.status(400).json({ message: "Tên thửa đất là bắt buộc. Vui lòng nhập lại tên thửa.", field: "name" });
+  }
+  if (!Number.isFinite(area) || area <= 0) {
+    return res.status(400).json({ message: "Diện tích thửa đất phải là số dương lớn hơn 0 (ha). Vui lòng nhập lại diện tích.", field: "areaHa" });
+  }
+  if (req.body?.latitude !== undefined && req.body?.latitude !== null && req.body?.latitude !== "") {
+    const lat = Number(req.body.latitude);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      return res.status(400).json({ message: "Vĩ độ không hợp lệ (phải từ -90 đến 90). Vui lòng nhập lại vĩ độ.", field: "latitude" });
+    }
+  }
+  if (req.body?.longitude !== undefined && req.body?.longitude !== null && req.body?.longitude !== "") {
+    const lng = Number(req.body.longitude);
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+      return res.status(400).json({ message: "Kinh độ không hợp lệ (phải từ -180 đến 180). Vui lòng nhập lại kinh độ.", field: "longitude" });
+    }
+  }
+
+  let customCreatedAt = null;
+  if (req.body?.createdAt && typeof req.body.createdAt === "string" && req.body.createdAt.trim()) {
+    const dateCheck = validateStandardDate(req.body.createdAt);
+    if (!dateCheck.valid) {
+      return res.status(400).json({ message: dateCheck.message, field: "createdAt" });
+    }
+    customCreatedAt = dateCheck.date.toISOString();
+  }
+
   const db = getDb();
   const plot = db
     .prepare(
@@ -483,10 +591,6 @@ router.put("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
     )
     .get(plotId, req.user.organization_id);
   if (!plot) return res.status(404).json({ message: "Không tìm thấy thửa đất." });
-  const customCreatedAt =
-    req.body?.createdAt && !Number.isNaN(new Date(req.body.createdAt).getTime())
-      ? new Date(req.body.createdAt).toISOString()
-      : null;
 
   if (customCreatedAt) {
     db.prepare("UPDATE land_plots SET name = ?, area_ha = ?, latitude = ?, longitude = ?, created_at = ? WHERE id = ?").run(

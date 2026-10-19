@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Activity,
+  AlertCircle,
   AlertTriangle,
   ArrowRight,
   ArrowRightLeft,
@@ -231,6 +232,72 @@ const MERGE_PREVIEW_SCHEMA = [
   { key: "batchCount", label: "Tổng số lô gộp", icon: ArrowRightLeft },
 ];
 
+export function getTodayDateString() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function validateStandardDateString(dateStr) {
+  if (!dateStr || typeof dateStr !== "string" || !dateStr.trim()) {
+    return { valid: true };
+  }
+  const trimmed = dateStr.trim();
+  let year, month, day;
+
+  // Case 1: YYYY-MM-DD or YYYY/MM/DD
+  const ymdMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s].*)?$/);
+  // Case 2: DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[T\s].*)?$/);
+
+  if (ymdMatch) {
+    year = parseInt(ymdMatch[1], 10);
+    month = parseInt(ymdMatch[2], 10);
+    day = parseInt(ymdMatch[3], 10);
+  } else if (dmyMatch) {
+    day = parseInt(dmyMatch[1], 10);
+    month = parseInt(dmyMatch[2], 10);
+    year = parseInt(dmyMatch[3], 10);
+  } else {
+    return {
+      valid: false,
+      message: "Định dạng ngày tháng không đúng chuẩn (phải là YYYY-MM-DD hoặc DD/MM/YYYY).",
+    };
+  }
+
+  if (year < 1970 || year > 2100) {
+    return { valid: false, message: `Năm khai báo (${year}) không hợp lệ (hợp lệ từ 1970 đến 2100).` };
+  }
+  if (month < 1 || month > 12) {
+    return { valid: false, message: `Tháng khai báo (${month}) không hợp lệ (phải từ 01 đến 12).` };
+  }
+  const daysInMonth = new Date(year, month, 0).getDate();
+  if (day < 1 || day > daysInMonth) {
+    return {
+      valid: false,
+      message: `Ngày ${day} không hợp lệ trong tháng ${month}/${year} (tháng này chỉ có tối đa ${daysInMonth} ngày).`,
+    };
+  }
+
+  const now = new Date();
+  const todayYear = now.getFullYear();
+  const todayMonth = now.getMonth() + 1;
+  const todayDay = now.getDate();
+  const todayStr = `${todayYear}-${String(todayMonth).padStart(2, "0")}-${String(todayDay).padStart(2, "0")}`;
+  const inputDateOnly = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+  if (inputDateOnly > todayStr) {
+    return {
+      valid: false,
+      message: `Ngày khai báo không thể là ngày trong tương lai (hôm nay là ${todayDay}/${todayMonth}/${todayYear}). Vui lòng nhập lại phần ngày này.`,
+    };
+  }
+
+  return { valid: true, dateOnly: inputDateOnly };
+}
+
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const toast = useToast();
@@ -273,6 +340,7 @@ export default function DashboardPage() {
     createdAt: "",
   });
   const [editingLandPlotId, setEditingLandPlotId] = useState(null);
+  const [landPlotErrors, setLandPlotErrors] = useState({});
   const [productForm, setProductForm] = useState({ name: "", unit: "kg" });
   const [editingProductId, setEditingProductId] = useState(null);
   const [splitBatchId, setSplitBatchId] = useState("");
@@ -595,10 +663,49 @@ export default function DashboardPage() {
 
   const handleLandPlotSubmit = (event) => {
     event.preventDefault();
+    const errors = {};
+
     if (!landPlotForm.name?.trim()) {
-      toast.error("Vui lòng nhập tên thửa đất.");
+      errors.name = "Tên thửa đất không được để trống. Vui lòng nhập tên thửa.";
+    }
+
+    const area = Number(landPlotForm.areaHa);
+    if (!landPlotForm.areaHa || Number.isNaN(area) || area <= 0) {
+      errors.areaHa = "Diện tích thửa đất phải là số dương lớn hơn 0 (ha). Vui lòng nhập lại diện tích.";
+    }
+
+    if (landPlotForm.latitude && String(landPlotForm.latitude).trim()) {
+      const lat = Number(landPlotForm.latitude);
+      if (Number.isNaN(lat) || lat < -90 || lat > 90) {
+        errors.latitude = "Vĩ độ không hợp lệ (phải từ -90 đến 90). Vui lòng nhập lại vĩ độ.";
+      }
+    }
+
+    if (landPlotForm.longitude && String(landPlotForm.longitude).trim()) {
+      const lng = Number(landPlotForm.longitude);
+      if (Number.isNaN(lng) || lng < -180 || lng > 180) {
+        errors.longitude = "Kinh độ không hợp lệ (phải từ -180 đến 180). Vui lòng nhập lại kinh độ.";
+      }
+    }
+
+    if (landPlotForm.createdAt && String(landPlotForm.createdAt).trim()) {
+      const dateCheck = validateStandardDateString(landPlotForm.createdAt);
+      if (!dateCheck.valid) {
+        errors.createdAt = dateCheck.message;
+      }
+    }
+
+    setLandPlotErrors(errors);
+
+    const errorKeys = Object.keys(errors);
+    if (errorKeys.length > 0) {
+      const firstKey = errorKeys[0];
+      toast.error(errors[firstKey]);
+      const el = document.getElementById(`plot-input-${firstKey}`);
+      if (el) el.focus();
       return;
     }
+
     setConfirmPlotModal({
       open: true,
       data: {
@@ -623,6 +730,7 @@ export default function DashboardPage() {
         await api.createLandPlot(landPlotForm);
       }
       setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "", createdAt: "" });
+      setLandPlotErrors({});
       setEditingLandPlotId(null);
       const nextPlots = await api.getLandPlots();
       setLandPlots(nextPlots);
@@ -633,7 +741,15 @@ export default function DashboardPage() {
       });
     } catch (submitError) {
       setSubmission({ message: submitError.message, tone: "error" });
-      setConfirmPlotModal((prev) => ({ ...prev, submitting: false }));
+      setConfirmPlotModal((prev) => ({ ...prev, submitting: false, open: false }));
+      if (submitError.field) {
+        setLandPlotErrors((prev) => ({
+          ...prev,
+          [submitError.field]: submitError.message,
+        }));
+        const el = document.getElementById(`plot-input-${submitError.field}`);
+        if (el) el.focus();
+      }
     }
   };
 
@@ -1448,82 +1564,223 @@ export default function DashboardPage() {
                 </h2>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  placeholder="Tên thửa"
-                  value={landPlotForm.name}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      name: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  placeholder="Diện tích (ha)"
-                  value={landPlotForm.areaHa}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      areaHa: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  step="0.000001"
-                  placeholder="Vĩ độ"
-                  value={landPlotForm.latitude}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      latitude: event.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="rounded-xl border px-3 py-2"
-                  type="number"
-                  step="0.000001"
-                  placeholder="Kinh độ"
-                  value={landPlotForm.longitude}
-                  onChange={(event) =>
-                    setLandPlotForm({
-                      ...landPlotForm,
-                      longitude: event.target.value,
-                    })
-                  }
-                />
-                <div className="flex flex-col sm:col-span-2">
-                  <label className="text-[11px] font-semibold text-slate-500 mb-1">
-                    Ngày khai báo thửa đất (để trống nếu là thời điểm hiện tại):
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
+                    Tên thửa đất <span className="text-rose-500">*</span>:
                   </label>
                   <input
-                    className="rounded-xl border px-3 py-2 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
+                    id="plot-input-name"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm transition-colors ${
+                      landPlotErrors.name
+                        ? "border-rose-500 bg-rose-50/70 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    placeholder="Tên thửa đất (vd: Vùng trồng xoài A1)"
+                    value={landPlotForm.name}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, name: val }));
+                      if (landPlotErrors.name) {
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          name: val.trim() ? "" : "Tên thửa đất không được để trống. Vui lòng nhập tên thửa.",
+                        }));
+                      }
+                    }}
+                  />
+                  {landPlotErrors.name && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-rose-600">
+                      <AlertCircle size={13} className="flex-shrink-0" />
+                      {landPlotErrors.name}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
+                    Diện tích (ha) <span className="text-rose-500">*</span>:
+                  </label>
+                  <input
+                    id="plot-input-areaHa"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm transition-colors ${
+                      landPlotErrors.areaHa
+                        ? "border-rose-500 bg-rose-50/70 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    placeholder="Diện tích (ha)"
+                    value={landPlotForm.areaHa}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, areaHa: val }));
+                      if (landPlotErrors.areaHa) {
+                        const area = Number(val);
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          areaHa: !val || Number.isNaN(area) || area <= 0
+                            ? "Diện tích thửa đất phải là số dương lớn hơn 0 (ha). Vui lòng nhập lại diện tích."
+                            : "",
+                        }));
+                      }
+                    }}
+                  />
+                  {landPlotErrors.areaHa && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-rose-600">
+                      <AlertCircle size={13} className="flex-shrink-0" />
+                      {landPlotErrors.areaHa}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
+                    Vĩ độ GPS (tùy chọn):
+                  </label>
+                  <input
+                    id="plot-input-latitude"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm transition-colors ${
+                      landPlotErrors.latitude
+                        ? "border-rose-500 bg-rose-50/70 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    type="number"
+                    step="0.000001"
+                    placeholder="Vĩ độ (vd: 10.8231)"
+                    value={landPlotForm.latitude}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, latitude: val }));
+                      if (landPlotErrors.latitude) {
+                        const lat = Number(val);
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          latitude: val.trim() && (Number.isNaN(lat) || lat < -90 || lat > 90)
+                            ? "Vĩ độ không hợp lệ (phải từ -90 đến 90). Vui lòng nhập lại vĩ độ."
+                            : "",
+                        }));
+                      }
+                    }}
+                  />
+                  {landPlotErrors.latitude && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-rose-600">
+                      <AlertCircle size={13} className="flex-shrink-0" />
+                      {landPlotErrors.latitude}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
+                    Kinh độ GPS (tùy chọn):
+                  </label>
+                  <input
+                    id="plot-input-longitude"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm transition-colors ${
+                      landPlotErrors.longitude
+                        ? "border-rose-500 bg-rose-50/70 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
+                    type="number"
+                    step="0.000001"
+                    placeholder="Kinh độ (vd: 106.6297)"
+                    value={landPlotForm.longitude}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, longitude: val }));
+                      if (landPlotErrors.longitude) {
+                        const lng = Number(val);
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          longitude: val.trim() && (Number.isNaN(lng) || lng < -180 || lng > 180)
+                            ? "Kinh độ không hợp lệ (phải từ -180 đến 180). Vui lòng nhập lại kinh độ."
+                            : "",
+                        }));
+                      }
+                    }}
+                  />
+                  {landPlotErrors.longitude && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-rose-600">
+                      <AlertCircle size={13} className="flex-shrink-0" />
+                      {landPlotErrors.longitude}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                      Ngày khai báo thửa đất <span className="font-normal text-slate-400">(để trống nếu là thời điểm hiện tại):</span>
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      Hôm nay: {new Date().toLocaleDateString("vi-VN")}
+                    </span>
+                  </div>
+                  <input
+                    id="plot-input-createdAt"
+                    className={`w-full rounded-xl border px-3 py-2 text-xs transition-colors ${
+                      landPlotErrors.createdAt
+                        ? "border-rose-500 bg-rose-50/80 text-rose-900 ring-2 ring-rose-400/40"
+                        : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    }`}
                     type="date"
-                    max={new Date().toISOString().split("T")[0]}
+                    max={getTodayDateString()}
                     value={landPlotForm.createdAt || ""}
-                    onChange={(event) =>
-                      setLandPlotForm({
-                        ...landPlotForm,
-                        createdAt: event.target.value,
-                      })
-                    }
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setLandPlotForm((prev) => ({ ...prev, createdAt: val }));
+                      if (val) {
+                        const check = validateStandardDateString(val);
+                        setLandPlotErrors((prev) => ({
+                          ...prev,
+                          createdAt: check.valid ? "" : check.message,
+                        }));
+                      } else {
+                        setLandPlotErrors((prev) => ({ ...prev, createdAt: "" }));
+                      }
+                    }}
                     placeholder="Ngày khai báo"
                   />
+                  {landPlotErrors.createdAt ? (
+                    <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-rose-50 border border-rose-200 p-2 text-xs font-medium text-rose-700">
+                      <AlertCircle size={15} className="flex-shrink-0 mt-0.5 text-rose-600" />
+                      <div>
+                        <p>{landPlotErrors.createdAt}</p>
+                        <p className="text-[11px] text-rose-500 mt-0.5 font-normal">
+                          Lưu ý: Không thể chọn ngày trong tương lai. Vui lòng nhập hoặc chọn lại phần ngày này.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Định dạng chuẩn: ngày/tháng/năm. Không thể khai báo ngày trong tương lai so với thời điểm hiện tại.
+                    </p>
+                  )}
                 </div>
               </div>
-              <button
-                className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white"
-                type="submit"
-              >
-                Lưu thửa đất
-              </button>
+
+              <div className="mt-4 flex items-center gap-2">
+                <button
+                  className="rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-emerald-700 active:scale-95 transition-all"
+                  type="submit"
+                >
+                  {editingLandPlotId ? "Cập nhật thửa đất" : "Lưu thửa đất"}
+                </button>
+                {editingLandPlotId && (
+                  <button
+                    type="button"
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                    onClick={() => {
+                      setEditingLandPlotId(null);
+                      setLandPlotForm({ name: "", areaHa: "", latitude: "", longitude: "", createdAt: "" });
+                      setLandPlotErrors({});
+                    }}
+                  >
+                    Hủy sửa
+                  </button>
+                )}
+              </div>
             </form>
 
             <form
@@ -1729,6 +1986,7 @@ export default function DashboardPage() {
                               longitude: plot.longitude ? String(plot.longitude) : "",
                               createdAt: plot.created_at ? plot.created_at.split("T")[0].split(" ")[0] : "",
                             });
+                            setLandPlotErrors({});
                             window.scrollTo({ top: 0, behavior: "smooth" });
                           }}
                         >

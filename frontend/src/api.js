@@ -16,7 +16,10 @@ async function request(path, options = {}) {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const details = Array.isArray(errorData.errors) ? ` ${errorData.errors.join(" ")}` : "";
-    throw new Error(`${errorData.message || "Yêu cầu không thành công."}${details}`);
+    const err = new Error(`${errorData.message || "Yêu cầu không thành công."}${details}`);
+    err.field = errorData.field;
+    err.data = errorData;
+    throw err;
   }
 
   return response.status === 204 ? null : response.json();
