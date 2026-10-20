@@ -1,0 +1,15 @@
+{
+  "backups": [
+    {
+      "id": "bck-1792493794800",
+      "fileName": "agritrace_backup_2026-10-20T10-56-34-791Z.db.gz",
+      "filePath": "D:\\New folder\\chuoi-nong-san-lanh\\backups\\agritrace_backup_2026-10-20T10-56-34-791Z.db.gz",
+      "checksumSha256": "18d99efd7ac8bfa9d25f588deb38c117eee482e01c4a02fa0740c76d30df5d15",
+      "rawSizeBytes": 430080,
+      "compressedSizeBytes": 38855,
+      "createdAt": "2026-10-20T10:56:34.800Z",
+      "retentionUntil": "2026-11-19T10:56:34.800Z",
+      "cloudSyncStatus": "LOCAL_ONLY"
+    }
+  ]
+}

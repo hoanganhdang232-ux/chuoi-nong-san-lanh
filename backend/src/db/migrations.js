@@ -1,5 +1,6 @@
 import { getDb } from "./database.js";
 import { up as runMigration009 } from "./migrations/009_sprint7_public_qr_and_certifications.js";
+import { up as runMigration010 } from "./migrations/010_sprint8_reports_and_security.js";
 
 export function runMigrations() {
   const db = getDb();
@@ -906,6 +907,16 @@ export function runMigrations() {
     );
   } catch (err) {
     console.warn("Migration 009 warning:", err.message);
+  }
+
+  // ─── SPRINT 8: INSPECTOR DOSSIER, TRANSPORTER ANALYTICS & SECURITY (T-124 to T-135) ───
+  try {
+    runMigration010(db);
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+      "010_sprint8_reports_and_security",
+    );
+  } catch (err) {
+    console.warn("Migration 010 warning:", err.message);
   }
 }
 

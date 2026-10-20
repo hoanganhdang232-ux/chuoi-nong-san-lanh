@@ -315,4 +315,57 @@ export const api = {
       method: "PUT",
     }),
   getCertifications: () => request("/v1/certifications"),
+  // ─── SPRINT 8 INSPECTOR, PDF EXPORT, TRANSPORTER ANALYTICS & PRIVACY APIs ──
+  getInspectorTrace: (batchCode) =>
+    request(`/v1/inspector/trace/${encodeURIComponent(batchCode)}`),
+  downloadInspectorPdf: async (batchCode) => {
+    const token = localStorage.getItem("agritrace_token");
+    const response = await fetch(`${API_URL}/v1/inspector/export-pdf/${encodeURIComponent(batchCode)}`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || "Không thể tải tệp tin PDF.");
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Ho_So_Kiem_Tra_${batchCode}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  },
+  getTransporterViolations: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/analytics/transporter-violations${q ? "?" + q : ""}`);
+  },
+  getTransporters: () => request("/v1/transporters"),
+  runSystemIntegrityCheck: () =>
+    request("/v1/system/run-integrity-check", { method: "POST" }),
+  getSystemIntegrityRuns: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/system/integrity-runs${q ? "?" + q : ""}`);
+  },
+  anonymizeFarmer: ({ targetType, targetId, reason }) =>
+    request("/v1/privacy/anonymize-farmer", {
+      method: "POST",
+      body: JSON.stringify({ targetType, targetId, reason }),
+    }),
+  getPrivacyRequests: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/privacy/anonymization-requests${q ? "?" + q : ""}`);
+  },
 };

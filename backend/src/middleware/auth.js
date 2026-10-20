@@ -62,8 +62,14 @@ export function authenticateToken(req, res, next) {
 }
 
 export function requireRole(...roles) {
+  const normalizedRoles = roles.map((r) => String(r).toLowerCase());
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    const userRole = String(req.user?.role || "").toLowerCase();
+    const hasRole =
+      normalizedRoles.includes(userRole) ||
+      (normalizedRoles.includes("inspector") && userRole === "auditor") ||
+      (normalizedRoles.includes("auditor") && userRole === "inspector");
+    if (!hasRole) {
       return res
         .status(403)
         .json({ message: "Bạn không có quyền thực hiện thao tác này." });

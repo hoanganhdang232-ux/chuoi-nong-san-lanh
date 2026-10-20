@@ -45,6 +45,9 @@ import NotificationBell from "../components/NotificationBell.jsx";
 import RecallManagementView from "../components/RecallManagementView.jsx";
 import ColdChainView from "../components/ColdChainView.jsx";
 import QrCodeModal from "../components/QrCodeModal.jsx";
+import InspectorPortalView from "../components/InspectorPortalView.jsx";
+import TransporterAnalyticsView from "../components/TransporterAnalyticsView.jsx";
+import SystemIntegrityView from "../components/SystemIntegrityView.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
@@ -3065,7 +3068,19 @@ export default function DashboardPage() {
           <AuditLogsView />
         )}
 
-        {selectedBatch && selectedView !== "Nhật ký thao tác" && (
+        {selectedView === "Thanh tra liên tổ chức" && (
+          <InspectorPortalView initialBatchCode={selectedBatch?.batch_code || ""} />
+        )}
+
+        {selectedView === "Vận chuyển & Chuỗi lạnh" && (
+          <TransporterAnalyticsView />
+        )}
+
+        {selectedView === "Bảo mật & Toàn vẹn Hash" && (
+          <SystemIntegrityView />
+        )}
+
+        {selectedBatch && !["Nhật ký thao tác", "Thanh tra liên tổ chức", "Vận chuyển & Chuỗi lạnh", "Bảo mật & Toàn vẹn Hash"].includes(selectedView) && (
           <section className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
             {/* Event Timeline */}
             <div className="rounded-2xl bg-white p-6 card-shadow border border-slate-200/80">
