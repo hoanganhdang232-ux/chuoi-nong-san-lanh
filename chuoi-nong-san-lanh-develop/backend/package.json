@@ -1,0 +1,22 @@
+{
+  "name": "agritrace-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "lint": "eslint src test",
+    "test": "node --test --test-concurrency=1 --import ./test/setup.js test/**/*.test.js",
+    "db:reset": "node src/db/reset.js",
+    "db:seed-features": "node src/db/seedFeatures.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^11.0.2"
+  }
+}
