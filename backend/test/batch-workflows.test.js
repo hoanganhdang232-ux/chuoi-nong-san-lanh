@@ -24,6 +24,7 @@ function resetDatabase() {
   db.exec("DELETE FROM batch_transfers");
   db.exec("DELETE FROM batch_relations");
   db.exec("DELETE FROM batches");
+  db.exec("DELETE FROM locations");
   db.exec("DELETE FROM products");
   db.exec("DELETE FROM land_plots");
   db.exec("DELETE FROM farms");
@@ -892,4 +893,3 @@ test("SCRUM-58: every batch change is recorded as a sequential event with hash",
   assert.equal(integrity.broken, false);
   assert.equal(integrity.invalidEventIds.length, 0);
 });
-
