@@ -484,8 +484,10 @@ export class BatchSplitMergeService {
     const result = this.eventRepo.verifyBatchHashChain(id);
     return {
       valid: result.valid,
+      is_valid: result.valid,
       broken: !result.valid,
       invalidEventIds: result.invalidEventIds,
+      invalid_event_ids: result.invalidEventIds,
       count: result.count,
       events: result.events,
       batch: {

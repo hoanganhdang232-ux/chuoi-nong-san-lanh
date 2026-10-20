@@ -91,41 +91,15 @@ router.post("/harvest", requireRole("farm_admin"), (req, res) => {
   const landPlotIdValue = Number(landPlotId);
   const productIdValue = Number(productId);
   const quantity = Number(quantityKg);
-  const harvestDate =
-    typeof harvestedAt === "string" && harvestedAt.trim()
-      ? new Date(harvestedAt)
-      : null;
 
   if (
     !["number", "string"].includes(typeof landPlotId) ||
     (typeof landPlotId === "string" &&
       !/^\d+$/.test(landPlotId.trim())) ||
     !Number.isSafeInteger(landPlotIdValue) ||
-    landPlotIdValue <= 0 ||
-    !["number", "string"].includes(typeof productId) ||
-    (typeof productId === "string" && !/^\d+$/.test(productId.trim())) ||
-    !Number.isSafeInteger(productIdValue) ||
-    productIdValue <= 0 ||
-    !["number", "string"].includes(typeof quantityKg) ||
-    (typeof quantityKg === "string" && !quantityKg.trim()) ||
-    !Number.isFinite(quantity) ||
-    quantity <= 0
+    landPlotIdValue <= 0
   ) {
-    return res
-      .status(400)
-      .json({
-        message:
-          "Mã thửa, mã sản phẩm và khối lượng thu hoạch hợp lệ là bắt buộc.",
-      });
-  }
-  if (
-    !harvestDate ||
-    Number.isNaN(harvestDate.getTime()) ||
-    harvestDate > new Date()
-  ) {
-    return res
-      .status(400)
-      .json({ message: "Ngày thu hoạch không được ở tương lai." });
+    return res.status(400).json({ message: "Mã thửa không hợp lệ." });
   }
 
   const db = getDb();
@@ -133,13 +107,60 @@ router.post("/harvest", requireRole("farm_admin"), (req, res) => {
     .prepare(
       `SELECT lp.*, f.organization_id FROM land_plots lp
        INNER JOIN farms f ON f.id = lp.farm_id
-       WHERE lp.id = ? AND f.organization_id = ?`,
+       WHERE lp.id = ?`,
     )
-    .get(landPlotIdValue, req.user.organization_id);
+    .get(landPlotIdValue);
   if (!plot) {
-    return res
-      .status(404)
-      .json({ message: "Thửa đất không hợp lệ hoặc không thuộc tổ chức." });
+    return res.status(404).json({ message: "Thửa đất không tồn tại." });
+  }
+  if (plot.organization_id !== req.user.organization_id) {
+    return res.status(403).json({
+      error_code: "PLOT_FORBIDDEN",
+      message: "Thửa đất không thuộc tổ chức của bạn.",
+      field: "landPlotId",
+    });
+  }
+  if (
+    !["number", "string"].includes(typeof quantityKg) ||
+    (typeof quantityKg === "string" && !quantityKg.trim()) ||
+    !Number.isFinite(quantity) ||
+    quantity <= 0
+  ) {
+    return res.status(400).json({
+      error_code: "QUANTITY_INVALID",
+      message: "Khối lượng phải lớn hơn 0.",
+      field: "quantityKg",
+    });
+  }
+
+  const harvestDate =
+    typeof harvestedAt === "string" && harvestedAt.trim()
+      ? new Date(harvestedAt)
+      : null;
+  if (!harvestDate || Number.isNaN(harvestDate.getTime())) {
+    return res.status(400).json({ message: "Ngày thu hoạch không hợp lệ." });
+  }
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const harvestDateLocal = new Date(
+    harvestDate.getFullYear(),
+    harvestDate.getMonth(),
+    harvestDate.getDate(),
+  );
+  if (harvestDateLocal > todayStart) {
+    return res.status(400).json({
+      error_code: "HARVEST_DATE_IN_FUTURE",
+      message: "Ngày thu hoạch không được ở tương lai.",
+      field: "harvestedAt",
+    });
+  }
+  if (
+    !["number", "string"].includes(typeof productId) ||
+    (typeof productId === "string" && !/^\d+$/.test(productId.trim())) ||
+    !Number.isSafeInteger(productIdValue) ||
+    productIdValue <= 0
+  ) {
+    return res.status(400).json({ message: "Mã sản phẩm không hợp lệ." });
   }
 
   const product = db
@@ -151,41 +172,73 @@ router.post("/harvest", requireRole("farm_admin"), (req, res) => {
       .json({ message: "Sản phẩm không tồn tại trong tổ chức." });
   }
 
-  const batchCode = `BATCH-${randomBytes(5).toString("hex").toUpperCase()}`;
-  const batchInsert = db
-    .prepare(
-      `INSERT INTO batches(batch_code, product_id, organization_id, source_farm_id, land_plot_id, initial_quantity, remaining_quantity, current_location, temperature_c, status, harvested_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      batchCode,
-      product.id,
-      req.user.organization_id,
-      plot.farm_id,
-      plot.id,
-      quantity,
-      quantity,
-      `Thửa ${plot.name}`,
-      9,
-      "registered",
-      harvestDate.toISOString(),
-      harvestDate.toISOString(),
-    );
+  db.exec("BEGIN IMMEDIATE");
+  let batchInsert;
+  let event;
+  try {
+    const recentDuplicate = db
+      .prepare(
+        `SELECT id FROM batches
+         WHERE source_farm_id = ?
+           AND product_id = ?
+           AND initial_quantity = ?
+           AND organization_id = ?
+           AND harvested_at = ?
+           AND created_at >= datetime('now', '-10 seconds')`,
+      )
+      .get(
+        plot.farm_id,
+        product.id,
+        quantity,
+        req.user.organization_id,
+        harvestDate.toISOString(),
+      );
+    if (recentDuplicate) {
+      db.exec("ROLLBACK");
+      return res.status(409).json({
+        message: "Yêu cầu tạo lô đang được xử lý hoặc đã bị trùng lặp.",
+      });
+    }
 
-  const event = createEventLog({
-    batchId: batchInsert.lastInsertRowid,
-    eventType: "batch_harvested",
-    actorId: req.user.id,
-    data: {
-      product_id: product.id,
-      product_name: product.name,
-      land_plot_id: plot.id,
-      land_plot_name: plot.name,
-      quantity_kg: quantity,
-      harvested_at: harvestDate.toISOString(),
-    },
-    timestamp: harvestDate.toISOString(),
-  });
+    const batchCode = `BATCH-${randomBytes(5).toString("hex").toUpperCase()}`;
+    batchInsert = db
+      .prepare(
+        `INSERT INTO batches(batch_code, product_id, organization_id, source_farm_id, land_plot_id, initial_quantity, remaining_quantity, current_location, temperature_c, status, harvested_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        batchCode,
+        product.id,
+        req.user.organization_id,
+        plot.farm_id,
+        plot.id,
+        quantity,
+        quantity,
+        `Thửa ${plot.name}`,
+        9,
+        "registered",
+        harvestDate.toISOString(),
+      );
+
+    event = createEventLog({
+      batchId: batchInsert.lastInsertRowid,
+      eventType: "batch_harvested",
+      actorId: req.user.id,
+      data: {
+        product_id: product.id,
+        product_name: product.name,
+        land_plot_id: plot.id,
+        land_plot_name: plot.name,
+        quantity_kg: quantity,
+        harvested_at: harvestDate.toISOString(),
+      },
+      timestamp: harvestDate.toISOString(),
+    });
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 
   const batch = getBatchWithEvents(
     batchInsert.lastInsertRowid,

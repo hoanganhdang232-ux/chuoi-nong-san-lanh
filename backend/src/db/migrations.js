@@ -453,12 +453,15 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_batch_lineage_parent ON batch_lineage(parent_batch_id);
     CREATE INDEX IF NOT EXISTS idx_batch_lineage_child ON batch_lineage(child_batch_id);
 
-    CREATE VIEW IF NOT EXISTS events AS
+    DROP VIEW IF EXISTS events;
+    CREATE VIEW events AS
     SELECT
       id,
       batch_id,
+      batch_id AS lot_id,
       event_type,
       actor_id,
+      json_extract(data_json, '$.actor_role') AS actor_role,
       data_json AS payload,
       previous_hash AS prev_hash,
       current_hash AS hash,
@@ -479,6 +482,9 @@ export function runMigrations() {
     db.exec(
       "ALTER TABLE batches ADD COLUMN location_id INTEGER REFERENCES locations(id)",
     );
+  }
+  if (!refreshedBatchColumns.includes("sold_out_at")) {
+    db.exec("ALTER TABLE batches ADD COLUMN sold_out_at TEXT");
   }
 
   const locationColumns = db
@@ -635,7 +641,11 @@ export function runMigrations() {
       )
       .get()?.sql || "";
 
-  if (!currentBatchSql.includes("'QUARANTINED'")) {
+  if (
+    !currentBatchSql.includes("'QUARANTINED'") ||
+    !currentBatchSql.includes("'sold_out'") ||
+    !refreshedBatchColumns.includes("sold_out_at")
+  ) {
     db.exec("PRAGMA foreign_keys = OFF;");
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -656,7 +666,8 @@ export function runMigrations() {
           location_id INTEGER,
           temperature_c REAL,
           cold_chain_alert INTEGER NOT NULL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE','QUARANTINED','quarantined','RECALLED')),
+          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE','QUARANTINED','quarantined','RECALLED','sold_out')),
+          sold_out_at TEXT,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (product_id) REFERENCES products(id),
@@ -674,14 +685,14 @@ export function runMigrations() {
           parent_batch_id, root_batch_id, source_batch_ids,
           initial_quantity, remaining_quantity, consumed_quantity,
           current_location, location_id, temperature_c, cold_chain_alert,
-          status, created_at, updated_at
+          status, sold_out_at, created_at, updated_at
         )
         SELECT
           id, batch_code, product_id, organization_id, source_farm_id,
           parent_batch_id, root_batch_id, source_batch_ids,
           initial_quantity, remaining_quantity, coalesce(consumed_quantity, 0),
           current_location, location_id, temperature_c, coalesce(cold_chain_alert, 0),
-          status, created_at, updated_at
+          status, sold_out_at, created_at, updated_at
         FROM batches;
       `);
 
@@ -826,4 +837,3 @@ export function runMigrations() {
     "007_batch_harvested_at_and_land_plot",
   );
 }
-

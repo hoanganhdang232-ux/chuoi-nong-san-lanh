@@ -3,19 +3,7 @@ import { getDb } from "./database.js";
 import { sha256 } from "../utils/hash.js";
 import { createEventLog } from "../services/batchService.js";
 
-// Demo-only accounts use fixed Argon2id hashes so seeding remains synchronous
-// while production-created passwords are always hashed through authService.
-const demoPasswordHashes = {
-  "Farm@123": "$argon2id$v=19$m=65536,p=4,t=3$RAlgkak3SlB9TP0vpcSCZw$qVdC6ve+kcyt1TG7ASIDFRbjfOXQeIlueXuzo2BgqMI",
-  "Processor@123": "$argon2id$v=19$m=65536,p=4,t=3$8l1Wt5Ej1Sy3lyq1kMi1FQ$Hre/mU02arAPXQfLdZNjXZ18czP7Q6nAmYjZRODIPUM",
-  "Distributor@123": "$argon2id$v=19$m=65536,p=4,t=3$cACCoS4hqFrFwQRvD9VtfQ$rdtTexZPlyxsUHbErql72bq3Rs8QXN2ASz3fvfwDaKk",
-  "Auditor@123": "$argon2id$v=19$m=65536,p=4,t=3$oAFvT3XFLCBgXq9QxkeGJw$diU1H93BU4CYGMc369UuYcIOt0E34cpiVdjlsTxtKn8",
-  "Consumer@123": "$argon2id$v=19$m=65536,p=4,t=3$PQzhu2ZODU0fkiemFpPwsg$FcsDvw3CfspQEis8hUhRZrVK18sRwGt/jZ/5oKD+Y2s",
-  "User@123": "$argon2id$v=19$m=65536,p=4,t=3$dSunGimagfcTR3FFOuQjLw$i/2k8eP5LpZzYvogN/rlCdfprmrAPuMY33j8ujRU3Uc",
-};
-
-const passwordHash = (password) =>
-  demoPasswordHashes[password] || bcrypt.hashSync(password, 12);
+const passwordHash = (password) => bcrypt.hashSync(password, 12);
 
 export function ensureDemoFarmerAccount() {
   const db = getDb();

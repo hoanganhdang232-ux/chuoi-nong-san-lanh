@@ -85,6 +85,99 @@ export function verifyEventChain(events) {
   };
 }
 
+export function verifyBatchChain(batchId) {
+  const db = getDb();
+
+  const batchExists = db.prepare("SELECT id FROM batches WHERE id = ?").get(batchId);
+  if (!batchExists) {
+    return {
+      batch_id: batchId,
+      is_valid: false,
+      total_events: 0,
+      first_broken_index: null,
+      first_broken_event_id: null,
+      error_type: "BATCH_NOT_FOUND",
+      events: [],
+    };
+  }
+
+  const events = db
+    .prepare("SELECT * FROM event_logs WHERE batch_id = ? ORDER BY id ASC")
+    .all(batchId);
+
+  if (events.length === 0) {
+    return {
+      batch_id: batchId,
+      is_valid: true,
+      total_events: 0,
+      first_broken_index: null,
+      first_broken_event_id: null,
+      error_type: null,
+      events: [],
+    };
+  }
+
+  let previousHash = GENESIS_HASH;
+  let firstBrokenIndex = null;
+  let firstBrokenEventId = null;
+  let errorType = null;
+  let isBroken = false;
+
+  const resultEvents = [];
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+
+    let status = "VALID";
+
+    if (isBroken) {
+      status = "SUSPECT";
+    } else {
+      if (event.previous_hash !== previousHash) {
+        status = "SUSPECT";
+        isBroken = true;
+        firstBrokenIndex = i;
+        firstBrokenEventId = event.id;
+        errorType = "CHAIN_BROKEN";
+      } else {
+        const expectedHash = generateEventHash({
+          previousHash: event.previous_hash,
+          batchId: event.batch_id,
+          eventType: event.event_type,
+          dataJson: event.data_json,
+          timestamp: event.timestamp,
+        });
+
+        if (event.current_hash !== expectedHash) {
+          status = "TAMPERED";
+          isBroken = true;
+          firstBrokenIndex = i;
+          firstBrokenEventId = event.id;
+          errorType = "CONTENT_TAMPERED";
+        }
+      }
+    }
+
+    resultEvents.push({
+      event_id: event.id,
+      index: i,
+      status,
+    });
+
+    previousHash = event.current_hash;
+  }
+
+  return {
+    batch_id: batchId,
+    is_valid: !isBroken,
+    total_events: events.length,
+    first_broken_index: firstBrokenIndex,
+    first_broken_event_id: firstBrokenEventId,
+    error_type: errorType,
+    events: resultEvents,
+  };
+}
+
 export function getBatchWithEvents(batchId, organizationId, isAuditor) {
   const db = getDb();
   const batch = db
@@ -350,6 +443,55 @@ export function updateBatchStatus({
       ...data,
       previous_status: batch.status,
       new_status: status,
+    },
+  });
+}
+
+export function updateSellOut({
+  batchId,
+  actorId,
+  organizationId,
+  isAuditor,
+}) {
+  const db = getDb();
+  const batch = db.prepare("SELECT * FROM batches WHERE id = ?").get(batchId);
+  if (!batch) throw new Error("Lô hàng không tồn tại.");
+  if (!isAuditor && batch.organization_id !== organizationId)
+    throw new Error("Không có quyền cập nhật lô hàng này.");
+
+  // Check if batch is already sold out or closed
+  if (batch.status === "sold_out") {
+    throw new Error("Lô hàng đã được bán hết trước đó.");
+  }
+
+  if (batch.status === "recalled") {
+    throw new Error("Lô hàng đã bị thu hồi, không thể thực hiện bán hết.");
+  }
+
+  // Validate that batch is in a distributable state
+  const validStatuses = ["in_transit", "delivered", "processed", "in_stock"];
+  if (!validStatuses.includes(batch.status)) {
+    throw new Error(`Không thể bán hết lô hàng ở trạng thái '${batch.status}'. Trạng thái hợp lệ: ${validStatuses.join(', ')}.`);
+  }
+
+  // Update batch status to sold_out, set remaining quantity to 0, and set sold_out_at timestamp
+  db.prepare(
+    `
+    UPDATE batches
+    SET status = ?, remaining_quantity = 0, sold_out_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `,
+  ).run("sold_out", batchId);
+
+  // Log audit trail
+  return createEventLog({
+    batchId,
+    eventType: "batch_sold_out",
+    actorId,
+    data: {
+      previous_status: batch.status,
+      remaining_quantity: 0,
+      sold_out_at: new Date().toISOString(),
     },
   });
 }
