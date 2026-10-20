@@ -31,6 +31,7 @@ function resetDatabase() {
     "batches",
     "products",
     "land_plots",
+    "locations",
     "farms",
     "users",
     "organizations",

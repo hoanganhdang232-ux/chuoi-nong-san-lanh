@@ -1,74 +1,65 @@
 import { useEffect } from "react";
-import { CheckCircle2, AlertTriangle, XCircle, X, Info } from "lucide-react";
+import { CheckCircle2, AlertTriangle, X } from "lucide-react";
 
-export default function Toast({ message, type = "success", onClose, duration = 4000 }) {
+/**
+ * Toast Notification nổi góc trên bên phải
+ * @param {string} message - Nội dung thông báo
+ * @param {string} tone - "success" | "error"
+ * @param {boolean} isOpen - Trạng thái hiển thị
+ * @param {Function} onClose - Hàm đóng toast
+ * @param {number} duration - Thời gian hiển thị (ms)
+ */
+export default function Toast({
+  message,
+  tone = "success",
+  isOpen,
+  onClose,
+  duration = 3500,
+}) {
   useEffect(() => {
-    if (!duration) return;
+    if (!isOpen) return;
     const timer = setTimeout(() => {
-      onClose?.();
+      onClose();
     }, duration);
     return () => clearTimeout(timer);
-  }, [duration, onClose]);
+  }, [isOpen, duration, onClose]);
 
-  const config = {
-    success: {
-      bg: "bg-emerald-900/95 text-white border-emerald-500/40 shadow-emerald-950/20",
-      iconBg: "bg-emerald-500/20 text-emerald-400",
-      icon: CheckCircle2,
-      badge: "Thành công",
-    },
-    error: {
-      bg: "bg-rose-900/95 text-white border-rose-500/40 shadow-rose-950/20",
-      iconBg: "bg-rose-500/20 text-rose-400",
-      icon: XCircle,
-      badge: "Lỗi",
-    },
-    warning: {
-      bg: "bg-amber-900/95 text-white border-amber-500/40 shadow-amber-950/20",
-      iconBg: "bg-amber-500/20 text-amber-400",
-      icon: AlertTriangle,
-      badge: "Cảnh báo",
-    },
-    info: {
-      bg: "bg-slate-900/95 text-white border-slate-700 shadow-slate-950/20",
-      iconBg: "bg-slate-700/50 text-slate-300",
-      icon: Info,
-      badge: "Thông tin",
-    },
-  }[type] || {
-    bg: "bg-emerald-900/95 text-white border-emerald-500/40 shadow-emerald-950/20",
-    iconBg: "bg-emerald-500/20 text-emerald-400",
-    icon: CheckCircle2,
-    badge: "Thành công",
-  };
+  if (!isOpen || !message) return null;
 
-  const Icon = config.icon;
+  const isError = tone === "error";
 
   return (
     <div
       role="alert"
-      className={`fixed top-5 right-5 z-50 flex items-start gap-3.5 max-w-md w-[calc(100vw-2.5rem)] sm:w-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${config.bg}`}
+      className={`animate-toast-in fixed top-5 right-5 z-50 flex items-center gap-3 rounded-2xl border p-4 shadow-xl min-w-[320px] max-w-md ${
+        isError
+          ? "border-rose-200 bg-rose-50/95 text-rose-900 shadow-rose-950/10"
+          : "border-emerald-200/90 bg-white/95 text-slate-800 shadow-emerald-950/10 backdrop-blur-md"
+      }`}
     >
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${config.iconBg}`}>
-        <Icon size={20} />
-      </div>
-
-      <div className="flex-1 pt-0.5 min-w-0 pr-1">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-wider opacity-80">
-            {config.badge}
-          </span>
-        </div>
-        <p className="mt-0.5 text-sm font-medium leading-snug break-words">
+      <span
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+          isError ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
+        }`}
+      >
+        {isError ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}
+      </span>
+      <div className="min-w-0 flex-1 pr-2">
+        <h4
+          className={`text-[11px] font-bold uppercase tracking-wider ${
+            isError ? "text-rose-800" : "text-emerald-800"
+          }`}
+        >
+          {isError ? "Có lỗi xảy ra" : "Thao tác thành công"}
+        </h4>
+        <p className="mt-0.5 text-xs font-semibold leading-snug break-words">
           {message}
         </p>
       </div>
-
       <button
         type="button"
         onClick={onClose}
-        aria-label="Đóng thông báo"
-        className="shrink-0 -mr-1 -mt-1 p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+        className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
       >
         <X size={16} />
       </button>

@@ -3,47 +3,532 @@
 @tailwind utilities;
 
 :root {
-  color: #0f172a;
-  background: #f8fafc;
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  --font-sans: "Be Vietnam Pro", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  
+  /* Light Theme Variables */
+  --bg-app: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-subtle: #f1f5f9;
+  --border-color: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --primary: #10b981;
+  --primary-hover: #059669;
+  --ring-glow: rgba(16, 185, 129, 0.25);
+  --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
+  --shadow-hover: 0 12px 28px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.03);
+}
+
+.dark {
+  /* Dark Theme Variables */
+  --bg-app: #090d16;
+  --bg-card: #0f172a;
+  --bg-subtle: #1e293b;
+  --border-color: #243049;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --primary: #10b981;
+  --primary-hover: #34d399;
+  --ring-glow: rgba(16, 185, 129, 0.4);
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.2);
+  --shadow-hover: 0 14px 30px -4px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
 }
 
 * {
   box-sizing: border-box;
 }
+
 html {
   scroll-behavior: smooth;
+  font-family: var(--font-sans);
 }
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
+
 button,
-input {
-  font: inherit;
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+code,
+kbd,
+samp,
+pre,
+.font-mono {
+  font-family: var(--font-mono) !important;
+}
+
+/* Glassmorphism & Elevated Panels */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+}
+
+.dark .glass-panel {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(51, 65, 85, 0.7);
+}
+
+/* Modern SaaS Card */
+.saas-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-card);
+  border-radius: 14px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.saas-card-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.saas-card-hover:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* Input Fields with Focus Ring Glow */
+.saas-input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: #0f172a;
+  outline: none;
+  transition: all 0.15s ease-in-out;
+}
+
+.saas-input:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px var(--ring-glow);
+}
+
+.dark .saas-input {
+  border-color: #334155;
+  background-color: #0b1120;
+  color: #f1f5f9;
+}
+
+.dark .saas-input:focus {
+  border-color: #34d399;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35);
+}
+
+/* SaaS Table Styling (Zebra Striping & Smooth Elevate on Hover) */
+.saas-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+
+.saas-table th {
+  background-color: #f8fafc;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dark .saas-table th {
+  background-color: #111827;
+  color: #94a3b8;
+  border-bottom: 1px solid #334155;
+}
+
+.saas-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background-color 0.15s ease;
+}
+
+.dark .saas-table td {
+  border-bottom: 1px solid #1e293b;
+}
+
+.saas-table tbody tr {
+  transition: all 0.2s ease;
+}
+
+.saas-table tbody tr:nth-child(even) {
+  background-color: rgba(248, 250, 252, 0.65);
+}
+
+.dark .saas-table tbody tr:nth-child(even) {
+  background-color: rgba(30, 41, 59, 0.3);
+}
+
+.saas-table tbody tr:hover {
+  background-color: rgba(16, 185, 129, 0.06);
+}
+
+.dark .saas-table tbody tr:hover {
+  background-color: rgba(16, 185, 129, 0.12);
+}
+
+/* Status Badges */
+.badge-success {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.dark .badge-success {
+  background-color: rgba(6, 78, 59, 0.4);
+  color: #6ee7b7;
+  border-color: rgba(5, 150, 105, 0.4);
+}
+
+.badge-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.dark .badge-warning {
+  background-color: rgba(120, 53, 15, 0.4);
+  color: #fcd34d;
+  border-color: rgba(217, 119, 6, 0.4);
+}
+
+.badge-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: #fff1f2;
+  color: #be123c;
+  border: 1px solid #fecdd3;
+}
+
+.dark .badge-error {
+  background-color: rgba(136, 19, 55, 0.4);
+  color: #fda4af;
+  border-color: rgba(225, 29, 72, 0.4);
+}
+
+.badge-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.dark .badge-info {
+  background-color: rgba(30, 58, 138, 0.4);
+  color: #93c5fd;
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
+/* Background Patterns */
+.bg-dot-pattern {
+  background-image: radial-gradient(rgba(148, 163, 184, 0.25) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.dark .bg-dot-pattern {
+  background-image: radial-gradient(rgba(71, 85, 105, 0.35) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Sleek Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 
 .login-bg {
+  background-color: #0b0f19;
   background-image:
-    radial-gradient(
-      circle at top left,
-      rgba(16, 185, 129, 0.25),
-      transparent 32%
-    ),
-    radial-gradient(
-      circle at bottom right,
-      rgba(14, 116, 144, 0.2),
-      transparent 26%
-    ),
-    #f8fafc;
+    radial-gradient(circle at 10% 20%, rgba(16, 185, 129, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.15) 0%, transparent 45%),
+    radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.8) 0%, transparent 100%);
 }
+
+/* ========================================================
+   COMPREHENSIVE DARK THEME CASCADING RULES
+   Ensures ALL cards, tables, inputs, text, modals, and borders
+   transition seamlessly to sleek SaaS Dark Mode when toggled.
+   ======================================================== */
+.dark body {
+  background-color: #0b1120 !important;
+  color: #f8fafc !important;
+}
+
+/* Card surfaces */
+.dark .bg-white {
+  background-color: #151f32 !important;
+}
+
+.dark .bg-slate-50,
+.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/60,
+.dark .bg-slate-50\/70,
+.dark .bg-slate-50\/80,
+.dark .bg-slate-50\/90 {
+  background-color: #1a263c !important;
+}
+
+.dark .bg-slate-100 {
+  background-color: #1f2d47 !important;
+}
+
+/* Text colors */
+.dark .text-slate-900 {
+  color: #ffffff !important;
+}
+
+.dark .text-slate-800 {
+  color: #f1f5f9 !important;
+}
+
+.dark .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+
+.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+/* Borders & Dividers */
+.dark .border-slate-200,
+.dark .border-slate-200\/60,
+.dark .border-slate-200\/70,
+.dark .border-slate-200\/80,
+.dark .border-slate-200\/90,
+.dark .border-slate-100,
+.dark .border-slate-300 {
+  border-color: #273752 !important;
+}
+
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #273752 !important;
+}
+
+.dark .ring-slate-200,
+.dark .ring-slate-900\/10 {
+  --tw-ring-color: #273752 !important;
+}
+
+/* Form Controls */
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: #0e1626 !important;
+  color: #f8fafc !important;
+  border-color: #334668 !important;
+}
+
+.dark input:not([type="checkbox"]):not([type="radio"]):focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Tables in dark mode */
+.dark thead {
+  background-color: #111a2b !important;
+  color: #cbd5e1 !important;
+  border-color: #273752 !important;
+}
+
+.dark thead th {
+  background-color: #111a2b !important;
+  color: #94a3b8 !important;
+  border-color: #273752 !important;
+}
+
+.dark tbody tr {
+  background-color: #151f32;
+}
+
+.dark tbody tr:nth-child(even) {
+  background-color: #182338;
+}
+
+.dark tbody tr:hover {
+  background-color: rgba(16, 185, 129, 0.14) !important;
+}
+
+/* Shadows in dark mode */
+.dark .card-shadow {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.6) !important;
+  border-color: #273752 !important;
+}
+
+.dark .card-shadow-hover:hover {
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.75) !important;
+  border-color: rgba(16, 185, 129, 0.5) !important;
+}
+
+/* Animations */
+@keyframes modalScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-modal-in {
+  animation: modalScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(110%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-toast-in {
+  animation: toastSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes highlightRow {
+  0% {
+    background-color: rgba(16, 185, 129, 0.25);
+    outline: 2px solid rgba(16, 185, 129, 0.5);
+  }
+  70% {
+    background-color: rgba(16, 185, 129, 0.1);
+  }
+  100% {
+    background-color: transparent;
+    outline: 2px solid transparent;
+  }
+}
+
+.animate-highlight-row {
+  animation: highlightRow 3s ease-out forwards;
+}
+
+/* ========================================================
+   GAUSSIAN BLUR & ELEVATED MODAL SYSTEM
+   ======================================================== */
+.gaussian-backdrop {
+  background-color: rgba(15, 23, 42, 0.68);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .gaussian-backdrop {
+  background-color: rgba(2, 6, 23, 0.82);
+  backdrop-filter: blur(22px) saturate(190%);
+  -webkit-backdrop-filter: blur(22px) saturate(190%);
+}
+
+.modal-card-glow {
+  box-shadow: 
+    0 25px 60px -15px rgba(15, 23, 42, 0.3),
+    0 0 0 1px rgba(226, 232, 240, 0.8),
+    0 0 40px -5px rgba(16, 185, 129, 0.12);
+}
+
+.dark .modal-card-glow {
+  box-shadow: 
+    0 25px 70px -15px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(51, 65, 85, 0.7),
+    0 0 45px -5px rgba(16, 185, 129, 0.22);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+

@@ -90,9 +90,15 @@ export class BatchSplitMergeService {
           throw new ForbiddenError("Bạn không có quyền tách lô này.");
         }
 
-        if (parent.status === "pending_confirmation") {
+        const parentStatus = String(parent.status || "").toLowerCase();
+        if (parentStatus === "pending_confirmation") {
           throw new ValidationError(
             "Lô hàng đang trong trạng thái chờ xác nhận bàn giao (bị khóa), không thể chia tách."
+          );
+        }
+        if (parentStatus === "recalled" || parentStatus === "quarantined") {
+          throw new ValidationError(
+            "Lô hàng đang bị thu hồi / niêm phong cách ly, không được phép chia tách."
           );
         }
 
@@ -125,13 +131,28 @@ export class BatchSplitMergeService {
         for (const alloc of allocations) {
           const qty = Number(alloc.quantity);
           const childCode = `BATCH-${randomBytes(5).toString("hex").toUpperCase()}`;
-          const childLocation = alloc.location || parent.current_location;
+          let destination = null;
+          const targetLocId = alloc.locationId ?? alloc.location_id;
+          if (targetLocId !== undefined && targetLocId !== null && targetLocId !== "") {
+            const locationId = Number(targetLocId);
+            if (!Number.isSafeInteger(locationId) || locationId <= 0) {
+              throw new ValidationError("ID cửa hàng không hợp lệ.");
+            }
+            destination = db
+              .prepare("SELECT id, name FROM locations WHERE id = ? AND organization_id = ?")
+              .get(locationId, parent.organization_id);
+            if (!destination) {
+              throw new ValidationError("Cửa hàng phải thuộc tổ chức đang giữ lô.");
+            }
+          }
+          const childLocation = destination?.name || alloc.location || parent.current_location;
 
           const childBatch = this.batchRepo.createBatch({
             batchCode: childCode,
             productId: parent.product_id,
             organizationId: parent.organization_id,
             sourceFarmId: parent.source_farm_id,
+            locationId: destination?.id ?? null,
             parentBatchId: parent.id,
             rootBatchId: parentRootId,
             sourceBatchIds: [parent.id],
@@ -161,6 +182,7 @@ export class BatchSplitMergeService {
               source_batch_id: parent.id,
               quantity: qty,
               location: childLocation,
+              location_id: destination?.id ?? null,
             },
           });
 
@@ -278,6 +300,16 @@ export class BatchSplitMergeService {
         if (lockedBatch) {
           throw new ValidationError(
             `Lô hàng ${lockedBatch.batch_code} đang trong trạng thái chờ xác nhận bàn giao (bị khóa), không thể gộp.`
+          );
+        }
+
+        const recalledOrQuarantinedBatch = parentBatches.find((b) => {
+          const s = String(b.status || "").toLowerCase();
+          return s === "recalled" || s === "quarantined";
+        });
+        if (recalledOrQuarantinedBatch) {
+          throw new ValidationError(
+            `Lô hàng ${recalledOrQuarantinedBatch.batch_code} đang bị thu hồi / niêm phong cách ly, không được phép gộp.`
           );
         }
 

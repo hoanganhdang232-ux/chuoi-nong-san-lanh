@@ -1,0 +1,45 @@
+{
+  "test_suite": "Sprint 5 Recall Complex Genealogy & Blended Batch Test",
+  "root_batch": {
+    "code": "ROOT-SPRINT5-001",
+    "product_name": "Xoài cát Hòa Lộc Tiêu Chuẩn VietGAP",
+    "initial_quantity": 1000,
+    "remaining_quantity": 0,
+    "consumed_quantity": 0,
+    "org": "farm"
+  },
+  "tree_structure": {
+    "total_batches_in_tree": 15,
+    "max_depth": 4,
+    "operations": ["split", "merge", "consume", "internal_transfer"]
+  },
+  "batches": [
+    { "id": 101, "code": "ROOT-SPRINT5-001", "level": 0, "parent_ids": [], "org": "farm", "is_blended": false, "initial_qty": 1000, "remaining_qty": 0 },
+    { "id": 102, "code": "BATCH-L1-A", "level": 1, "parent_ids": [101], "org": "processor", "is_blended": false, "initial_qty": 500, "remaining_qty": 0 },
+    { "id": 103, "code": "BATCH-L1-B", "level": 1, "parent_ids": [101], "org": "processor", "is_blended": false, "initial_qty": 500, "remaining_qty": 0 },
+    { "id": 104, "code": "BATCH-L2-A1", "level": 2, "parent_ids": [102], "org": "processor", "is_blended": false, "initial_qty": 250, "remaining_qty": 0 },
+    { "id": 105, "code": "BATCH-L2-A2", "level": 2, "parent_ids": [102], "org": "processor", "is_blended": false, "initial_qty": 250, "remaining_qty": 250 },
+    { "id": 106, "code": "INDEPENDENT-BATCH-99", "level": 0, "parent_ids": [], "org": "farm2", "is_blended": false, "initial_qty": 300, "remaining_qty": 0, "is_external": true },
+    { "id": 107, "code": "BATCH-L2-BLENDED", "level": 2, "parent_ids": [103, 106], "org": "processor", "is_blended": true, "blend_sources": [103, 106], "initial_qty": 800, "remaining_qty": 0 },
+    { "id": 108, "code": "BATCH-L3-STORE1", "level": 3, "parent_ids": [104], "org": "distributor", "is_blended": false, "initial_qty": 100, "remaining_qty": 40, "consumed_qty": 60 },
+    { "id": 109, "code": "BATCH-L3-STORE2", "level": 3, "parent_ids": [104], "org": "distributor", "is_blended": false, "initial_qty": 150, "remaining_qty": 50 },
+    { "id": 110, "code": "BATCH-L3-BLEND-SUB1", "level": 3, "parent_ids": [107], "org": "distributor", "is_blended": true, "initial_qty": 400, "remaining_qty": 0 },
+    { "id": 111, "code": "BATCH-L3-BLEND-SUB2", "level": 3, "parent_ids": [107], "org": "distributor", "is_blended": true, "initial_qty": 400, "remaining_qty": 400 },
+    { "id": 112, "code": "BATCH-L4-FINAL1", "level": 4, "parent_ids": [108], "org": "distributor", "is_blended": false, "initial_qty": 20, "remaining_qty": 20 },
+    { "id": 113, "code": "BATCH-L4-MULTI-BLEND", "level": 4, "parent_ids": [110, 109], "org": "distributor", "is_blended": true, "blend_sources": [110, 109], "initial_qty": 500, "remaining_qty": 350, "consumed_qty": 150 },
+    { "id": 114, "code": "BATCH-L4-FINAL2", "level": 4, "parent_ids": [110], "org": "distributor", "is_blended": true, "initial_qty": 50, "remaining_qty": 50 },
+    { "id": 115, "code": "BATCH-L4-FINAL3", "level": 4, "parent_ids": [111], "org": "distributor", "is_blended": true, "initial_qty": 100, "remaining_qty": 100 }
+  ],
+  "expected_answers": {
+    "root_id": 101,
+    "expected_descendant_ids": [102, 103, 104, 105, 107, 108, 109, 110, 111, 112, 113, 114, 115],
+    "expected_descendant_count": 13,
+    "total_affected_including_root": 14,
+    "expected_blended_batches": ["BATCH-L2-BLENDED", "BATCH-L3-BLEND-SUB1", "BATCH-L3-BLEND-SUB2", "BATCH-L4-MULTI-BLEND", "BATCH-L4-FINAL2", "BATCH-L4-FINAL3"],
+    "expected_blended_count": 6,
+    "expected_max_depth": 4,
+    "expected_affected_org_types": ["farm", "processor", "distributor"],
+    "total_remaining_at_risk_kg": 1260,
+    "total_consumed_kg": 210
+  }
+}

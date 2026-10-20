@@ -1,35 +1,28 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { api } from "../api.js";
-import NationalHeader from "../components/NationalHeader.jsx";
 import {
   ArrowLeft,
   CheckCircle2,
+  Leaf,
   ShieldAlert,
   Thermometer,
-  MapPin,
-  Calendar,
-  Printer,
-  ShieldCheck,
-  Truck,
 } from "lucide-react";
 
 function TemperatureChart({ readings }) {
-  if (!readings || readings.length === 0) {
+  if (readings.length === 0) {
     return (
-      <div className="py-8 text-center text-sm text-slate-500 bg-slate-50 rounded-lg border border-slate-200">
-        Chưa có dữ liệu cảm biến nhiệt độ ghi nhận cho lô hàng này.
-      </div>
+      <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">
+        Chưa có dữ liệu cảm biến.
+      </p>
     );
   }
-
   const width = 760;
-  const height = 200;
-  const padding = 32;
+  const height = 220;
+  const padding = 28;
   const values = readings.map((reading) => Number(reading.temperature));
   const minimum = Math.min(0, ...values);
-  const maximum = Math.max(12, ...values);
-
+  const maximum = Math.max(10, ...values);
   const points = values
     .map((value, index) => {
       const x =
@@ -42,33 +35,28 @@ function TemperatureChart({ readings }) {
       return `${x},${y}`;
     })
     .join(" ");
-
-  const threshold8Y =
+  const thresholdY =
     height -
     padding -
     ((8 - minimum) * (height - padding * 2)) / (maximum - minimum || 1);
 
-  return (
-    <div className="overflow-x-auto bg-white p-4 rounded-lg border border-slate-200">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs text-slate-600">
-        <span className="font-semibold text-slate-800">Biểu đồ giám sát nhiệt độ cảm biến IoT</span>
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-0.5 bg-brand-600 inline-block"></span> Nhiệt độ thực tế
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-0.5 border-t border-dashed border-rose-500 inline-block"></span> Ngưỡng cảnh báo (8°C)
-          </span>
-        </div>
-      </div>
+  const areaPoints = `${points} ${width - padding},${height - padding} ${padding},${height - padding}`;
 
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-xs">
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="w-full min-w-[540px]"
+        className="min-w-[560px] w-full"
         role="img"
         aria-label="Biểu đồ nhiệt độ chuỗi lạnh"
       >
-        {/* Horizontal grid lines */}
+        <defs>
+          <linearGradient id="tempAreaGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+          </linearGradient>
+        </defs>
+
         {[0, 1, 2, 3].map((line) => {
           const y = padding + (line * (height - padding * 2)) / 3;
           return (
@@ -78,60 +66,63 @@ function TemperatureChart({ readings }) {
               x2={width - padding}
               y1={y}
               y2={y}
-              stroke="#f1f5f9"
-              strokeWidth="1"
+              stroke="#e2e8f0"
+              className="stroke-slate-200 dark:stroke-slate-800"
+              strokeWidth="1.5"
             />
           );
         })}
 
-        {/* 8°C Threshold line */}
+        {/* Warning threshold line */}
         <line
           x1={padding}
           x2={width - padding}
-          y1={threshold8Y}
-          y2={threshold8Y}
+          y1={thresholdY}
+          y2={thresholdY}
           stroke="#f43f5e"
           strokeWidth="1.5"
           strokeDasharray="4 4"
         />
-        <text x={width - padding + 5} y={threshold8Y + 4} fill="#f43f5e" fontSize="10" fontWeight="bold">
-          8°C
-        </text>
 
-        {/* Temperature curve */}
+        {/* Area fill */}
+        <polygon points={areaPoints} fill="url(#tempAreaGradient)" />
+
+        {/* Temperature line */}
         <polyline
           points={points}
           fill="none"
-          stroke="#16a34a"
-          strokeWidth="2.5"
+          stroke="#059669"
+          strokeWidth="3"
           strokeLinejoin="round"
           strokeLinecap="round"
         />
 
-        {/* Data points */}
         {values.map((value, index) => {
-          const point = points.split(" ")[index];
-          if (!point) return null;
-          const [cx, cy] = point.split(",");
-          const isOver = value > 8;
+          const [cx, cy] = points.split(" ")[index].split(",");
+          const isWarning = value > 8;
           return (
-            <circle
-              key={`${readings[index].timestamp}-${index}`}
-              cx={cx}
-              cy={cy}
-              r="4"
-              fill={isOver ? "#f43f5e" : "#16a34a"}
-              stroke="#ffffff"
-              strokeWidth="1.5"
-            >
-              <title>{`${value}°C lúc ${new Date(readings[index].timestamp).toLocaleString("vi-VN")}`}</title>
-            </circle>
+            <g key={index}>
+              <circle
+                cx={cx}
+                cy={cy}
+                r={isWarning ? "5.5" : "4"}
+                fill={isWarning ? "#f43f5e" : "#10b981"}
+                stroke="#ffffff"
+                strokeWidth="2"
+              />
+              <text
+                x={cx}
+                y={Number(cy) - 9}
+                textAnchor="middle"
+                className={`text-[10px] font-mono font-bold ${
+                  isWarning ? "fill-rose-500 font-extrabold" : "fill-slate-600 dark:fill-slate-300"
+                }`}
+              >
+                {value}°C
+              </text>
+            </g>
           );
         })}
-
-        <text x={padding} y={16} fill="#64748b" fontSize="11">
-          Nhiệt độ (°C) — Dải an toàn: 2°C đến 8°C
-        </text>
       </svg>
     </div>
   );
@@ -140,216 +131,188 @@ function TemperatureChart({ readings }) {
 export default function PublicTracePage() {
   const { batchCode } = useParams();
   const [trace, setTrace] = useState(null);
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    api
-      .getPublicTrace(batchCode)
-      .then(setTrace)
-      .catch((requestError) => setError(requestError.message))
-      .finally(() => setLoading(false));
+    const fetchTrace = async () => {
+      try {
+        const data = await api.getPublicTrace(batchCode);
+        setTrace(data);
+      } catch (traceError) {
+        setError(traceError.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTrace();
   }, [batchCode]);
 
-  if (loading) {
+  if (loading)
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-        <NationalHeader />
-        <main className="flex-1 max-w-4xl mx-auto w-full p-8 text-center text-slate-500">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-brand-800 border-r-transparent mb-4"></div>
-          <p className="font-semibold text-slate-700">Đang tra cứu hồ sơ truy xuất nguồn gốc...</p>
-          <p className="text-xs text-slate-500 mt-1">Đang kiểm tra chữ ký điện tử và chuỗi sự kiện Blockchain</p>
-        </main>
-      </div>
+      <main className="min-h-screen flex items-center justify-center p-8 text-center text-slate-500 font-medium">
+        Đang tải thông tin nguồn gốc điện tử...
+      </main>
     );
-  }
 
-  if (error || !trace) {
+  if (error)
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-        <NationalHeader />
-        <main className="flex-1 max-w-xl mx-auto w-full p-8 text-center">
-          <div className="bg-white p-8 rounded-xl border border-rose-200 shadow-sm">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 text-rose-600 mb-4">
-              <ShieldAlert size={28} />
-            </div>
-            <h2 className="text-xl font-bold text-slate-900 mb-2">Không tìm thấy mã truy xuất</h2>
-            <p className="text-sm text-slate-600 mb-6">
-              Mã lô hàng <strong>{batchCode}</strong> không tồn tại trên hệ thống hoặc chưa được công khai.
-            </p>
-            <Link
-              to="/"
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-800 hover:bg-brand-900 text-white font-semibold rounded-lg text-sm shadow transition-all"
-            >
-              <ArrowLeft size={16} /> Quay lại trang tra cứu
-            </Link>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  const isViolated = trace.safetyStatus !== "Chưa ghi nhận cảnh báo";
-  const harvestInfo = trace.harvestJournal?.[0];
-
-  return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
-      <NationalHeader />
-
-      <main className="max-w-4xl mx-auto w-full px-4 sm:px-6 py-8 flex-1">
-        {/* Navigation Breadcrumb */}
-        <div className="flex items-center justify-between mb-6">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600 hover:text-brand-800 transition-colors"
-          >
-            <ArrowLeft size={16} /> Quay lại trang tra cứu
-          </Link>
-          <button
-            onClick={() => window.print()}
-            type="button"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-colors"
-          >
-            <Printer size={14} /> In hồ sơ xác thực
-          </button>
-        </div>
-
-        {/* Official Certificate Card */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8">
-          {/* Certificate Header Banner */}
-          <div className="bg-brand-900 text-white p-6 border-b border-brand-800">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-300 block mb-1">
-                  HỒ SƠ ĐIỆN TỬ XÁC THỰC QUỐC GIA
-                </span>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
-                  {trace.productName}
-                </h1>
-                <div className="text-xs text-brand-100 font-mono mt-1">
-                  Mã định danh lô: <span className="text-white font-bold">{trace.batchCode}</span>
-                </div>
-              </div>
-
-              {/* Status Badge */}
-              <div
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm ${
-                  isViolated
-                    ? "bg-rose-100 text-rose-800 border border-rose-300"
-                    : "bg-emerald-100 text-emerald-900 border border-emerald-300"
-                }`}
-              >
-                {isViolated ? <ShieldAlert size={20} className="text-rose-700" /> : <CheckCircle2 size={20} className="text-emerald-700" />}
-                <div>
-                  <div className="text-[10px] uppercase font-semibold text-slate-500">Trạng thái chất lượng</div>
-                  <div>{trace.safetyStatus}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Key Details Grid */}
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 border-b border-slate-100 bg-slate-50/50">
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-emerald-100 text-emerald-800 shrink-0">
-                <MapPin size={20} />
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 font-medium">Vùng trồng / Xuất xứ</div>
-                <div className="text-sm font-bold text-slate-900 mt-0.5">
-                  {trace.growingRegion || "Vùng trồng Tây Nguyên"}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-blue-100 text-blue-800 shrink-0">
-                <Calendar size={20} />
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 font-medium">Thời điểm thu hoạch</div>
-                <div className="text-sm font-bold text-slate-900 mt-0.5">
-                  {harvestInfo?.harvestedAt
-                    ? new Date(harvestInfo.harvestedAt).toLocaleDateString("vi-VN")
-                    : "Đã xác nhận thu hoạch"}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-purple-100 text-purple-800 shrink-0">
-                <ShieldCheck size={20} />
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 font-medium">Bảo vệ tính toàn vẹn</div>
-                <div className="text-sm font-bold text-slate-900 mt-0.5">
-                  SHA-256 Hash Chain
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Body Content */}
-          <div className="p-6 space-y-8">
-            {/* 1. Cold Chain Temperature Chart */}
-            <section>
-              <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-                <Thermometer size={18} className="text-brand-700" />
-                Giám sát nhiệt độ chuỗi lạnh liên tục (IoT)
-              </h2>
-              <TemperatureChart readings={trace.temperatureSeries || []} />
-            </section>
-
-            {/* 2. Supply Chain Journey (Timeline) */}
-            <section>
-              <h2 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <Truck size={18} className="text-brand-700" />
-                Hành trình chuỗi cung ứng đã xác thực
-              </h2>
-
-              <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                {(trace.transportHistory && trace.transportHistory.length > 0) ? (
-                  trace.transportHistory.map((item, index) => (
-                    <div key={index} className="relative flex items-start gap-3">
-                      <div className="absolute -left-6 top-1 h-5 w-5 rounded-full border-2 border-white bg-brand-700 shadow-sm flex items-center justify-center text-white text-[10px]">
-                        ✓
-                      </div>
-                      <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 w-full">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                          <span className="font-bold text-slate-900 text-sm">{item.stage}</span>
-                          <span className="text-xs text-slate-500">
-                            {new Date(item.timestamp).toLocaleString("vi-VN")}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-xs text-slate-500 italic">
-                    Chưa có lịch sử di chuyển ghi nhận.
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* 3. Electronic Stamp & Legal Notice */}
-            <div className="rounded-lg bg-emerald-50/60 p-4 border border-emerald-200 text-xs text-emerald-950 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="font-bold flex items-center gap-1.5 text-emerald-900 text-sm">
-                  <CheckCircle2 size={16} /> Chứng nhận Truy xuất Nguồn gốc Hợp lệ
-                </div>
-                <p className="text-slate-600">
-                  Dữ liệu được lưu trữ phân tán và mã hoá theo công nghệ Hash Chain. Bất kỳ sự can thiệp hoặc thay đổi dữ liệu nào đều sẽ bị phát hiện tự động.
-                </p>
-              </div>
-              <div className="shrink-0 text-center font-mono text-[10px] p-2 bg-white rounded border border-emerald-200">
-                <div className="font-bold text-slate-800">QR VERIFIED</div>
-                <div className="text-slate-500">{trace.batchCode}</div>
-              </div>
-            </div>
-          </div>
+      <main className="min-h-screen flex items-center justify-center p-8 text-center text-rose-700 font-medium bg-slate-50 dark:bg-slate-950">
+        <div className="rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/60 p-6 max-w-md shadow-xl">
+          <ShieldAlert className="mx-auto text-rose-600 mb-2" size={32} />
+          <p>{error}</p>
         </div>
       </main>
-    </div>
+    );
+
+  const unsafe = trace.safetyStatus !== "Chưa ghi nhận cảnh báo";
+  return (
+    <main className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pb-16 antialiased transition-colors">
+      {/* Top Header */}
+      <header className="sticky top-0 z-20 border-b border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4">
+          <a
+            href="/login"
+            className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200 transition hover:text-emerald-600"
+          >
+            <ArrowLeft size={18} /> Agritrace
+          </a>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
+                Hồ sơ công khai
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-5xl px-5 py-8 sm:py-10">
+        {/* Hero Card */}
+        <div className="rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 card-shadow mb-8">
+          <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
+            <div>
+              <span className="inline-block text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1">
+                Chứng thư nguồn gốc điện tử
+              </span>
+              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                {trace.productName}
+              </h1>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Mã định danh lô:</span>
+                <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 font-mono text-xs font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                  {trace.batchCode}
+                </span>
+              </div>
+            </div>
+            <div
+              className={`flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold shadow-xs border ${
+                unsafe
+                  ? "bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800"
+                  : "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+              }`}
+            >
+              {unsafe ? <ShieldAlert size={20} className="text-rose-600" /> : <CheckCircle2 size={20} className="text-emerald-600" />}
+              {trace.safetyStatus}
+            </div>
+          </div>
+        </div>
+
+        {/* Region & Harvest Grid */}
+        <div className="grid gap-6 sm:grid-cols-2 mb-8">
+          <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 card-shadow">
+            <div className="flex items-start gap-4">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400">
+                <Leaf size={22} />
+              </span>
+              <div>
+                <h2 className="font-bold text-slate-900 dark:text-white">Vùng trồng nông sản</h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300 font-medium">
+                  {trace.growingRegion || "Chưa cập nhật"}
+                </p>
+                <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                  <CheckCircle2 size={13} /> Khai báo tọa độ định vị
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 card-shadow">
+            <h2 className="font-bold text-slate-900 dark:text-white mb-3">Nhật ký thu hoạch</h2>
+            {trace.harvestJournal.length ? (
+              <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300 font-medium">
+                {trace.harvestJournal.map((entry, index) => (
+                  <li key={`${entry.harvestedAt}-${index}`} className="flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span>{new Date(entry.harvestedAt).toLocaleString("vi-VN")}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-400">
+                Chưa có nhật ký thu hoạch.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Transport & Cold Chain Section */}
+        <div className="grid gap-6 sm:grid-cols-2 mb-8">
+          <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 card-shadow">
+            <h2 className="font-bold text-slate-900 dark:text-white mb-4">Lịch sử vận chuyển & bàn giao</h2>
+            {trace.transportHistory.length ? (
+              <ol className="space-y-4 border-l-2 border-emerald-300 dark:border-emerald-700 ml-2 pl-4">
+                {trace.transportHistory.map((item, index) => (
+                  <li key={`${item.timestamp}-${index}`} className="relative">
+                    <span className="absolute -left-[21px] top-1.5 h-3 w-3 rounded-full bg-emerald-600 ring-4 ring-white dark:ring-slate-900 shadow-xs" />
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">{item.stage}</p>
+                    <time className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      {new Date(item.timestamp).toLocaleString("vi-VN")}
+                    </time>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-slate-400">
+                Chưa có lịch sử vận chuyển.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 card-shadow">
+            <div className="flex items-start gap-4">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-cyan-100 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-400">
+                <Thermometer size={22} />
+              </span>
+              <div>
+                <h2 className="font-bold text-slate-900 dark:text-white">Giám sát chuỗi lạnh IoT</h2>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                  Cảm biến IoT ghi nhận nhiệt độ thời gian thực. Ngưỡng cảnh báo tự động kích hoạt khi nhiệt độ vượt 8°C liên tục quá 30 phút.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Temperature Chart Section */}
+        <section className="rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 card-shadow">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="font-bold text-slate-900 dark:text-white">Biểu đồ giám sát nhiệt độ chuỗi lạnh</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Dữ liệu ghi nhận từ cảm biến nhiệt trên thùng vận chuyển</p>
+            </div>
+            <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1 text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono">
+              {trace.temperatureSeries.length} mẫu cảm biến
+            </span>
+          </div>
+          <TemperatureChart readings={trace.temperatureSeries} />
+        </section>
+
+        <footer className="mt-8 border-t border-slate-200 dark:border-slate-800 pt-5 text-center text-xs text-slate-500 dark:text-slate-400">
+          Hồ sơ công khai tuân thủ tiêu chuẩn an toàn thực phẩm. Không hiển thị giá, khối lượng giao dịch nội bộ hoặc dữ liệu đối tác.
+        </footer>
+      </div>
+    </main>
   );
 }

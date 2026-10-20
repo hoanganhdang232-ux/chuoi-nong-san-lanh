@@ -56,6 +56,7 @@ export class BatchRepository {
     productId,
     organizationId,
     sourceFarmId,
+    locationId = null,
     parentBatchId = null,
     rootBatchId = null,
     sourceBatchIds = null,
@@ -74,17 +75,18 @@ export class BatchRepository {
     const result = this.db
       .prepare(
         `INSERT INTO batches(
-          batch_code, product_id, organization_id, source_farm_id,
+          batch_code, product_id, organization_id, source_farm_id, location_id,
           parent_batch_id, root_batch_id, source_batch_ids,
           initial_quantity, remaining_quantity, current_location,
           temperature_c, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         batchCode,
         productId,
         organizationId,
         sourceFarmId,
+        locationId,
         parentBatchId,
         rootBatchId,
         serializedSourceBatchIds,
