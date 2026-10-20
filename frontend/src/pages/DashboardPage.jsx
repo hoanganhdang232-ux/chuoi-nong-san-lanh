@@ -42,9 +42,12 @@ import ConsumeModal from "../components/ConsumeModal.jsx";
 import ConfirmSaveModal from "../components/ConfirmSaveModal.jsx";
 import NotificationBell from "../components/NotificationBell.jsx";
 import RecallManagementView from "../components/RecallManagementView.jsx";
+import ColdChainView from "../components/ColdChainView.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
+import { scrollToElement } from "../utils/scrollHelper.js";
+import * as XLSX from "xlsx";
 
 const EVENT_META = {
   batch_harvested:           { label: "Thu hoạch",           color: "bg-emerald-100 text-emerald-700",  icon: Tractor },
@@ -56,7 +59,8 @@ const EVENT_META = {
   batch_transferred:         { label: "Xác nhận bàn giao", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
   batch_transfer_rejected:   { label: "Từ chối bàn giao",  color: "bg-rose-100 text-rose-700",      icon: ShieldAlert },
   batch_recalled:            { label: "Thu hồi",             color: "bg-rose-100 text-rose-700",      icon: Siren },
-  cold_chain_violation:      { label: "Vi phạm chuỗi lạnh",color: "bg-orange-100 text-orange-700",  icon: AlertTriangle },
+  cold_chain_violation:      { label: "Vi phạm chuỗi lạnh",color: "bg-rose-100 text-rose-700 ring-1 ring-rose-300 font-bold",  icon: AlertTriangle },
+  COLD_CHAIN_VIOLATION:      { label: "Vi phạm chuỗi lạnh (IoT)", color: "bg-rose-100 text-rose-700 ring-1 ring-rose-300 font-bold", icon: AlertTriangle },
   temperature_series_recorded:{ label: "Ghi cảm biến",      color: "bg-sky-100 text-sky-700",        icon: Thermometer },
   temperature_check:         { label: "Kiểm tra nhiệt độ", color: "bg-sky-100 text-sky-700",        icon: Thermometer },
   temperature_violation:     { label: "Vi phạm nhiệt độ",  color: "bg-orange-100 text-orange-700",  icon: AlertTriangle },
@@ -306,7 +310,6 @@ export default function DashboardPage() {
   const [transferRequests, setTransferRequests] = useState([]);
   const [landPlots, setLandPlots] = useState([]);
   const [products, setProducts] = useState([]);
-  const [temperatureLogs, setTemperatureLogs] = useState([]);
   const [, setRecallReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [, setActivity] = useState([]);
@@ -341,7 +344,13 @@ export default function DashboardPage() {
   });
   const [editingLandPlotId, setEditingLandPlotId] = useState(null);
   const [landPlotErrors, setLandPlotErrors] = useState({});
-  const [productForm, setProductForm] = useState({ name: "", unit: "kg" });
+  const [productForm, setProductForm] = useState({
+    name: "",
+    unit: "kg",
+    min_temp: 2.0,
+    max_temp: 8.0,
+    max_allowed_delay_minutes: 30,
+  });
   const [editingProductId, setEditingProductId] = useState(null);
   const [splitBatchId, setSplitBatchId] = useState("");
   const [splitAllocations, setSplitAllocations] = useState([
@@ -772,10 +781,22 @@ export default function DashboardPage() {
     try {
       if (editingProductId) {
         await api.updateProduct(editingProductId, productForm);
+        await api.updateProductColdChainConfig(editingProductId, {
+          min_temp: productForm.min_temp,
+          max_temp: productForm.max_temp,
+          max_allowed_delay_minutes: productForm.max_allowed_delay_minutes,
+        });
       } else {
-        await api.createProduct(productForm);
+        const created = await api.createProduct(productForm);
+        if (created?.id) {
+          await api.updateProductColdChainConfig(created.id, {
+            min_temp: productForm.min_temp,
+            max_temp: productForm.max_temp,
+            max_allowed_delay_minutes: productForm.max_allowed_delay_minutes,
+          });
+        }
       }
-      setProductForm({ name: "", unit: "kg" });
+      setProductForm({ name: "", unit: "kg", min_temp: 2.0, max_temp: 8.0, max_allowed_delay_minutes: 30 });
       setEditingProductId(null);
       setProducts(await api.getProducts());
       setConfirmProductModal({ open: false, data: null, submitting: false });
@@ -856,13 +877,22 @@ export default function DashboardPage() {
 
   const handleBatchFileSelect = (selectedFile) => {
     if (!selectedFile) return;
-    const isCsv = selectedFile.name.toLowerCase().endsWith(".csv") || selectedFile.type === "text/csv";
-    if (!isCsv) {
-      toast.error("Định dạng tệp không hợp lệ! Vui lòng chỉ tải lên tệp CSV (.csv).");
+    const nameLower = selectedFile.name.toLowerCase();
+    const isExcelOrCsv =
+      nameLower.endsWith(".csv") ||
+      nameLower.endsWith(".xlsx") ||
+      nameLower.endsWith(".xls") ||
+      selectedFile.type === "text/csv" ||
+      selectedFile.type === "application/vnd.ms-excel" ||
+      selectedFile.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      selectedFile.type === "application/csv" ||
+      selectedFile.type === "";
+    if (!isExcelOrCsv) {
+      toast.error("Định dạng tệp không hợp lệ! Vui lòng chọn tệp Excel (.xlsx, .xls) hoặc CSV (.csv).");
       return;
     }
-    if (selectedFile.size > 900_000) {
-      toast.error("Kích thước tệp CSV vượt quá giới hạn 900 KB.");
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      toast.error("Kích thước tệp vượt quá giới hạn 5 MB.");
       return;
     }
     setBatchCsvFile(selectedFile);
@@ -894,9 +924,9 @@ export default function DashboardPage() {
   const handleBatchCsvImport = async (event) => {
     event.preventDefault();
     if (!batchCsvFile) {
-      toast.warning("Vui lòng chọn hoặc kéo thả tệp CSV trước khi nhấn Nhập lô.");
+      toast.warning("Vui lòng chọn hoặc kéo thả tệp Excel/CSV trước khi nhấn Nhập lô.");
       setSubmission({
-        message: "Vui lòng chọn hoặc kéo thả tệp CSV trước khi nhập dữ liệu.",
+        message: "Vui lòng chọn hoặc kéo thả tệp Excel/CSV trước khi nhập dữ liệu.",
         tone: "error",
       });
       return;
@@ -904,32 +934,76 @@ export default function DashboardPage() {
     setIsImportingBatchCsv(true);
     setSubmission({ message: "", tone: "" });
     try {
-      const content = await batchCsvFile.text();
+      let content = "";
+      const isXlsx =
+        batchCsvFile.name.toLowerCase().endsWith(".xlsx") ||
+        batchCsvFile.name.toLowerCase().endsWith(".xls") ||
+        batchCsvFile.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+        batchCsvFile.type === "application/vnd.ms-excel";
+
+      if (isXlsx) {
+        const buffer = await batchCsvFile.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array", cellDates: true, dateNF: "yyyy-mm-dd" });
+        const firstSheetName = workbook.SheetNames[0];
+        if (!firstSheetName) {
+          throw new Error("File Excel không chứa bảng tính (sheet) nào.");
+        }
+        const worksheet = workbook.Sheets[firstSheetName];
+        content = XLSX.utils.sheet_to_csv(worksheet);
+      } else {
+        content = await batchCsvFile.text();
+      }
+
       const result = await api.importBatchesCsv(content);
       setBatchCsvFile(null);
       if (batchCsvInputRef.current) batchCsvInputRef.current.value = "";
       await loadData();
-      toast.success(`Nhập dữ liệu thành công! Đã tạo ${result.createdCount} lô nông sản từ CSV.`);
+      toast.success(`Nhập dữ liệu thành công! Đã tạo ${result.createdCount} lô nông sản từ file.`);
       setSubmission({
-        message: `Đã nhập ${result.createdCount} lô từ CSV vào chuỗi hash.`,
+        message: `Đã nhập ${result.createdCount} lô nông sản vào chuỗi hash an toàn.`,
         tone: "success",
       });
+      const firstCreatedId = result.batches?.[0]?.id;
+      if (firstCreatedId) {
+        scrollToElement(`batch-row-${firstCreatedId}`, { block: "center", highlight: true });
+      }
     } catch (submitError) {
-      toast.error(submitError.message || "Không thể nhập lô từ file CSV.");
+      toast.error(submitError.message || "Không thể nhập lô từ file.");
       setSubmission({ message: submitError.message, tone: "error" });
     } finally {
       setIsImportingBatchCsv(false);
     }
   };
 
-  const downloadBatchCsvTemplate = () => {
-    const content = "productId,quantityKg,currentLocation,harvestedAt,batchCode\n1,100,Kho tiếp nhận,,\n";
-    const url = URL.createObjectURL(new Blob(["\uFEFF", content], { type: "text/csv;charset=utf-8" }));
+  const downloadBatchExcelTemplate = () => {
+    // Xuất file .xlsx chuẩn Microsoft Excel: Tự căn lề độ rộng cột, tiếng Việt 100% chuẩn, ngày tháng không bao giờ bị dấu #######
+    const wb = XLSX.utils.book_new();
+    const wsData = [
+      ["productId", "quantityKg", "currentLocation", "harvestedAt", "batchCode"],
+      [1, 100, "Kho tiếp nhận", "2026-10-20", "BATCH-2026-001"],
+      [2, 250, "Kho lạnh trung tâm", "2026-10-19", "BATCH-2026-002"],
+      [1, 80, "Khu sơ chế đóng gói", "2026-10-18", ""],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws["!cols"] = [
+      { wch: 14 }, // productId
+      { wch: 16 }, // quantityKg
+      { wch: 28 }, // currentLocation
+      { wch: 18 }, // harvestedAt (đủ rộng cho YYYY-MM-DD, tuyệt đối không bị ########)
+      { wch: 22 }, // batchCode
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, "Mau_Nhap_Lo");
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "agritrace-batch-import-template.csv";
+    link.download = "agritrace-batch-import-template.xlsx";
     link.click();
     URL.revokeObjectURL(url);
+    toast.success("Đã tải xuống file mẫu Excel (.xlsx) chuẩn căn cột và tiếng Việt.");
   };
 
   const handleMergeSubmit = (event) => {
@@ -1110,24 +1184,6 @@ export default function DashboardPage() {
       setSubmission({ message: submitError.message, tone: "error" });
     }
   };
-
-  const handleSensorSimulation = async (batchId) => {
-    try {
-      const result = await api.simulateSensor(batchId);
-      setTemperatureLogs(result.readings);
-      await loadData();
-      setSubmission({
-        message: result.alertActive
-          ? "Vi phạm chuỗi lạnh: nhiệt độ trên 8°C liên tục quá 30 phút."
-          : "Đã ghi nhận chuỗi dữ liệu cảm biến.",
-        tone: result.alertActive ? "error" : "success",
-      });
-      setNotifications(await api.getNotifications());
-    } catch (submitError) {
-      setSubmission({ message: submitError.message, tone: "error" });
-    }
-  };
-
 
   const handleAuditExport = async (batchId) => {
     try {
@@ -1444,7 +1500,18 @@ export default function DashboardPage() {
                                     : "--"}
                                 </td>
                                 <td className="px-4 py-3.5">
-                                  <BatchStatusBadge status={batch.status} />
+                                  <div className="flex items-center gap-1.5">
+                                    <BatchStatusBadge status={batch.status} />
+                                    {batch.cold_chain_alert ? (
+                                      <span
+                                        className="inline-flex items-center gap-1 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800 px-2 py-0.5 text-[10px] font-black animate-pulse"
+                                        title="Vi phạm chuỗi lạnh: Nhiệt độ vượt ngưỡng liên tục quá 30 phút"
+                                      >
+                                        <AlertTriangle size={10} />
+                                        <span>Vi phạm lạnh</span>
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 </td>
                                 <td className="px-4 py-3.5 text-right font-mono">
                                   {hasStock ? (
@@ -1882,7 +1949,7 @@ export default function DashboardPage() {
               </h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <input
-                  className="rounded-xl border px-3 py-2"
+                  className="rounded-xl border px-3 py-2 text-xs"
                   placeholder="Tên sản phẩm"
                   value={productForm.name}
                   onChange={(event) =>
@@ -1890,28 +1957,73 @@ export default function DashboardPage() {
                   }
                 />
                 <input
-                  className="rounded-xl border px-3 py-2"
+                  className="rounded-xl border px-3 py-2 text-xs"
                   placeholder="Đơn vị tính"
                   value={productForm.unit}
                   onChange={(event) =>
                     setProductForm({ ...productForm, unit: event.target.value })
                   }
                 />
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    Nhiệt độ tối thiểu (°C)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="w-full rounded-xl border px-3 py-2 text-xs font-mono"
+                    placeholder="VD: 2.0"
+                    value={productForm.min_temp ?? 2.0}
+                    onChange={(event) =>
+                      setProductForm({ ...productForm, min_temp: event.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    Nhiệt độ tối đa (°C)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="w-full rounded-xl border px-3 py-2 text-xs font-mono"
+                    placeholder="VD: 8.0"
+                    value={productForm.max_temp ?? 8.0}
+                    onChange={(event) =>
+                      setProductForm({ ...productForm, max_temp: event.target.value })
+                    }
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    Thời gian cho phép vượt ngưỡng liên tục (phút)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full rounded-xl border px-3 py-2 text-xs font-mono"
+                    placeholder="Mặc định: 30 phút"
+                    value={productForm.max_allowed_delay_minutes ?? 30}
+                    onChange={(event) =>
+                      setProductForm({ ...productForm, max_allowed_delay_minutes: event.target.value })
+                    }
+                  />
+                </div>
               </div>
               <div className="mt-4 flex gap-2">
                 <button
-                  className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white text-xs"
                   type="submit"
                 >
-                  {editingProductId ? "Cập nhật" : "Thêm sản phẩm"}
+                  {editingProductId ? "Cập nhật sản phẩm & Chuỗi lạnh" : "Thêm sản phẩm"}
                 </button>
                 {editingProductId && (
                   <button
-                    className="rounded-xl border px-4 py-2"
+                    className="rounded-xl border px-4 py-2 text-xs"
                     type="button"
                     onClick={() => {
                       setEditingProductId(null);
-                      setProductForm({ name: "", unit: "kg" });
+                      setProductForm({ name: "", unit: "kg", min_temp: 2.0, max_temp: 8.0, max_allowed_delay_minutes: 30 });
                     }}
                   >
                     Hủy
@@ -1926,11 +2038,22 @@ export default function DashboardPage() {
                     className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left hover:border-emerald-300"
                     onClick={() => {
                       setEditingProductId(product.id);
-                      setProductForm({ name: product.name, unit: product.unit });
+                      setProductForm({
+                        name: product.name,
+                        unit: product.unit,
+                        min_temp: product.min_temp ?? 2.0,
+                        max_temp: product.max_temp ?? 8.0,
+                        max_allowed_delay_minutes: product.max_allowed_delay_minutes ?? 30,
+                      });
                     }}
                   >
-                    <span className="font-medium">{product.name}</span>
-                    <span className="text-sm text-slate-500">{product.unit}</span>
+                    <div>
+                      <span className="font-medium text-xs text-slate-800">{product.name}</span>
+                      <span className="ml-2 text-[11px] text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded font-mono">
+                        [{product.min_temp ?? 2}°C - {product.max_temp ?? 8}°C, max {product.max_allowed_delay_minutes ?? 30}m]
+                      </span>
+                    </div>
+                    <span className="text-xs text-slate-500">{product.unit}</span>
                   </button>
                 ))}
               </div>
@@ -2175,28 +2298,62 @@ export default function DashboardPage() {
                       <FileSpreadsheet size={22} />
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold text-slate-900 dark:text-white">Nhập lô từ CSV</h2>
+                      <h2 className="text-lg font-bold text-slate-900 dark:text-white">Nhập lô từ File (Excel / CSV)</h2>
                       <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                         Mỗi dòng tạo một lô thuộc tổ chức đang đăng nhập và ghi sự kiện nhập vào hash chain.
                       </p>
                     </div>
                   </div>
                   <button
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer shadow-2xs"
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold transition cursor-pointer shadow-sm hover:shadow active:scale-95"
                     type="button"
-                    onClick={downloadBatchCsvTemplate}
+                    onClick={downloadBatchExcelTemplate}
+                    title="Mở trực tiếp trên Microsoft Excel: Tự căn lề độ rộng từng cột, tiếng Việt 100% chuẩn, không bị dấu #######"
                   >
-                    <Download size={14} />
-                    Tải CSV mẫu
+                    <FileSpreadsheet size={16} />
+                    <span>Tải file mẫu Excel (.xlsx)</span>
                   </button>
                 </div>
 
-                {/* Vùng Dropzone Kéo & Thả file CSV chuyên nghiệp */}
-                <div className="mt-5">
+                {/* Hướng dẫn các cột tương thích Microsoft Excel & CSV */}
+                <div className="mt-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 p-4 border border-slate-200/80 dark:border-slate-700 text-xs">
+                  <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100 mb-2">
+                    <FileSpreadsheet size={16} className="text-emerald-600" />
+                    <span>Quy cách 5 cột dữ liệu tương thích Microsoft Excel & CSV:</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 text-[11px]">
+                    <div className="rounded-xl bg-white dark:bg-slate-900 p-2.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="font-mono font-bold text-emerald-700 dark:text-emerald-400">Cột A: productId</div>
+                      <p className="text-slate-500 dark:text-slate-400 mt-0.5">ID sản phẩm (Bắt buộc, số nguyên dương, vd: 1, 2)</p>
+                    </div>
+                    <div className="rounded-xl bg-white dark:bg-slate-900 p-2.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="font-mono font-bold text-emerald-700 dark:text-emerald-400">Cột B: quantityKg</div>
+                      <p className="text-slate-500 dark:text-slate-400 mt-0.5">Khối lượng (Bắt buộc, số &gt; 0, vd: 100 hoặc 250.5)</p>
+                    </div>
+                    <div className="rounded-xl bg-white dark:bg-slate-900 p-2.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="font-mono font-bold text-emerald-700 dark:text-emerald-400">Cột C: currentLocation</div>
+                      <p className="text-slate-500 dark:text-slate-400 mt-0.5">Vị trí lưu kho (Tùy chọn, vd: Kho tiếp nhận)</p>
+                    </div>
+                    <div className="rounded-xl bg-white dark:bg-slate-900 p-2.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="font-mono font-bold text-emerald-700 dark:text-emerald-400">Cột D: harvestedAt</div>
+                      <p className="text-slate-500 dark:text-slate-400 mt-0.5">Ngày thu hoạch (YYYY-MM-DD hoặc DD/MM/YYYY)</p>
+                    </div>
+                    <div className="rounded-xl bg-white dark:bg-slate-900 p-2.5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="font-mono font-bold text-emerald-700 dark:text-emerald-400">Cột E: batchCode</div>
+                      <p className="text-slate-500 dark:text-slate-400 mt-0.5">Mã lô (Tùy chọn, để trống sẽ tự sinh BATCH-xxx)</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 italic">
+                    💡 File mẫu Excel (.xlsx) đã được căn sẵn độ rộng từng cột, hiển thị tiếng Việt trọn vẹn và không bao giờ bị lỗi ký tự <code className="font-mono text-amber-700 dark:text-amber-400">########</code> ở cột ngày tháng. Hệ thống hỗ trợ nạp tệp <code className="font-mono">.xlsx</code>, <code className="font-mono">.xls</code> và <code className="font-mono">.csv</code>.
+                  </p>
+                </div>
+
+                {/* Vùng Dropzone Kéo & Thả file Excel / CSV chuyên nghiệp */}
+                <div className="mt-4">
                   <input
                     ref={batchCsvInputRef}
                     type="file"
-                    accept=".csv,text/csv"
+                    accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
                     className="hidden"
                     onChange={(e) => handleBatchFileSelect(e.target.files?.[0])}
                   />
@@ -2219,16 +2376,16 @@ export default function DashboardPage() {
                       <div className="mt-3 text-center">
                         <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
                           {isDraggingBatchCsv ? (
-                            <span className="text-emerald-600 dark:text-emerald-400">Thả tệp CSV vào đây ngay...</span>
+                            <span className="text-emerald-600 dark:text-emerald-400">Thả tệp Excel / CSV vào đây ngay...</span>
                           ) : (
                             <>
-                              Kéo thả tệp CSV vào đây hoặc{" "}
+                              Kéo thả tệp Excel (.xlsx) hoặc CSV (.csv) vào đây hoặc{" "}
                               <span className="text-emerald-600 dark:text-emerald-400 underline font-extrabold">duyệt chọn từ máy tính</span>
                             </>
                           )}
                         </p>
                         <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                          Chỉ hỗ trợ tệp định dạng .csv (tối đa 500 lô, kích thước không quá 900 KB)
+                          Hỗ trợ định dạng .xlsx, .xls, .csv (tối đa 500 lô, kích thước không quá 5 MB)
                         </p>
                       </div>
                     </div>
@@ -2244,11 +2401,13 @@ export default function DashboardPage() {
                               {batchCsvFile.name}
                             </p>
                             <span className="rounded-full bg-emerald-200/90 dark:bg-emerald-900/80 px-2 py-0.5 text-[10px] font-extrabold text-emerald-900 dark:text-emerald-200 uppercase">
-                              Sẵn sàng
+                              {batchCsvFile.name.toLowerCase().endsWith(".xlsx") || batchCsvFile.name.toLowerCase().endsWith(".xls")
+                                ? "Excel (.xlsx)"
+                                : "CSV (.csv)"}
                             </span>
                           </div>
                           <p className="text-xs text-emerald-700/80 dark:text-emerald-400 mt-0.5">
-                            Dung lượng: {(batchCsvFile.size / 1024).toFixed(1)} KB
+                            Dung lượng: {(batchCsvFile.size / 1024).toFixed(1)} KB · Sẵn sàng nhập
                           </p>
                         </div>
                       </div>
@@ -2293,7 +2452,7 @@ export default function DashboardPage() {
                     ) : (
                       <>
                         <Upload size={16} />
-                        <span>Nhập lô</span>
+                        <span>Nhập dữ liệu lô</span>
                       </>
                     )}
                   </button>
@@ -2329,77 +2488,9 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {(selectedView === "Chuỗi lạnh" || selectedView === "Kiểm soát") &&
-          [
-            "farm_admin",
-            "processor_admin",
-            "distributor_admin",
-            "auditor",
-          ].includes(user?.role) && (
-            <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Giám sát chuỗi lạnh
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Cảnh báo khi nhiệt độ vượt 8°C liên tục quá 30 phút.
-                  </p>
-                </div>
-                <span className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
-                  Ngưỡng cảnh báo: &gt; 8°C
-                </span>
-              </div>
-              <div className="mt-4 divide-y divide-slate-100">
-                {filteredBatches.map((batch) => (
-                  <div
-                    key={batch.id}
-                    className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedBatch(batch)}
-                        className="font-semibold text-slate-900 hover:text-emerald-700"
-                      >
-                        {batch.batch_code}
-                      </button>
-                      <p className="text-sm text-slate-500">
-                        {batch.product_name} ·{" "}
-                        {batch.current_location || "Chưa cập nhật vị trí"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`text-sm font-semibold ${batch.cold_chain_alert ? "text-rose-700" : "text-emerald-700"}`}
-                      >
-                        {batch.cold_chain_alert
-                          ? "Vi phạm chuỗi lạnh"
-                          : `${batch.temperature_c ?? "--"}°C`}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleSensorSimulation(batch.id)}
-                        className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700"
-                      >
-                        Giả lập cảm biến
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {temperatureLogs.length > 0 && (
-                <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-                  Đã ghi {temperatureLogs.length} mẫu mới; mẫu gần nhất:{" "}
-                  {temperatureLogs.at(-1).temperature}°C lúc{" "}
-                  {new Date(temperatureLogs.at(-1).timestamp).toLocaleString(
-                    "vi-VN",
-                  )}
-                  .
-                </div>
-              )}
-            </section>
-          )}
+        {(selectedView === "Chuỗi lạnh" || selectedView === "Kiểm soát") && (
+          <ColdChainView user={user} batches={batches} onBatchUpdated={loadData} />
+        )}
 
         {selectedView === "Thu hồi" && (
           <RecallManagementView user={user} batches={batches} onBatchUpdated={loadData} />

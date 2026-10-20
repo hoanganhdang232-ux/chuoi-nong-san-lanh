@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import { useToast } from "../context/ToastContext.jsx";
+import { scrollToElement } from "../utils/scrollHelper.js";
 
 export default function LocationsView({
   batches = [],
@@ -65,6 +66,7 @@ export default function LocationsView({
     status: "Active",
   });
   const [submitting, setSubmitting] = useState(false);
+  const [phoneError, setPhoneError] = useState("");
 
   // Transfer Batch Modal State (T-65)
   const [assignModalOpen, setAssignModalOpen] = useState(false);
@@ -141,6 +143,7 @@ export default function LocationsView({
       status: "Active",
     });
     setIsFormOpen(true);
+    setPhoneError("");
   };
 
   const handleOpenEdit = (loc) => {
@@ -154,6 +157,7 @@ export default function LocationsView({
       status: loc.status || "Active",
     });
     setIsFormOpen(true);
+    setPhoneError("");
   };
 
   const handleToggleStatus = async (id, currentStatus) => {
@@ -164,6 +168,7 @@ export default function LocationsView({
         `Đã chuyển trạng thái sang ${nextStatus === "ACTIVE" ? "Hoạt động" : "Tạm dừng"}.`,
       );
       await fetchLocations();
+      scrollToElement(`location-row-${id}`, { block: "center", highlight: true });
     } catch (err) {
       toast.error(err.message);
     }
@@ -185,17 +190,30 @@ export default function LocationsView({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (formData.phone && formData.phone.trim()) {
+      const cleanPhone = formData.phone.trim().replace(/[\s.-]/g, "");
+      if (!/^0\d{9}$/.test(cleanPhone)) {
+        setPhoneError("Số điện thoại không hợp lệ. Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0.");
+        toast.error("Số điện thoại không hợp lệ. Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0.");
+        return;
+      }
+    }
     setSubmitting(true);
+    let targetLocationId = editingId;
     try {
       if (editingId) {
         await api.updateLocation(editingId, formData);
         toast.success("Cập nhật thông tin cửa hàng thành công.");
       } else {
-        await api.createLocation(formData);
+        const res = await api.createLocation(formData);
+        targetLocationId = res?.location?.id || res?.id;
         toast.success("Thêm mới cửa hàng thành công.");
       }
       setIsFormOpen(false);
       await fetchLocations();
+      if (targetLocationId) {
+        scrollToElement(`location-row-${targetLocationId}`, { block: "center", highlight: true });
+      }
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -273,6 +291,8 @@ export default function LocationsView({
       if (onBatchUpdated) onBatchUpdated();
       await fetchLocations();
       await fetchTransfersHistory();
+      setActiveTab("history");
+      scrollToElement("internal-transfers-table-container", { block: "start", highlight: true });
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -506,6 +526,7 @@ export default function LocationsView({
                       return (
                         <tr
                           key={loc.id}
+                          id={`location-row-${loc.id}`}
                           className={`transition-colors ${
                             idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
                           } hover:bg-emerald-50/40`}
@@ -534,10 +555,17 @@ export default function LocationsView({
                           </td>
                           <td className="px-5 py-4 text-slate-600 font-mono">
                             {loc.phone ? (
-                              <span className="flex items-center gap-1.5">
-                                <Phone size={13} className="text-slate-400" />
-                                {loc.phone}
-                              </span>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="flex items-center gap-1.5">
+                                  <Phone size={13} className="text-slate-400" />
+                                  {loc.phone}
+                                </span>
+                                {!/^0\d{9}$/.test(String(loc.phone).replace(/[\s.-]/g, "")) && (
+                                  <span className="inline-flex items-center text-[10px] text-amber-600 font-medium font-sans">
+                                    ⚠️ Cần sửa (phải 10 số)
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-slate-400 italic">--</span>
                             )}
@@ -648,7 +676,7 @@ export default function LocationsView({
       {/* TAB 2: Lịch sử Điều chuyển Nội bộ (T-65) */}
       {activeTab === "history" && (
         <div className="space-y-3">
-          <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+          <div id="internal-transfers-table-container" className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider border-b border-slate-200/80">
@@ -682,6 +710,7 @@ export default function LocationsView({
                     paginatedTransfers.map((t, idx) => (
                       <tr
                         key={t.id || idx}
+                        id={`internal-transfer-row-${t.id}`}
                         className={`transition-colors ${
                           idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
                         } hover:bg-emerald-50/30`}
@@ -857,13 +886,48 @@ export default function LocationsView({
               </label>
 
               <label className="block font-semibold text-slate-700">
-                Số điện thoại liên hệ
+                <div className="flex items-center justify-between">
+                  <span>Số điện thoại liên hệ</span>
+                  <span className="text-[11px] font-normal text-slate-400">10 số, bắt đầu bằng 0</span>
+                </div>
                 <input
-                  placeholder="VD: 02439123456"
+                  type="tel"
+                  placeholder="VD: 0912345678"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-2.5 font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  maxLength={10}
+                  onChange={(e) => {
+                    const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
+                    setFormData({ ...formData, phone: digitsOnly });
+                    if (digitsOnly.length > 0 && !digitsOnly.startsWith("0")) {
+                      setPhoneError("Số điện thoại phải bắt đầu bằng số 0.");
+                    } else if (digitsOnly.length > 0 && digitsOnly.length < 10) {
+                      setPhoneError(`Số điện thoại phải gồm đúng 10 số (hiện có ${digitsOnly.length} số).`);
+                    } else {
+                      setPhoneError("");
+                    }
+                  }}
+                  onBlur={() => {
+                    if (formData.phone && formData.phone.trim().length > 0) {
+                      if (!/^0\d{9}$/.test(formData.phone.trim())) {
+                        setPhoneError("Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0.");
+                      } else {
+                        setPhoneError("");
+                      }
+                    }
+                  }}
+                  className={`mt-1 w-full rounded-xl border bg-white p-2.5 font-mono text-slate-900 focus:outline-none focus:ring-2 ${
+                    phoneError
+                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-500/20"
+                      : "border-slate-300 focus:border-emerald-500 focus:ring-emerald-500/20"
+                  }`}
                 />
+                {phoneError ? (
+                  <p className="mt-1 text-xs font-semibold text-rose-500 flex items-center gap-1">
+                    <span>⚠️</span> {phoneError}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-400">Định dạng chuẩn 10 chữ số (VD: 0912345678).</p>
+                )}
               </label>
 
               <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">

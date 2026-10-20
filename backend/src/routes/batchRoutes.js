@@ -14,7 +14,7 @@ import {
   decideTransfer,
 } from "../services/transferService.js";
 import { batchController } from "../controllers/batchController.js";
-import { parseCsv } from "../utils/csv.js";
+import { parseCsv, parseDateFlexible, parseNumberFlexible } from "../utils/csv.js";
 
 const router = Router();
 const organizationAdminRoles = [
@@ -214,9 +214,24 @@ router.post(
       return res.status(400).json({ message: "Mỗi lần chỉ nhập tối đa 500 lô." });
     }
 
-    const requiredHeaders = ["productId", "quantityKg"];
     const headers = Object.keys(rows[0]);
-    if (requiredHeaders.some((header) => !headers.includes(header))) {
+    // Tìm key tương ứng linh hoạt (hỗ trợ cả camelCase, snake_case, tiếng Việt không dấu)
+    const findFieldKey = (candidates) => {
+      for (const cand of candidates) {
+        const norm = cand.toLowerCase().replace(/[\s_-]/g, "");
+        const found = headers.find((h) => h.toLowerCase().replace(/[\s_-]/g, "") === norm);
+        if (found) return found;
+      }
+      return null;
+    };
+
+    const productIdKey = findFieldKey(["productId", "product_id", "product", "id_product", "masanpham"]);
+    const quantityKgKey = findFieldKey(["quantityKg", "quantity_kg", "quantity", "soluong", "kg"]);
+    const batchCodeKey = findFieldKey(["batchCode", "batch_code", "code", "malo"]);
+    const currentLocationKey = findFieldKey(["currentLocation", "current_location", "location", "vitri", "kho"]);
+    const harvestedAtKey = findFieldKey(["harvestedAt", "harvested_at", "harvest_date", "date", "ngaythuhoach"]);
+
+    if (!productIdKey || !quantityKgKey) {
       return res.status(400).json({
         message: "CSV cần có cột productId, quantityKg; có thể thêm batchCode, currentLocation, harvestedAt.",
       });
@@ -228,13 +243,20 @@ router.post(
     const seenCodes = new Set();
     for (const [index, row] of rows.entries()) {
       const line = index + 2;
-      const productId = Number(row.productId);
-      const quantity = Number(row.quantityKg);
-      const batchCode = row.batchCode?.trim() || null;
-      const location = row.currentLocation?.trim() || "Chưa cập nhật";
-      const harvestedAt = row.harvestedAt?.trim()
-        ? new Date(row.harvestedAt.trim())
+      const rawProductId = row[productIdKey];
+      const rawQuantity = row[quantityKgKey];
+      const rawBatchCode = batchCodeKey ? row[batchCodeKey] : null;
+      const rawLocation = currentLocationKey ? row[currentLocationKey] : null;
+      const rawHarvestedAt = harvestedAtKey ? row[harvestedAtKey] : null;
+
+      const productId = Number(rawProductId);
+      const quantity = parseNumberFlexible(rawQuantity);
+      const batchCode = rawBatchCode && String(rawBatchCode).trim() ? String(rawBatchCode).trim() : null;
+      const location = rawLocation && String(rawLocation).trim() ? String(rawLocation).trim() : "Chưa cập nhật";
+      const harvestedAt = rawHarvestedAt && String(rawHarvestedAt).trim()
+        ? parseDateFlexible(String(rawHarvestedAt).trim())
         : new Date();
+
       if (!Number.isSafeInteger(productId) || productId <= 0) errors.push(`Dòng ${line}: productId không hợp lệ.`);
       if (!Number.isFinite(quantity) || quantity <= 0) errors.push(`Dòng ${line}: quantityKg phải lớn hơn 0.`);
       if (Number.isNaN(harvestedAt.getTime()) || harvestedAt > new Date()) errors.push(`Dòng ${line}: harvestedAt không hợp lệ hoặc ở tương lai.`);

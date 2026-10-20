@@ -250,4 +250,29 @@ export const api = {
     request("/v1/notifications/read-all", {
       method: "POST",
     }),
+  // ─── SPRINT 6 COLD CHAIN APIs ──────────────────────────────────────────────
+  updateProductColdChainConfig: (productId, payload) =>
+    request(`/v1/products/${productId}/cold-chain-config`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  getProductColdChainConfig: (productId) =>
+    request(`/v1/products/${productId}/cold-chain-config`),
+  sendTemperatureTelemetry: (payload) =>
+    request("/v1/telemetry/temperature", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getBatchTemperatureHistory: (batchId) =>
+    request(`/v1/batches/${batchId}/temperature-history`),
+  evaluateColdChain: (batchId) =>
+    request(`/v1/batches/${batchId}/evaluate-cold-chain`, {
+      method: "POST",
+    }),
+  archiveColdChainLogs: (daysOld = 30) =>
+    request("/v1/cold-chain/maintenance/archive", {
+      method: "POST",
+      body: JSON.stringify({ daysOld }),
+    }),
+  getColdChainOverview: () => request("/v1/cold-chain/overview"),
 };

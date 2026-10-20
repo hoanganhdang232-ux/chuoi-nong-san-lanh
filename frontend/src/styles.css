@@ -473,20 +473,25 @@ pre,
 
 @keyframes highlightRow {
   0% {
-    background-color: rgba(16, 185, 129, 0.25);
-    outline: 2px solid rgba(16, 185, 129, 0.5);
+    background-color: rgba(16, 185, 129, 0.28) !important;
+    outline: 2px solid rgba(16, 185, 129, 0.8) !important;
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3), 0 0 25px rgba(16, 185, 129, 0.25) !important;
   }
-  70% {
-    background-color: rgba(16, 185, 129, 0.1);
+  50% {
+    background-color: rgba(16, 185, 129, 0.16) !important;
+    outline: 2px solid rgba(16, 185, 129, 0.5) !important;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
   }
   100% {
     background-color: transparent;
     outline: 2px solid transparent;
+    box-shadow: none;
   }
 }
 
 .animate-highlight-row {
-  animation: highlightRow 3s ease-out forwards;
+  animation: highlightRow 2.8s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  border-radius: 0.5rem;
 }
 
 /* ========================================================

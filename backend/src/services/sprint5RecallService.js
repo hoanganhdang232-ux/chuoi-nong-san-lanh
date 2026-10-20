@@ -3,7 +3,12 @@ import { getDb } from "../db/database.js";
 import { createEventLog } from "./batchService.js";
 import { traceRecallDescendants } from "./recallGraphService.js";
 import { broadcastRecallEvent } from "./sseService.js";
-import { sendRecallNotificationsToOrg } from "./notificationService.js";
+import {
+  sendRecallNotificationsToOrg,
+  sendNotificationToOrg,
+  sendNotificationToAuditors,
+  sendNotificationToUser,
+} from "./notificationService.js";
 
 /**
  * SCRUM-169, SCRUM-171, SCRUM-172: Sprint 5 Recall Service.
@@ -122,8 +127,74 @@ export function createRecall({ rootBatchId, reason, actorId, organizationId: _or
       affectedOrgIds.add(batch.organization_id);
     }
 
-    // 3. T-85: Tự động gửi thông báo in-app cho toàn bộ các tổ chức đang giữ các lô bị thu hồi
-    for (const orgId of affectedOrgIds) {
+    // Thu thập toàn bộ các tổ chức liên quan (bên giữ hàng, bên giao dịch chuyển nhượng, bên tạo lô gốc)
+    const allRelatedOrgIds = new Set(affectedOrgIds);
+    if (rootBatch.organization_id) allRelatedOrgIds.add(rootBatch.organization_id);
+    if (_organizationId) allRelatedOrgIds.add(_organizationId);
+
+    const affectedBatchIds = allAffectedBatches.map((b) => b.id);
+    if (affectedBatchIds.length > 0) {
+      const placeholders = affectedBatchIds.map(() => "?").join(", ");
+      // Tìm các tổ chức trong lịch sử chuyển giao của các lô này
+      const transferParties = db
+        .prepare(
+          `SELECT DISTINCT from_organization_id, to_organization_id
+           FROM batch_transfers
+           WHERE batch_id IN (${placeholders})`,
+        )
+        .all(...affectedBatchIds);
+
+      for (const tp of transferParties) {
+        if (tp.from_organization_id) allRelatedOrgIds.add(tp.from_organization_id);
+        if (tp.to_organization_id) allRelatedOrgIds.add(tp.to_organization_id);
+      }
+
+      // Tự động thu hồi/hủy các lệnh bàn giao đang chờ xử lý liên quan đến các lô bị thu hồi
+      const pendingTransfers = db
+        .prepare(
+          `SELECT bt.*, b.batch_code, o_from.name AS from_org_name, o_to.name AS to_org_name
+           FROM batch_transfers bt
+           INNER JOIN batches b ON b.id = bt.batch_id
+           LEFT JOIN organizations o_from ON o_from.id = bt.from_organization_id
+           LEFT JOIN organizations o_to ON o_to.id = bt.to_organization_id
+           WHERE bt.batch_id IN (${placeholders}) AND bt.status = 'pending'`,
+        )
+        .all(...affectedBatchIds);
+
+      for (const pt of pendingTransfers) {
+        db.prepare(
+          `UPDATE batch_transfers
+           SET status = 'cancelled',
+               reason = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        ).run(`Lệnh bàn giao bị hủy do lô hàng nằm trong lệnh thu hồi khẩn cấp ${recallCode}.`, pt.id);
+
+        createEventLog({
+          batchId: pt.batch_id,
+          eventType: "batch_transfer_cancelled",
+          actorId,
+          data: {
+            transfer_id: pt.id,
+            from_organization_id: pt.from_organization_id,
+            to_organization_id: pt.to_organization_id,
+            reason: `Lô hàng đã bị thu hồi khẩn cấp (${recallCode}).`,
+            recall_code: recallCode,
+          },
+        });
+
+        // Thông báo cho bên nhận của lệnh bàn giao bị hủy
+        sendRecallNotificationsToOrg({
+          orgId: pt.to_organization_id,
+          title: "CẢNH BÁO THU HỒI NÔNG SẢN KHẨN CẤP",
+          message: `Đơn bàn giao lô ${pt.batch_code} từ ${pt.from_org_name || "bên gửi"} đã bị thu hồi/hủy vì lô hàng nằm trong phạm vi lệnh thu hồi ${recallCode}. Vui lòng không tiếp nhận!`,
+          recallId,
+        });
+      }
+    }
+
+    // 3. T-85: Tự động gửi thông báo in-app cho toàn bộ các tổ chức liên quan
+    for (const orgId of allRelatedOrgIds) {
       sendRecallNotificationsToOrg({
         orgId,
         title: "CẢNH BÁO THU HỒI NÔNG SẢN KHẨN CẤP",
@@ -132,15 +203,31 @@ export function createRecall({ rootBatchId, reason, actorId, organizationId: _or
       });
     }
 
+    // Đồng thời gửi thông báo in-app cho các tài khoản Kiểm toán viên (Auditor)
+    sendNotificationToAuditors({
+      title: "CẢNH BÁO THU HỒI NÔNG SẢN KHẨN CẤP",
+      message: `Lệnh thu hồi ${recallCode} đã được kích hoạt đối với lô ${rootBatch.batch_code} do: "${cleanReason}". Tổng số lô bị ảnh hưởng: ${allAffectedBatches.length}.`,
+      type: "RECALL_INITIATED",
+      kind: "recall",
+    });
+
     db.exec("COMMIT");
 
-    // 4. T-83: Bắn Server-Sent Events (SSE) thời gian thực
+    // 4. T-83: Bắn Server-Sent Events (SSE) thời gian thực đầy đủ định dạng
     broadcastRecallEvent("recall_created", {
+      type: "RECALL_INITIATED",
       recall_id: recallId,
+      recallId,
       recall_code: recallCode,
+      recallCode,
+      root_batch_id: rootId,
+      rootBatchId: rootId,
       root_batch_code: rootBatch.batch_code,
+      rootBatchCode: rootBatch.batch_code,
       total_affected: allAffectedBatches.length,
+      totalAffected: allAffectedBatches.length,
       reason: cleanReason,
+      message: `Lệnh thu hồi ${recallCode} đối với lô ${rootBatch.batch_code} vừa được kích hoạt!`,
       created_at: new Date().toISOString(),
     });
 
@@ -331,14 +418,71 @@ export function quarantineBatch({ batchId, quarantineLocation, actorId, userOrgI
       },
     });
 
+    // Lấy thông tin tổ chức thực hiện niêm phong và lệnh thu hồi liên quan
+    const recallInfo = db
+      .prepare(
+        `SELECT r.id AS recall_id, r.recall_code, r.created_by, r.root_batch_id,
+                b.batch_code AS root_batch_code,
+                b.organization_id AS root_org_id,
+                o.name AS quarantining_org_name
+         FROM recall_affected_batches rab
+         INNER JOIN recalls r ON r.id = rab.recall_id
+         INNER JOIN batches b ON b.id = r.root_batch_id
+         LEFT JOIN organizations o ON o.id = ?
+         WHERE rab.batch_id = ?
+         ORDER BY rab.id DESC
+         LIMIT 1`,
+      )
+      .get(batch.organization_id, bId);
+
+    const orgName = recallInfo?.quarantining_org_name || "Đơn vị phụ trách";
+    const notifTitle = "XÁC NHẬN NIÊM PHONG LÔ THU HỒI";
+    const notifMessage = `Đơn vị ${orgName} đã hoàn tất niêm phong và cách ly lô ${batch.batch_code} tại: ${locationText}.`;
+
+    // Thông báo cho người tạo lệnh thu hồi
+    if (recallInfo?.created_by && recallInfo.created_by !== actorId) {
+      sendNotificationToUser({
+        userId: recallInfo.created_by,
+        title: notifTitle,
+        message: notifMessage,
+        type: "RECALL_CONFIRMED",
+        kind: "quarantine",
+      });
+    }
+
+    // Thông báo cho tổ chức tạo lô gốc nếu khác tổ chức hiện tại
+    if (recallInfo?.root_org_id && recallInfo.root_org_id !== batch.organization_id) {
+      sendNotificationToOrg({
+        orgId: recallInfo.root_org_id,
+        title: notifTitle,
+        message: notifMessage,
+        type: "RECALL_CONFIRMED",
+        kind: "quarantine",
+      });
+    }
+
+    // Thông báo cho Auditor
+    sendNotificationToAuditors({
+      title: notifTitle,
+      message: notifMessage,
+      type: "RECALL_CONFIRMED",
+      kind: "quarantine",
+    });
+
     db.exec("COMMIT");
 
-    // 4. T-83: Bắn tín hiệu SSE để cập nhật progress bar thời gian thực
+    // 4. T-83: Bắn tín hiệu SSE để cập nhật progress bar và toast thời gian thực
     broadcastRecallEvent("batch_quarantined", {
+      type: "RECALL_CONFIRMED",
       batch_id: bId,
+      batchId: bId,
       batch_code: batch.batch_code,
+      batchCode: batch.batch_code,
       organization_id: batch.organization_id,
+      organizationId: batch.organization_id,
       quarantine_location: locationText,
+      quarantineLocation: locationText,
+      message: `Lô ${batch.batch_code} đã được niêm phong tại ${locationText}.`,
       quarantined_at: new Date().toISOString(),
     });
 

@@ -36,10 +36,14 @@ export function registerSseClient(req, res) {
 }
 
 export function broadcastRecallEvent(eventType, payload) {
-  const message = `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`;
+  const defaultMsg = `data: ${JSON.stringify({ ...payload, event: eventType })}\n\n`;
+  const namedMsg = `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`;
   for (const client of clients) {
     try {
-      client.write(message);
+      client.write(defaultMsg);
+      if (eventType && eventType !== "message") {
+        client.write(namedMsg);
+      }
     } catch {
       clients.delete(client);
     }

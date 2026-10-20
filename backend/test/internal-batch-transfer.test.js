@@ -76,7 +76,7 @@ test("SUBTASK 1 (T-64): Locations CRUD with code, address, phone, and status", a
       code: "CH-TX-01",
       name: "Cửa hàng Thanh Xuân",
       address: "100 Nguyễn Trãi, Thanh Xuân, Hà Nội",
-      phone: "02431239999",
+      phone: "0943123999",
       status: "Active",
     }),
   });
@@ -84,10 +84,39 @@ test("SUBTASK 1 (T-64): Locations CRUD with code, address, phone, and status", a
   const createdData = await createRes.json();
   assert.equal(createdData.location.code, "CH-TX-01");
   assert.equal(createdData.location.name, "Cửa hàng Thanh Xuân");
-  assert.equal(createdData.location.phone, "02431239999");
+  assert.equal(createdData.location.phone, "0943123999");
   assert.equal(createdData.location.status.toUpperCase(), "ACTIVE");
 
   const newLocId = createdData.location.id;
+
+  // 1.1. Từ chối số điện thoại không hợp lệ (13 số như 0222222222222 hoặc không bắt đầu bằng số 0)
+  const invalidPhoneRes1 = await fetch(`${baseUrl}/api/v1/locations`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: "Cửa hàng SĐT sai 13 số",
+      address: "123 Đường Láng",
+      phone: "0222222222222",
+    }),
+  });
+  assert.equal(invalidPhoneRes1.status, 400);
+
+  const invalidPhoneRes2 = await fetch(`${baseUrl}/api/v1/locations`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: "Cửa hàng SĐT không bắt đầu bằng 0",
+      address: "123 Đường Láng",
+      phone: "1234567890",
+    }),
+  });
+  assert.equal(invalidPhoneRes2.status, 400);
 
   // 2. Không được tạo trùng code (trả 409 Conflict hoặc 400)
   const duplicateCodeRes = await fetch(`${baseUrl}/api/v1/locations`, {
