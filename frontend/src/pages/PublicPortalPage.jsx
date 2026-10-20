@@ -42,7 +42,7 @@ export default function PublicPortalPage() {
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-300 text-xs font-semibold uppercase tracking-wider mb-4 border border-white/15">
             <Sparkles size={14} /> Cổng tra cứu công khai trực tuyến
           </div>
-          
+
           <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-white mb-3">
             Tra cứu Nguồn gốc Nông sản & Giám sát Chuỗi lạnh
           </h1>

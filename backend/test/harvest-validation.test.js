@@ -32,7 +32,7 @@ test.before(async () => {
   db.exec("PRAGMA foreign_keys = ON;");
   runMigrations();
   seedDemoData();
-  
+
   const app = createApp();
   server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, resolve));
@@ -40,26 +40,26 @@ test.before(async () => {
 
   // Find a farm admin
   const user = db.prepare("SELECT * FROM users WHERE role = 'farm_admin' LIMIT 1").get();
-  
+
   const res = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: user.email, password: "Farm@123" })
   });
-  
+
   const data = await res.json();
   farmerToken = data.token;
-  
+
   // Find a land plot belonging to this farm admin's org
   const plot = db.prepare(`
-    SELECT lp.id 
-    FROM land_plots lp 
-    INNER JOIN farms f ON f.id = lp.farm_id 
-    WHERE f.organization_id = ? 
+    SELECT lp.id
+    FROM land_plots lp
+    INNER JOIN farms f ON f.id = lp.farm_id
+    WHERE f.organization_id = ?
     LIMIT 1
   `).get(user.organization_id);
   landPlotId = plot.id;
-  
+
   // Find a product
   const product = db.prepare("SELECT id FROM products WHERE organization_id = ? LIMIT 1").get(user.organization_id);
   productId = product.id;
@@ -73,10 +73,10 @@ test("AC1 - Happy path: Cho phép tạo khi khối lượng hợp lệ và ngày
   const today = new Date();
   // We use ISO string for date formatting as frontend uses "YYYY-MM-DD" mostly, but let's just use the start of today
   const harvestedAt = today.toISOString();
-  
+
   const res = await fetch(`${baseUrl}/api/batches/harvest`, {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${farmerToken}`
     },
@@ -87,7 +87,7 @@ test("AC1 - Happy path: Cho phép tạo khi khối lượng hợp lệ và ngày
       harvestedAt
     })
   });
-  
+
   const data = await res.json();
   assert.equal(res.status, 201, `Expected 201 Created but got ${res.status}: ${data.message}`);
   assert.equal(data.batch.initial_quantity, 100);
@@ -96,10 +96,10 @@ test("AC1 - Happy path: Cho phép tạo khi khối lượng hợp lệ và ngày
 test("AC1 - Báo lỗi khi ngày thu hoạch ở TƯƠNG LAI", async () => {
   const futureDate = new Date();
   futureDate.setDate(futureDate.getDate() + 2);
-  
+
   const res = await fetch(`${baseUrl}/api/batches/harvest`, {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${farmerToken}`
     },
@@ -110,7 +110,7 @@ test("AC1 - Báo lỗi khi ngày thu hoạch ở TƯƠNG LAI", async () => {
       harvestedAt: futureDate.toISOString()
     })
   });
-  
+
   const data = await res.json();
   assert.equal(res.status, 400);
   assert.equal(data.error_code, "HARVEST_DATE_IN_FUTURE");
@@ -119,10 +119,10 @@ test("AC1 - Báo lỗi khi ngày thu hoạch ở TƯƠNG LAI", async () => {
 
 test("AC2 - Báo lỗi khi khối lượng thu hoạch <= 0", async () => {
   const today = new Date();
-  
+
   const res = await fetch(`${baseUrl}/api/batches/harvest`, {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${farmerToken}`
     },
@@ -133,7 +133,7 @@ test("AC2 - Báo lỗi khi khối lượng thu hoạch <= 0", async () => {
       harvestedAt: today.toISOString()
     })
   });
-  
+
   const data = await res.json();
   assert.equal(res.status, 400);
   assert.equal(data.error_code, "QUANTITY_INVALID");
@@ -144,18 +144,18 @@ test("AC3 - Báo lỗi 403 Forbidden khi thửa thuộc tổ chức khác (kiể
   const db = getDb();
   // Find a plot that does NOT belong to the farmer's organization
   db.prepare("SELECT organization_id FROM users WHERE role = 'farm_admin' LIMIT 1").get();
-  
+
   // create a dummy org and plot
   const orgResult = db.prepare("INSERT INTO organizations(name, type) VALUES ('Org Khac', 'farm')").run();
   const farmResult = db.prepare("INSERT INTO farms(organization_id, name) VALUES (?, 'Farm Khac')").run(orgResult.lastInsertRowid);
   const plotResult = db.prepare("INSERT INTO land_plots(farm_id, name, area_ha) VALUES (?, 'Plot Khac', 10)").run(farmResult.lastInsertRowid);
-  
+
   const foreignPlotId = plotResult.lastInsertRowid;
-  
+
   // Also pass invalid quantity (-100) to ensure the 403 authorization check happens BEFORE the 400 validation
   const res = await fetch(`${baseUrl}/api/batches/harvest`, {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${farmerToken}`
     },
@@ -166,7 +166,7 @@ test("AC3 - Báo lỗi 403 Forbidden khi thửa thuộc tổ chức khác (kiể
       harvestedAt: new Date().toISOString()
     })
   });
-  
+
   const data = await res.json();
   assert.equal(res.status, 403, "Expected 403 Forbidden, but plot check was not done first or failed.");
   assert.equal(data.error_code, "PLOT_FORBIDDEN");
@@ -185,7 +185,7 @@ test("AC4 - Prevent duplicate submit (Idempotency server protection)", async () 
   // Gửi request đầu tiên
   const res1 = await fetch(`${baseUrl}/api/batches/harvest`, {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${farmerToken}`
     },
@@ -197,7 +197,7 @@ test("AC4 - Prevent duplicate submit (Idempotency server protection)", async () 
   // Gửi request thứ hai ngay sau đó (bị trùng)
   const res2 = await fetch(`${baseUrl}/api/batches/harvest`, {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${farmerToken}`
     },

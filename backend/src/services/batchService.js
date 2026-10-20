@@ -463,7 +463,7 @@ export function updateSellOut({
   if (batch.status === "sold_out") {
     throw new Error("Lô hàng đã được bán hết trước đó.");
   }
-  
+
   if (batch.status === "recalled") {
     throw new Error("Lô hàng đã bị thu hồi, không thể thực hiện bán hết.");
   }
@@ -495,4 +495,3 @@ export function updateSellOut({
     },
   });
 }
-

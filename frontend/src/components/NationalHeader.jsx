@@ -23,7 +23,7 @@ export default function NationalHeader() {
              {/* Ngôi sao đỏ nhỏ giả lập */}
              <div className="text-red-600 text-2xl leading-none font-bold">★</div>
           </div>
-          
+
           <div>
             <div className="text-sm sm:text-xl md:text-2xl font-bold uppercase tracking-wide flex items-center gap-2.5">
               HỆ THỐNG TRUY XUẤT NGUỒN GỐC VÀ GIÁM SÁT CHUỖI LẠNH NÔNG SẢN
@@ -37,20 +37,20 @@ export default function NationalHeader() {
         <div className="flex items-center justify-between h-14">
           {/* Cụm Link Bờ Trái */}
           <nav className="flex items-center gap-1 sm:gap-2 h-full text-[13px] sm:text-sm font-medium">
-            <Link 
-              to="/" 
+            <Link
+              to="/"
               className={`px-3 sm:px-4 py-2 rounded-md transition-colors ${isHome ? 'bg-[#edf5eb] text-[#1b5e20] font-bold' : 'text-slate-600 hover:text-[#1b5e20] hover:bg-slate-50'}`}
             >
               Trang chủ
             </Link>
-            <Link 
-              to="/providers" 
+            <Link
+              to="/providers"
               className={`px-3 sm:px-4 py-2 rounded-md transition-colors ${location.pathname === '/providers' ? 'bg-[#edf5eb] text-[#1b5e20] font-bold' : 'text-slate-600 hover:text-[#1b5e20] hover:bg-slate-50'}`}
             >
               Đơn vị cung cấp giải pháp
             </Link>
-            <Link 
-              to="/about" 
+            <Link
+              to="/about"
               className={`hidden md:block px-3 sm:px-4 py-2 rounded-md transition-colors ${location.pathname === '/about' ? 'bg-[#edf5eb] text-[#1b5e20] font-bold' : 'text-slate-600 hover:text-[#1b5e20] hover:bg-slate-50'}`}
             >
               Giới thiệu

@@ -91,7 +91,7 @@ export class BatchController {
   async sellOut(req, res) {
     try {
       const batchId = Number(req.params.id);
-      
+
       // Only distributor_admin can perform this action
       if (req.user.role !== "distributor_admin" && req.user.role !== "auditor") {
         return res.status(403).json({ message: "Chỉ nhà phân phối mới có quyền thực hiện thao tác này." });

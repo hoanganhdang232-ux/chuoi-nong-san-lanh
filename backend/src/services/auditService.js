@@ -69,7 +69,7 @@ export function anonymizeOldData(months = 1) {
   // Xóa PII của nông hộ (tên, sđt) đối với các lô đã hoàn tất trên X tháng.
   // Quan trọng: Chỉ sửa bảng users và farms. Không chạm vào event_logs.
   // Điều này đảm bảo tính toàn vẹn của mã băm (SHA-256) Blockchain không bị vỡ.
-  
+
   let changes = 0;
   db.exec("BEGIN IMMEDIATE");
   try {
