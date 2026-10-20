@@ -22,7 +22,9 @@ function AppRoutes() {
 
   return (
     <Routes>
+      <Route path="/p/:publicCode" element={<PublicTracePage />} />
       <Route path="/trace/:batchCode" element={<PublicTracePage />} />
+      <Route path="/public/trace/:batchCode" element={<PublicTracePage />} />
       <Route
         path="/login"
         element={user ? <Navigate to="/" replace /> : <LoginPage />}

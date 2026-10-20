@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from "react";
-import { Bell, Siren, CheckCircle2, AlertTriangle, Info, Check, RefreshCw } from "lucide-react";
+import { Bell, Siren, CheckCircle2, AlertTriangle, Info, Check, RefreshCw, LayoutList } from "lucide-react";
 import { api } from "../api.js";
 import { useToast } from "../context/ToastContext.jsx";
+import NotificationCenterDrawer from "./NotificationCenterDrawer.jsx";
 
 export default function NotificationBell({ user }) {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef(null);
   const { addToast } = useToast() || {};
@@ -40,17 +42,38 @@ export default function NotificationBell({ user }) {
       const sseUrl = "/api/v1/recalls/stream";
       eventSource = new EventSource(sseUrl);
 
-      eventSource.onmessage = (event) => {
+      const handleIncomingEvent = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === "RECALL_INITIATED" || data.type === "RECALL_CONFIRMED") {
-            // Khi có lệnh thu hồi hoặc xác nhận niêm phong mới, cập nhật danh sách
-            fetchNotifications();
-            if (addToast) {
+          // Luôn làm mới danh sách thông báo và badge số lượng
+          fetchNotifications();
+
+          if (addToast) {
+            let toastTitle = null;
+            let toastTone = "info";
+
+            if (data.type === "RECALL_INITIATED" || event.type === "recall_created") {
+              toastTitle = "LỆNH THU HỒI KHẨN CẤP";
+              toastTone = "error";
+            } else if (data.type === "RECALL_CONFIRMED" || event.type === "batch_quarantined") {
+              toastTitle = "NIÊM PHONG LÔ THÀNH CÔNG";
+              toastTone = "success";
+            } else if (data.type === "TRANSFER_CANCELLED" || event.type === "transfer_cancelled") {
+              toastTitle = "ĐƠN BÀN GIAO ĐÃ BỊ THU HỒI";
+              toastTone = "warning";
+            } else if (data.type === "TRANSFER_REQUEST" || event.type === "transfer_created") {
+              toastTitle = "YÊU CẦU BÀN GIAO MỚI";
+              toastTone = "info";
+            } else if (data.type === "TRANSFER_CONFIRMED" || data.type === "TRANSFER_REJECTED") {
+              toastTitle = data.type === "TRANSFER_CONFIRMED" ? "BÀN GIAO THÀNH CÔNG" : "TỪ CHỐI BÀN GIAO";
+              toastTone = data.type === "TRANSFER_CONFIRMED" ? "success" : "warning";
+            }
+
+            if (toastTitle) {
               addToast({
-                title: data.type === "RECALL_INITIATED" ? "LỆNH THU HỒI KHẨN CẤP" : "NIÊM PHONG LÔ THÀNH CÔNG",
-                message: data.message || `Lệnh thu hồi đối với lô ${data.rootBatchCode || ""}`,
-                tone: data.type === "RECALL_INITIATED" ? "error" : "success",
+                title: toastTitle,
+                message: data.message || `Thông báo liên quan đến lô ${data.rootBatchCode || data.batchCode || data.batch_code || ""}`,
+                tone: toastTone,
               });
             }
           }
@@ -58,6 +81,13 @@ export default function NotificationBell({ user }) {
           console.error("Lỗi parse SSE message:", e);
         }
       };
+
+      eventSource.onmessage = handleIncomingEvent;
+      eventSource.addEventListener("recall_created", handleIncomingEvent);
+      eventSource.addEventListener("batch_quarantined", handleIncomingEvent);
+      eventSource.addEventListener("transfer_cancelled", handleIncomingEvent);
+      eventSource.addEventListener("transfer_created", handleIncomingEvent);
+      eventSource.addEventListener("transfer_decided", handleIncomingEvent);
 
       eventSource.onerror = () => {
         // Tránh log spam nếu ngắt kết nối
@@ -255,13 +285,31 @@ export default function NotificationBell({ user }) {
           </div>
 
           {/* Footer */}
-          <div className="border-t border-slate-100 dark:border-slate-800 px-4 py-2 bg-slate-50/50 dark:bg-slate-900/50 text-center">
-            <span className="text-[11px] text-slate-400">
-              Giám sát chuỗi lạnh & Cảnh báo thu hồi nông sản
+          <div className="border-t border-slate-100 dark:border-slate-800 p-2.5 bg-slate-50/80 dark:bg-slate-900/80 flex items-center justify-between">
+            <span className="text-[10px] text-slate-400">
+              Giám sát chuỗi lạnh & Cảnh báo thu hồi
             </span>
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                setIsDrawerOpen(true);
+              }}
+              className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:underline"
+            >
+              <LayoutList size={13} />
+              <span>Xem tất cả</span>
+            </button>
           </div>
         </div>
       )}
+
+      {/* Centralized Notification Center Drawer */}
+      <NotificationCenterDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        onRefreshBell={fetchNotifications}
+      />
     </div>
   );
 }

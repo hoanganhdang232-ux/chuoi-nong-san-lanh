@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   ShieldCheck,
   CheckCircle2,
-  Download,
   Search,
   RefreshCw,
   Building2,
@@ -14,9 +13,12 @@ import {
   Radio,
   Layers,
   X,
+  FileSpreadsheet,
 } from "lucide-react";
 import { api } from "../api.js";
 import { useToast } from "../context/ToastContext.jsx";
+import { scrollToElement } from "../utils/scrollHelper.js";
+import * as XLSX from "xlsx";
 
 export default function RecallManagementView({ user, batches = [], onBatchUpdated }) {
   const { addToast } = useToast() || {};
@@ -110,29 +112,35 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
         setSseConnected(true);
       };
 
-      eventSource.onmessage = (event) => {
+      const handleSseMessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload.type === "RECALL_INITIATED") {
+          const isRecall = payload.type === "RECALL_INITIATED" || event.type === "recall_created";
+          const isQuarantine = payload.type === "RECALL_CONFIRMED" || event.type === "batch_quarantined";
+
+          if (isRecall) {
             // Có lệnh thu hồi mới
             loadRecalls();
             if (addToast) {
+              const code = payload.recallCode || payload.recall_code || "";
               addToast({
                 title: "LỆNH THU HỒI MỚI",
-                message: `Lệnh ${payload.recallCode} vừa được kích hoạt!`,
+                message: code ? `Lệnh ${code} vừa được kích hoạt!` : (payload.message || "Có lệnh thu hồi mới được kích hoạt!"),
                 tone: "error",
               });
             }
-          } else if (payload.type === "RECALL_CONFIRMED") {
+          } else if (isQuarantine) {
             // Có một lô vừa được niêm phong cách ly
             if (selectedRecallId) {
               loadAffectedBatches(selectedRecallId);
             }
             loadRecalls();
             if (addToast) {
+              const bCode = payload.batchCode || payload.batch_code || "";
+              const qLoc = payload.quarantineLocation || payload.quarantine_location || "khu vực cách ly";
               addToast({
                 title: "NIÊM PHONG LÔ THÀNH CÔNG",
-                message: `Lô ${payload.batchCode} đã được niêm phong tại ${payload.quarantineLocation || "kho"}.`,
+                message: bCode ? `Lô ${bCode} đã được niêm phong tại ${qLoc}.` : (payload.message || "Lô hàng đã được niêm phong cách ly."),
                 tone: "success",
               });
             }
@@ -141,6 +149,10 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
           console.error("Lỗi phân tích SSE payload:", e);
         }
       };
+
+      eventSource.onmessage = handleSseMessage;
+      eventSource.addEventListener("recall_created", handleSseMessage);
+      eventSource.addEventListener("batch_quarantined", handleSseMessage);
 
       eventSource.onerror = () => {
         setSseConnected(false);
@@ -199,16 +211,97 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [allBatches]);
 
-  // 5. T-78: Xuất CSV
-  const handleExportCsv = async () => {
+  // 5. Xuất báo cáo Excel (.xlsx) chuẩn chỉnh từng cột
+  const handleExportExcel = async () => {
     if (!selectedRecallId) return;
     try {
-      const recallCode = affectedData?.recall?.recall_code || `RECALL-${selectedRecallId}`;
-      await api.downloadRecallCsv(selectedRecallId, recallCode);
+      const recall = affectedData?.recall;
+      const allItems = affectedData?.allItemsForStats || allBatches || [];
+      const recallCode = recall?.recall_code || `RECALL-${selectedRecallId}`;
+
+      const wb = XLSX.utils.book_new();
+      const wsData = [
+        [`BÁO CÁO THU HỒI LÔ HÀNG NÔNG SẢN - LỆNH: ${recallCode}`],
+        [`Lô gốc: ${recall?.root_batch_code || "N/A"} - Sản phẩm: ${recall?.root_product_name || "N/A"}`],
+        [`Lý do: ${recall?.reason || "Không rõ"}`],
+        [`Thời gian phát lệnh: ${recall?.created_at ? new Date(recall.created_at).toLocaleString("vi-VN") : "N/A"}`],
+        [], // Dòng trống cách biệt tiêu đề và bảng dữ liệu
+        [
+          "STT",
+          "Mã Lô Hàng",
+          "Tên Sản Phẩm",
+          "Đơn Vị Tính",
+          "Tổ Chức Quản Lý",
+          "Loại Tổ Chức",
+          "Vị Trí Hiện Tại",
+          "Khối Lượng Còn (kg)",
+          "Đã Bán/Tiêu Thụ (kg)",
+          "Lô Pha Trộn (Blended)",
+          "Trạng Thái Niêm Phong",
+          "Vị Trí Cách Ly",
+          "Thời Gian Niêm Phong",
+          "Người Niêm Phong",
+        ],
+      ];
+
+      allItems.forEach((item, index) => {
+        const isQuarantined = item.quarantine_status === "QUARANTINED" ? "Đã niêm phong" : "Chưa niêm phong";
+        const isBlended = item.is_blended ? "Có (Lô gộp)" : "Không";
+        wsData.push([
+          index + 1,
+          item.batch_code || "",
+          item.product_name || "",
+          item.product_unit || "kg",
+          item.organization_name || "",
+          item.organization_type || "",
+          item.current_location || "",
+          Number(item.remaining_quantity || 0),
+          Number(item.consumed_quantity || 0),
+          isBlended,
+          isQuarantined,
+          item.quarantine_location || "",
+          item.quarantined_at ? new Date(item.quarantined_at).toLocaleString("vi-VN") : "",
+          item.quarantined_by_name || "",
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      // Căn chỉnh độ rộng từng cột rộng rãi, chuyên nghiệp, không bao giờ bị tràn cột hoặc che khuất
+      ws["!cols"] = [
+        { wch: 6 },  // STT
+        { wch: 26 }, // Mã Lô Hàng
+        { wch: 22 }, // Tên Sản Phẩm
+        { wch: 14 }, // Đơn Vị Tính
+        { wch: 28 }, // Tổ Chức Quản Lý
+        { wch: 18 }, // Loại Tổ Chức
+        { wch: 28 }, // Vị Trí Hiện Tại
+        { wch: 20 }, // Khối Lượng Còn (kg)
+        { wch: 20 }, // Đã Bán/Tiêu Thụ (kg)
+        { wch: 24 }, // Lô Pha Trộn (Blended)
+        { wch: 24 }, // Trạng Thái Niêm Phong
+        { wch: 32 }, // Vị Trí Cách Ly
+        { wch: 24 }, // Thời Gian Niêm Phong
+        { wch: 22 }, // Người Niêm Phong
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, "BaoCaoThuHoi");
+      const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([wbout], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Bao_Cao_Thu_Hoi_${recallCode}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
       if (addToast) {
         addToast({
           title: "Xuất file thành công",
-          message: "Báo cáo kiểm toán thu hồi đã được tải xuống dưới dạng CSV.",
+          message: "Báo cáo kiểm toán thu hồi đã được tải xuống dưới dạng Excel (.xlsx).",
           tone: "success",
         });
       }
@@ -216,7 +309,7 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
       if (addToast) {
         addToast({
           title: "Lỗi xuất file",
-          message: err.message || "Không thể tải báo cáo CSV.",
+          message: err.message || "Không thể tải báo cáo Excel.",
           tone: "error",
         });
       }
@@ -316,7 +409,10 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
                 <button
                   key={r.id}
                   type="button"
-                  onClick={() => setSelectedRecallId(r.id)}
+                  onClick={() => {
+                    setSelectedRecallId(r.id);
+                    scrollToElement("recall-detail-section", { block: "start", highlight: true });
+                  }}
                   className={`flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-xs font-bold transition-all shrink-0 border ${
                     isSelected
                       ? "bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20"
@@ -343,7 +439,7 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
 
           {/* ─── T-82: TIẾN ĐỘ THU HỒI REAL-TIME WIDGET ─────────────────────── */}
           {summary && currentRecall && (
-            <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
+            <div id="recall-detail-section" className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-slate-100 dark:border-slate-800/80 pb-4">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -362,15 +458,16 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
                   </p>
                 </div>
 
-                {/* Nút Xuất CSV Báo Cáo (T-78) */}
+                {/* Nút Xuất Báo Cáo Excel (.xlsx) (T-78) */}
                 <button
                   type="button"
-                  id="btn-export-recall-csv"
-                  onClick={handleExportCsv}
+                  id="btn-export-recall-excel"
+                  data-testid="btn-export-recall-csv"
+                  onClick={handleExportExcel}
                   className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 px-3.5 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 shadow-2xs transition-colors"
                 >
-                  <Download size={14} />
-                  <span>Xuất Báo Cáo CSV (T-78)</span>
+                  <FileSpreadsheet size={15} />
+                  <span>Xuất Báo Cáo Excel (.xlsx)</span>
                 </button>
               </div>
 
@@ -566,6 +663,7 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
                       return (
                         <tr
                           key={batch.id}
+                          id={`affected-batch-row-${batch.batch_id || batch.id}`}
                           className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
                             !isQuarantined ? "bg-rose-50/20 dark:bg-rose-950/10" : ""
                           }`}
@@ -690,6 +788,7 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
               setSelectedRecallId(newRecall.id);
             }
             if (onBatchUpdated) onBatchUpdated();
+            scrollToElement("recall-detail-section", { block: "start", highlight: true });
           }}
         />
       )}
@@ -699,13 +798,16 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
         <QuarantineConfirmModal
           batch={quarantineTarget}
           onClose={() => setQuarantineTarget(null)}
-          onSuccess={() => {
+          onSuccess={(quarantinedBatchId) => {
             setQuarantineTarget(null);
             if (selectedRecallId) {
               loadAffectedBatches(selectedRecallId);
             }
             loadRecalls();
             if (onBatchUpdated) onBatchUpdated();
+            if (quarantinedBatchId) {
+              scrollToElement(`affected-batch-row-${quarantinedBatchId}`, { block: "center", highlight: true });
+            }
           }}
         />
       )}
@@ -942,7 +1044,8 @@ function QuarantineConfirmModal({ batch, onClose, onSuccess }) {
 
     try {
       setSubmitting(true);
-      await api.quarantineBatch(batch.batch_id || batch.id, {
+      const batchId = batch.batch_id || batch.id;
+      await api.quarantineBatch(batchId, {
         quarantineLocation: quarantineLocation.trim(),
       });
 
@@ -954,7 +1057,7 @@ function QuarantineConfirmModal({ batch, onClose, onSuccess }) {
         });
       }
 
-      onSuccess();
+      onSuccess(batchId);
     } catch (err) {
       setErrorMsg(err.message || "Không thể thực hiện niêm phong lô hàng.");
     } finally {

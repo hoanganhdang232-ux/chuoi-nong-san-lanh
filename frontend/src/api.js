@@ -1,6 +1,22 @@
-const API_URL =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:3001/api" : "/api");
+function getApiBaseUrl() {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== "undefined" && window.location) {
+    const { hostname, protocol, port } = window.location;
+    // Nếu frontend được phục vụ trực tiếp từ cổng backend (3001), dùng relative /api
+    if (port === "3001") {
+      return "/api";
+    }
+    // Nếu đang chạy dev (Vite port 5173 hoặc tương tự), kết nối tới backend port 3001 trên CÙNG địa chỉ IP/hostname
+    if (import.meta.env.DEV || port === "5173") {
+      return `${protocol}//${hostname}:3001/api`;
+    }
+  }
+  return "/api";
+}
+
+const API_URL = getApiBaseUrl();
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("agritrace_token");
@@ -250,4 +266,53 @@ export const api = {
     request("/v1/notifications/read-all", {
       method: "POST",
     }),
+  // ─── SPRINT 6 COLD CHAIN APIs ──────────────────────────────────────────────
+  updateProductColdChainConfig: (productId, payload) =>
+    request(`/v1/products/${productId}/cold-chain-config`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  getProductColdChainConfig: (productId) =>
+    request(`/v1/products/${productId}/cold-chain-config`),
+  sendTemperatureTelemetry: (payload) =>
+    request("/v1/telemetry/temperature", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getBatchTemperatureHistory: (batchId) =>
+    request(`/v1/batches/${batchId}/temperature-history`),
+  evaluateColdChain: (batchId) =>
+    request(`/v1/batches/${batchId}/evaluate-cold-chain`, {
+      method: "POST",
+    }),
+  archiveColdChainLogs: (daysOld = 30) =>
+    request("/v1/cold-chain/maintenance/archive", {
+      method: "POST",
+      body: JSON.stringify({ daysOld }),
+    }),
+  getColdChainOverview: () => request("/v1/cold-chain/overview"),
+  // ─── SPRINT 7 PUBLIC QR & NOTIFICATION CENTER APIs ─────────────────────────
+  generateBatchQr: (batchId) =>
+    request(`/v1/batches/${batchId}/qr`, {
+      method: "POST",
+      body: JSON.stringify({
+        clientOrigin: typeof window !== "undefined" ? window.location.origin : null,
+      }),
+    }),
+  getPublicTraceV1: (code, headers = {}) =>
+    request(`/v1/public/trace/${encodeURIComponent(code)}`, { headers }),
+  verifyHashChain: (code) =>
+    request(`/v1/public/verify-chain/${encodeURIComponent(code)}`),
+  getNotificationHistory: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/notifications/history${q ? "?" + q : ""}`);
+  },
+  markAllNotificationsReadV1: () =>
+    request("/v1/notifications/read-all", {
+      method: "PUT",
+    }),
+  getCertifications: () => request("/v1/certifications"),
 };

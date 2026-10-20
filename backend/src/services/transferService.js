@@ -1,5 +1,7 @@
 import { getDb } from "../db/database.js";
 import { createEventLog } from "./batchService.js";
+import { sendNotificationToOrg } from "./notificationService.js";
+import { broadcastRecallEvent } from "./sseService.js";
 
 export function createTransferRequest({
   batchId,
@@ -67,7 +69,26 @@ export function createTransferRequest({
       },
     });
 
+    // Gửi thông báo cho tổ chức nhận bàn giao
+    const senderOrg = db.prepare("SELECT name FROM organizations WHERE id = ?").get(fromOrganizationId);
+    sendNotificationToOrg({
+      orgId: toOrganizationId,
+      title: "YÊU CẦU BÀN GIAO LÔ HÀNG MỚI",
+      message: `Tổ chức ${senderOrg?.name || "Đối tác"} đã gửi yêu cầu bàn giao lô hàng ${batch.batch_code}. Vui lòng kiểm tra và xác nhận.`,
+      type: "warning",
+      kind: "transfer",
+    });
+
     db.exec("COMMIT");
+
+    broadcastRecallEvent("transfer_created", {
+      type: "TRANSFER_REQUEST",
+      batch_id: batchId,
+      batch_code: batch.batch_code,
+      from_organization_id: fromOrganizationId,
+      to_organization_id: toOrganizationId,
+      message: `Có yêu cầu bàn giao mới đối với lô ${batch.batch_code}.`,
+    });
 
     return {
       id: result.lastInsertRowid,
@@ -154,7 +175,38 @@ export function decideTransfer({
       },
     });
 
+    // Gửi thông báo cho bên gửi về quyết định bàn giao
+    const receiverOrg = db.prepare("SELECT name FROM organizations WHERE id = ?").get(actorOrganizationId);
+    const targetBatch = db.prepare("SELECT batch_code FROM batches WHERE id = ?").get(transfer.batch_id);
+
+    if (decision === "confirmed") {
+      sendNotificationToOrg({
+        orgId: transfer.from_organization_id,
+        title: "XÁC NHẬN BÀN GIAO THÀNH CÔNG",
+        message: `Tổ chức ${receiverOrg?.name || "Bên nhận"} đã xác nhận tiếp nhận lô hàng ${targetBatch?.batch_code || `#${transfer.batch_id}`}.`,
+        type: "quarantine",
+        kind: "transfer",
+      });
+    } else {
+      sendNotificationToOrg({
+        orgId: transfer.from_organization_id,
+        title: "TỪ CHỐI TIẾP NHẬN BÀN GIAO",
+        message: `Tổ chức ${receiverOrg?.name || "Bên nhận"} đã từ chối nhận bàn giao lô hàng ${targetBatch?.batch_code || `#${transfer.batch_id}`}. Lý do: "${decisionReason}".`,
+        type: "warning",
+        kind: "transfer",
+      });
+    }
+
     db.exec("COMMIT");
+
+    broadcastRecallEvent("transfer_decided", {
+      type: decision === "confirmed" ? "TRANSFER_CONFIRMED" : "TRANSFER_REJECTED",
+      transfer_id: transfer.id,
+      batch_id: transfer.batch_id,
+      batch_code: targetBatch?.batch_code,
+      decision,
+      message: decision === "confirmed" ? `Lô ${targetBatch?.batch_code} đã được bàn giao thành công.` : `Lô ${targetBatch?.batch_code} bị từ chối bàn giao.`,
+    });
 
     const batch = db
       .prepare("SELECT * FROM batches WHERE id = ?")
@@ -219,7 +271,27 @@ export function cancelTransfer({
       },
     });
 
+    // Gửi thông báo in-app cho bên nhận biết đơn bàn giao đã được thu hồi / hủy
+    const senderOrg = db.prepare("SELECT name FROM organizations WHERE id = ?").get(transfer.from_organization_id);
+    const cancelledBatch = db.prepare("SELECT batch_code FROM batches WHERE id = ?").get(transfer.batch_id);
+
+    sendNotificationToOrg({
+      orgId: transfer.to_organization_id,
+      title: "ĐƠN BÀN GIAO ĐÃ ĐƯỢC THU HỒI / HỦY",
+      message: `Tổ chức ${senderOrg?.name || "Bên gửi"} đã thu hồi/hủy đơn bàn giao đối với lô ${cancelledBatch?.batch_code || `#${transfer.batch_id}`}. Lý do: "${cancelReason}".`,
+      type: "warning",
+      kind: "transfer",
+    });
+
     db.exec("COMMIT");
+
+    broadcastRecallEvent("transfer_cancelled", {
+      type: "TRANSFER_CANCELLED",
+      transfer_id: transfer.id,
+      batch_id: transfer.batch_id,
+      batch_code: cancelledBatch?.batch_code,
+      message: `Đơn bàn giao đối với lô ${cancelledBatch?.batch_code} đã được thu hồi/hủy.`,
+    });
 
     const batch = db
       .prepare("SELECT * FROM batches WHERE id = ?")

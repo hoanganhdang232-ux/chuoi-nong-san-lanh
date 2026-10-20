@@ -19,6 +19,7 @@ test.before(async () => {
   db.exec("PRAGMA foreign_keys = OFF;");
   db.exec("DELETE FROM event_logs");
   db.exec("DELETE FROM batches");
+  db.exec("DELETE FROM locations");
   db.exec("DELETE FROM products");
   db.exec("DELETE FROM land_plots");
   db.exec("DELETE FROM farms");

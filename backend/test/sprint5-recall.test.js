@@ -310,4 +310,62 @@ test("SCRUM-174 (T-84, T-85): In-app notifications for affected organizations", 
   assert.equal(readRes.status, 200);
   const readData = await readRes.json();
   assert.equal(readData.unreadCount, notifData.unreadCount - 1);
+
+  // Kiểm tra Auditor cũng nhận được thông báo thu hồi
+  const auditorUser = await loginAs("auditor@agritrace.demo", "Auditor@123");
+  const auditorNotifs = await fetch(`${baseUrl}/api/v1/notifications`, {
+    headers: { Authorization: `Bearer ${auditorUser.token}` },
+  }).then((r) => r.json());
+  assert.ok(auditorNotifs.notifications.some((n) => /THU HỒI/i.test(n.title)));
+});
+
+test("Transfer cancellation notifies receiver organization", async () => {
+  const farmUser = await loginAs("farm@agritrace.demo", "Farm@123");
+  const processorUser = await loginAs("processor@agritrace.demo", "Processor@123");
+  const farmOrgId = farmUser.user.organizationId ?? farmUser.user.organization_id;
+  const procOrgId = processorUser.user.organizationId ?? processorUser.user.organization_id;
+
+  // Tìm 1 lô của Farm để tạo transfer request
+  const farmBatch = db.prepare("SELECT id FROM batches WHERE organization_id = ? AND status = 'registered' LIMIT 1").get(farmOrgId);
+  if (!farmBatch) return;
+
+  const createTrfRes = await fetch(`${baseUrl}/api/v1/transfers`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${farmUser.token}`,
+    },
+    body: JSON.stringify({
+      lot_id: farmBatch.id,
+      receiver_org_id: procOrgId,
+      note: "Chuyển giao thử nghiệm",
+    }),
+  });
+  assert.equal(createTrfRes.status, 201);
+  const createdTrf = await createTrfRes.json();
+
+  // Farm hủy/thu hồi đơn bàn giao này
+  const cancelRes = await fetch(`${baseUrl}/api/v1/transfers/${createdTrf.id}/cancel`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${farmUser.token}`,
+    },
+    body: JSON.stringify({
+      reason: "Bên gửi thu hồi lệnh bàn giao để kiểm tra lại chất lượng.",
+    }),
+  });
+  assert.equal(cancelRes.status, 200);
+
+  // Bên nhận (Processor) phải nhận được thông báo in-app rằng đơn đã bị thu hồi/hủy
+  const procNotifs = await fetch(`${baseUrl}/api/v1/notifications`, {
+    headers: { Authorization: `Bearer ${processorUser.token}` },
+  }).then((r) => r.json());
+
+  assert.ok(
+    procNotifs.notifications.some(
+      (n) => /THU HỒI \/ HỦY/i.test(n.title) || /HỦY/i.test(n.title),
+    ),
+    "Bên nhận phải nhận được thông báo khi bên gửi thu hồi đơn bàn giao",
+  );
 });

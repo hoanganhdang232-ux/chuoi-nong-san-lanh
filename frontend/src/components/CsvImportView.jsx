@@ -2,7 +2,6 @@ import { useState, useRef } from "react";
 import {
   FileSpreadsheet,
   Upload,
-  Download,
   CheckCircle2,
   XCircle,
   Loader2,
@@ -11,17 +10,8 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import { useToast } from "../context/ToastContext.jsx";
-
-const SAMPLE_PRODUCTS_CSV = `name,unit
-Thanh long ruột đỏ,kg
-Sầu riêng Ri6,kg
-Bơ booth Đắk Lắk,kg
-Xoài cát Hòa Lộc,kg`;
-
-const SAMPLE_LAND_PLOTS_CSV = `name,area_ha,latitude,longitude
-Nông trường Đơn Dương Lô A,3.5,11.8354,108.5298
-Vườn Sầu Riêng Krông Pắc 01,5.2,12.7123,108.2845
-Trang trại Cam Sành Cần Thơ,2.8,10.0452,105.7469`;
+import { scrollToElement } from "../utils/scrollHelper.js";
+import * as XLSX from "xlsx";
 
 export default function CsvImportView({ onImportSuccess }) {
   const toast = useToast();
@@ -45,17 +35,23 @@ export default function CsvImportView({ onImportSuccess }) {
     }
   };
 
-  const processSelectedFile = (selectedFile) => {
+  const processSelectedFile = async (selectedFile) => {
     if (!selectedFile) return;
 
-    const isCsv =
-      selectedFile.name.toLowerCase().endsWith(".csv") ||
+    const nameLower = selectedFile.name.toLowerCase();
+    const isExcelOrCsv =
+      nameLower.endsWith(".csv") ||
+      nameLower.endsWith(".xlsx") ||
+      nameLower.endsWith(".xls") ||
       selectedFile.type === "text/csv" ||
-      selectedFile.type === "application/vnd.ms-excel";
+      selectedFile.type === "application/vnd.ms-excel" ||
+      selectedFile.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      selectedFile.type === "application/csv" ||
+      selectedFile.type === "";
 
-    if (!isCsv) {
+    if (!isExcelOrCsv) {
       const err = {
-        message: "Định dạng tệp không hợp lệ! Vui lòng chỉ tải lên file CSV (.csv).",
+        message: "Định dạng tệp không hợp lệ! Vui lòng chọn file Excel (.xlsx, .xls) hoặc CSV (.csv).",
         errors: [],
       };
       setErrorDetails(err);
@@ -78,11 +74,37 @@ export default function CsvImportView({ onImportSuccess }) {
     setResult(null);
     toast.success(`Đã chọn file: ${selectedFile.name}`);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setFileContent(event.target.result || "");
-    };
-    reader.readAsText(selectedFile);
+    try {
+      const isXlsx =
+        nameLower.endsWith(".xlsx") ||
+        nameLower.endsWith(".xls") ||
+        selectedFile.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+      if (isXlsx) {
+        const buffer = await selectedFile.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array", cellDates: true, dateNF: "yyyy-mm-dd" });
+        const firstSheetName = workbook.SheetNames[0];
+        if (!firstSheetName) {
+          throw new Error("File Excel không chứa bảng tính (sheet) nào.");
+        }
+        const worksheet = workbook.Sheets[firstSheetName];
+        const csvText = XLSX.utils.sheet_to_csv(worksheet);
+        setFileContent(csvText);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setFileContent(event.target.result || "");
+        };
+        reader.readAsText(selectedFile);
+      }
+    } catch (parseError) {
+      const err = {
+        message: `Không thể đọc file: ${parseError.message}`,
+        errors: [],
+      };
+      setErrorDetails(err);
+      toast.error(err.message);
+    }
   };
 
   const handleFileChange = (e) => {
@@ -112,22 +134,52 @@ export default function CsvImportView({ onImportSuccess }) {
     }
   };
 
-  const handleDownloadSample = () => {
-    const content =
-      activeTab === "products" ? SAMPLE_PRODUCTS_CSV : SAMPLE_LAND_PLOTS_CSV;
-    const filename =
-      activeTab === "products"
-        ? "sample_products.csv"
-        : "sample_land_plots.csv";
-
-    const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.info(`Đã tải xuống file mẫu ${filename}`);
+  const handleDownloadExcelSample = () => {
+    const wb = XLSX.utils.book_new();
+    if (activeTab === "products") {
+      const data = [
+        ["name", "unit"],
+        ["Thanh long ruột đỏ", "kg"],
+        ["Sầu riêng Ri6", "kg"],
+        ["Bơ booth Đắk Lắk", "kg"],
+        ["Xoài cát Hòa Lộc", "kg"],
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = [{ wch: 30 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "San_Pham");
+      const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([wbout], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "sample_products.xlsx";
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("Đã tải xuống file mẫu Excel sản phẩm (.xlsx) tự căn lề.");
+    } else {
+      const data = [
+        ["name", "area_ha", "latitude", "longitude"],
+        ["Nông trường Đơn Dương Lô A", 3.5, 11.8354, 108.5298],
+        ["Vườn Sầu Riêng Krông Pắc 01", 5.2, 12.7123, 108.2845],
+        ["Trang trại Cam Sành Cần Thơ", 2.8, 10.0452, 105.7469],
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = [{ wch: 35 }, { wch: 14 }, { wch: 16 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, ws, "Thua_Dat");
+      const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([wbout], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "sample_land_plots.xlsx";
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("Đã tải xuống file mẫu Excel thửa đất (.xlsx) tự căn lề.");
+    }
   };
 
   const handleUpload = async () => {
@@ -161,6 +213,7 @@ export default function CsvImportView({ onImportSuccess }) {
       if (onImportSuccess) {
         onImportSuccess();
       }
+      scrollToElement("csv-import-result", { block: "center", highlight: true });
     } catch (err) {
       const errMsg = err.data?.error || err.message || "Quá trình nhập dữ liệu thất bại.";
       if (err.data && (err.data.errors || err.data.error)) {
@@ -176,6 +229,7 @@ export default function CsvImportView({ onImportSuccess }) {
         });
       }
       toast.error(errMsg);
+      scrollToElement("csv-import-error", { block: "center", highlight: true });
     } finally {
       setIsSubmitting(false);
     }
@@ -202,11 +256,12 @@ export default function CsvImportView({ onImportSuccess }) {
 
           <button
             type="button"
-            onClick={handleDownloadSample}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer shadow-2xs"
+            onClick={handleDownloadExcelSample}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold transition cursor-pointer shadow-sm hover:shadow active:scale-95"
+            title="Tải file mẫu Excel (.xlsx) chuẩn căn lề độ rộng cột và hiển thị tiếng Việt trọn vẹn"
           >
-            <Download size={14} />
-            Tải file mẫu ({activeTab === "products" ? "Sản phẩm" : "Thửa đất"})
+            <FileSpreadsheet size={16} />
+            <span>Tải file mẫu Excel ({activeTab === "products" ? "Sản phẩm" : "Thửa đất"})</span>
           </button>
         </div>
 
@@ -273,6 +328,9 @@ export default function CsvImportView({ onImportSuccess }) {
                   (Tọa độ GPS thập phân).
                 </>
               )}
+              <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 italic">
+                💡 File mẫu Excel (.xlsx) tự động căn lề cột chuẩn, không bao giờ bị lỗi font tiếng Việt khi mở trên Microsoft Excel. Hệ thống chấp nhận nạp tệp <code className="font-mono">.xlsx</code>, <code className="font-mono">.xls</code> và <code className="font-mono">.csv</code>.
+              </div>
             </div>
           </div>
         </div>
@@ -283,7 +341,7 @@ export default function CsvImportView({ onImportSuccess }) {
             id="file-upload"
             name="file-upload"
             type="file"
-            accept=".csv,text/csv"
+            accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
             className="hidden"
             ref={fileInputRef}
             onChange={handleFileChange}
@@ -307,16 +365,16 @@ export default function CsvImportView({ onImportSuccess }) {
               <div className="mt-3 text-center">
                 <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
                   {isDragging ? (
-                    <span className="text-emerald-600 dark:text-emerald-400">Thả tệp CSV vào đây...</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">Thả tệp Excel / CSV vào đây...</span>
                   ) : (
                     <>
-                      Kéo thả tệp CSV vào đây hoặc{" "}
+                      Kéo thả tệp Excel (.xlsx) hoặc CSV (.csv) vào đây hoặc{" "}
                       <span className="text-emerald-600 dark:text-emerald-400 underline font-extrabold">duyệt chọn từ máy tính</span>
                     </>
                   )}
                 </p>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Chỉ chấp nhận định dạng .csv (Dung lượng tối đa 5MB)
+                  Chấp nhận định dạng .xlsx, .xls, .csv (Dung lượng tối đa 5MB)
                 </p>
               </div>
             </div>
@@ -330,11 +388,13 @@ export default function CsvImportView({ onImportSuccess }) {
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-sm text-emerald-950 dark:text-emerald-100 font-mono">{file.name}</span>
                     <span className="rounded-full bg-emerald-200/90 dark:bg-emerald-900/80 px-2 py-0.5 text-[10px] font-extrabold text-emerald-900 dark:text-emerald-200 uppercase">
-                      Sẵn sàng
+                      {file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls")
+                        ? "Excel (.xlsx)"
+                        : "CSV (.csv)"}
                     </span>
                   </div>
                   <span className="text-emerald-600 dark:text-emerald-400 text-xs mt-0.5 block">
-                    Dung lượng: {(file.size / 1024).toFixed(1)} KB
+                    Dung lượng: {(file.size / 1024).toFixed(1)} KB · Sẵn sàng nạp
                   </span>
                 </div>
               </div>
@@ -388,7 +448,7 @@ export default function CsvImportView({ onImportSuccess }) {
 
       {/* Success Notification Result */}
       {result && (
-        <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 p-6 border border-emerald-200 dark:border-emerald-800 animate-fadeIn">
+        <div id="csv-import-result" className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 p-6 border border-emerald-200 dark:border-emerald-800 animate-fadeIn">
           <div className="flex items-start gap-3">
             <CheckCircle2 size={24} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
             <div className="flex-1">
@@ -417,7 +477,7 @@ export default function CsvImportView({ onImportSuccess }) {
 
       {/* Error Details (All-or-Nothing rollback summary) */}
       {errorDetails && (
-        <div className="rounded-2xl bg-rose-50 dark:bg-rose-950/50 p-6 border border-rose-200 dark:border-rose-800 animate-fadeIn">
+        <div id="csv-import-error" className="rounded-2xl bg-rose-50 dark:bg-rose-950/50 p-6 border border-rose-200 dark:border-rose-800 animate-fadeIn">
           <div className="flex items-start gap-3">
             <XCircle size={24} className="text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
             <div className="flex-1">

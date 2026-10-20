@@ -5,7 +5,7 @@ import { getDb } from "../db/database.js";
  * Tự động tạo và quản lý thông báo in-app cho người dùng và tổ chức.
  */
 
-export function sendRecallNotificationsToOrg({ orgId, title, message, recallId: _recallId }) {
+export function sendNotificationToOrg({ orgId, title, message, type = "recall", kind = "recall" }) {
   const db = getDb();
   const users = db
     .prepare("SELECT id, organization_id FROM users WHERE organization_id = ? AND is_active = 1")
@@ -13,12 +13,49 @@ export function sendRecallNotificationsToOrg({ orgId, title, message, recallId: 
 
   const stmt = db.prepare(
     `INSERT INTO notifications (user_id, organization_id, org_id, kind, type, title, message, is_read, created_at)
-     VALUES (?, ?, ?, 'recall', 'RECALL_ALERT', ?, ?, 0, CURRENT_TIMESTAMP)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
   );
 
   for (const user of users) {
-    stmt.run(user.id, user.organization_id, user.organization_id, title, message);
+    stmt.run(user.id, user.organization_id, user.organization_id, kind, type, title, message);
   }
+}
+
+export function sendNotificationToAuditors({ title, message, type = "recall", kind = "recall" }) {
+  const db = getDb();
+  const auditors = db
+    .prepare("SELECT id, organization_id FROM users WHERE role = 'auditor' AND is_active = 1")
+    .all();
+
+  const stmt = db.prepare(
+    `INSERT INTO notifications (user_id, organization_id, org_id, kind, type, title, message, is_read, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
+  );
+
+  for (const auditor of auditors) {
+    stmt.run(auditor.id, auditor.organization_id, auditor.organization_id, kind, type, title, message);
+  }
+}
+
+export function sendNotificationToUser({ userId, title, message, type = "recall", kind = "recall" }) {
+  const db = getDb();
+  const user = db.prepare("SELECT id, organization_id FROM users WHERE id = ?").get(userId);
+  if (!user) return;
+
+  db.prepare(
+    `INSERT INTO notifications (user_id, organization_id, org_id, kind, type, title, message, is_read, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
+  ).run(user.id, user.organization_id, user.organization_id, kind, type, title, message);
+}
+
+export function sendRecallNotificationsToOrg({ orgId, title, message, recallId: _recallId }) {
+  sendNotificationToOrg({
+    orgId,
+    title,
+    message,
+    type: "RECALL_ALERT",
+    kind: "recall",
+  });
 }
 
 export function listUserNotifications(userId, limit = 50) {

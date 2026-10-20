@@ -15,7 +15,26 @@ export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
  */
 export function parseCSV(text) {
   if (typeof text !== "string") return [];
-  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  let raw = text.replace(/^\uFEFF/, "").trimStart();
+  let delimiter = ",";
+
+  const sepMatch = raw.match(/^sep=([,;\t|])(?:\r?\n|$)/i);
+  if (sepMatch) {
+    delimiter = sepMatch[1];
+    raw = raw.slice(sepMatch[0].length);
+  } else {
+    const firstLine = raw.split(/\r?\n/)[0] || "";
+    const semicolonCount = (firstLine.match(/;/g) || []).length;
+    const commaCount = (firstLine.match(/,/g) || []).length;
+    const tabCount = (firstLine.match(/\t/g) || []).length;
+    if (semicolonCount > commaCount && semicolonCount >= 1) {
+      delimiter = ";";
+    } else if (tabCount > commaCount && tabCount >= 1) {
+      delimiter = "\t";
+    }
+  }
+
+  const normalized = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const rows = [];
   let currentRow = [];
   let currentField = "";
@@ -38,7 +57,7 @@ export function parseCSV(text) {
     } else {
       if (ch === '"') {
         inQuotes = true;
-      } else if (ch === ",") {
+      } else if (ch === delimiter) {
         currentRow.push(currentField.trim());
         currentField = "";
       } else if (ch === "\n") {

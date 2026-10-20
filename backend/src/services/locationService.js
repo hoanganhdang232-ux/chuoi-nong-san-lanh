@@ -5,7 +5,7 @@ import { createEventLog } from "./batchService.js";
  * T-64 / S-30: Quản lý Địa điểm/Cửa hàng nội bộ của tổ chức (NPP).
  */
 
-const PHONE_REGEX = /^[0-9+\-\s().]{7,20}$/;
+const PHONE_REGEX = /^0[0-9]{9}$/;
 
 export function listLocations(
   organizationId,
@@ -144,10 +144,11 @@ export function createLocation({ organizationId, code, name, address, phone, typ
     storeAddress = String(address).trim();
   }
 
-  if (phone && String(phone).trim().length > 0) {
-    const cleanPhone = String(phone).trim();
+  let cleanPhone = null;
+  if (phone !== undefined && phone !== null && String(phone).trim().length > 0) {
+    cleanPhone = String(phone).trim().replace(/[\s.-]/g, "");
     if (!PHONE_REGEX.test(cleanPhone)) {
-      const err = new Error("Số điện thoại không đúng định dạng.");
+      const err = new Error("Số điện thoại không hợp lệ. Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0.");
       err.statusCode = 400;
       throw err;
     }
@@ -197,7 +198,7 @@ export function createLocation({ organizationId, code, name, address, phone, typ
       storeCode,
       String(name).trim(),
       storeAddress,
-      phone ? String(phone).trim() : null,
+      cleanPhone,
       storeType,
       storeStatus,
     );
@@ -229,12 +230,17 @@ export function updateLocation({ id, organizationId, code, name, address, phone,
     throw err;
   }
 
-  if (phone !== undefined && String(phone).trim().length > 0) {
-    const cleanPhone = String(phone).trim();
-    if (!PHONE_REGEX.test(cleanPhone)) {
-      const err = new Error("Số điện thoại không đúng định dạng.");
-      err.statusCode = 400;
-      throw err;
+  let cleanPhone = undefined;
+  if (phone !== undefined) {
+    if (phone === null || String(phone).trim().length === 0) {
+      cleanPhone = null;
+    } else {
+      cleanPhone = String(phone).trim().replace(/[\s.-]/g, "");
+      if (!PHONE_REGEX.test(cleanPhone)) {
+        const err = new Error("Số điện thoại không hợp lệ. Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0.");
+        err.statusCode = 400;
+        throw err;
+      }
     }
   }
 
@@ -253,7 +259,7 @@ export function updateLocation({ id, organizationId, code, name, address, phone,
 
   const storeName = name !== undefined ? String(name).trim() : existing.name;
   const storeAddress = address !== undefined ? String(address).trim() : existing.address;
-  const storePhone = phone !== undefined ? (phone ? String(phone).trim() : null) : existing.phone;
+  const storePhone = cleanPhone !== undefined ? cleanPhone : existing.phone;
   const storeType = type !== undefined ? (["warehouse", "Warehouse", "WAREHOUSE"].includes(type) ? "WAREHOUSE" : "STORE") : (existing.type || "STORE");
   const storeStatus = status !== undefined
     ? (["inactive", "Inactive", "INACTIVE"].includes(status) ? "INACTIVE" : "ACTIVE")

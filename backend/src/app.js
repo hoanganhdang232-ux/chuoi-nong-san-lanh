@@ -9,10 +9,13 @@ import v1TransferRoutes from "./routes/v1TransferRoutes.js";
 import featureRoutes from "./routes/featureRoutes.js";
 import sprint4Routes from "./routes/sprint4Routes.js";
 import sprint5Routes from "./routes/sprint5Routes.js";
+import sprint6Routes from "./routes/sprint6Routes.js";
+import sprint7Routes from "./routes/sprint7Routes.js";
 import { auditLogMiddleware } from "./middleware/auditLog.js";
 import { runMigrations } from "./db/migrations.js";
 import { ensureDemoFarmerAccount } from "./db/seed.js";
 import { processOverdueTransfers } from "./services/transferService.js";
+import { archiveOldTemperatureLogs } from "./services/sprint6ColdChainService.js";
 import { getDb } from "./db/database.js";
 
 const frontendDistPath = resolve(
@@ -41,6 +44,8 @@ export function createApp() {
     }
   });
 
+  app.use("/api/v1", sprint7Routes);
+  app.use("/api/v1", sprint6Routes);
   app.use("/api/v1", sprint5Routes);
   app.use("/api/v1", sprint4Routes);
   app.use("/api/auth", authRoutes);
@@ -48,6 +53,8 @@ export function createApp() {
   app.use("/api/v1/transfers", v1TransferRoutes);
   app.use("/api/transfers", transferRoutes);
   app.use("/api/features", featureRoutes);
+  app.use("/api", sprint7Routes);
+  app.use("/api", sprint6Routes);
   app.use("/api", sprint4Routes);
 
   app.use("/api", (req, res) => {
@@ -72,5 +79,16 @@ export function createApp() {
   processOverdueTransfers();
   const overdueTimer = setInterval(processOverdueTransfers, 60 * 60 * 1000);
   overdueTimer.unref?.();
+
+  // T-104 & T-105: Định kỳ nén và archive log nhiệt độ cũ (>30 ngày) mỗi 24 giờ
+  const archiveTimer = setInterval(() => {
+    try {
+      archiveOldTemperatureLogs(30);
+    } catch (archiveErr) {
+      console.warn("Background log archiving warning:", archiveErr.message);
+    }
+  }, 24 * 60 * 60 * 1000);
+  archiveTimer.unref?.();
+
   return app;
 }

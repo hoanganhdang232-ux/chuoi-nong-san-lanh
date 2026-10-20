@@ -1,4 +1,5 @@
 import { getDb } from "./database.js";
+import { up as runMigration009 } from "./migrations/009_sprint7_public_qr_and_certifications.js";
 
 export function runMigrations() {
   const db = getDb();
@@ -64,6 +65,9 @@ export function runMigrations() {
       organization_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       unit TEXT NOT NULL,
+      min_temp REAL DEFAULT 2.0,
+      max_temp REAL DEFAULT 8.0,
+      max_allowed_delay_minutes INTEGER DEFAULT 30,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
@@ -162,9 +166,12 @@ export function runMigrations() {
     CREATE TABLE IF NOT EXISTS temperature_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       batch_id INTEGER NOT NULL,
+      shipment_id INTEGER,
       temperature REAL NOT NULL,
       source TEXT NOT NULL DEFAULT 'sensor',
+      sensor_id TEXT DEFAULT 'sensor',
       timestamp TEXT NOT NULL,
+      recorded_at TEXT,
       FOREIGN KEY (batch_id) REFERENCES batches(id)
     );
 
@@ -825,5 +832,81 @@ export function runMigrations() {
   db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
     "007_batch_harvested_at_and_land_plot",
   );
+
+  // ─── SPRINT 6: COLD CHAIN MONITORING MIGRATIONS (T-89, T-92, T-104, T-105) ───
+  const productCols = db
+    .prepare("PRAGMA table_info(products)")
+    .all()
+    .map((col) => col.name);
+  if (!productCols.includes("min_temp")) {
+    db.exec("ALTER TABLE products ADD COLUMN min_temp REAL DEFAULT 2.0");
+  }
+  if (!productCols.includes("max_temp")) {
+    db.exec("ALTER TABLE products ADD COLUMN max_temp REAL DEFAULT 8.0");
+  }
+  if (!productCols.includes("max_allowed_delay_minutes")) {
+    db.exec("ALTER TABLE products ADD COLUMN max_allowed_delay_minutes INTEGER DEFAULT 30");
+  }
+
+  const tempLogCols = db
+    .prepare("PRAGMA table_info(temperature_logs)")
+    .all()
+    .map((col) => col.name);
+  if (!tempLogCols.includes("shipment_id")) {
+    db.exec("ALTER TABLE temperature_logs ADD COLUMN shipment_id INTEGER");
+  }
+  if (!tempLogCols.includes("sensor_id")) {
+    db.exec("ALTER TABLE temperature_logs ADD COLUMN sensor_id TEXT DEFAULT 'sensor'");
+  }
+  if (!tempLogCols.includes("recorded_at")) {
+    db.exec("ALTER TABLE temperature_logs ADD COLUMN recorded_at TEXT");
+    db.exec("UPDATE temperature_logs SET recorded_at = timestamp WHERE recorded_at IS NULL");
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS temperature_hourly_aggregates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL,
+      hour_bucket TEXT NOT NULL,
+      avg_temperature REAL NOT NULL,
+      min_temperature REAL NOT NULL,
+      max_temperature REAL NOT NULL,
+      reading_count INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(batch_id, hour_bucket),
+      FOREIGN KEY (batch_id) REFERENCES batches(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_temp_agg_batch_bucket ON temperature_hourly_aggregates(batch_id, hour_bucket);
+
+    CREATE TABLE IF NOT EXISTS temperature_logs_archive (
+      id INTEGER PRIMARY KEY,
+      batch_id INTEGER NOT NULL,
+      shipment_id INTEGER,
+      temperature REAL NOT NULL,
+      source TEXT,
+      sensor_id TEXT,
+      timestamp TEXT,
+      recorded_at TEXT,
+      archived_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_temp_archive_batch ON temperature_logs_archive(batch_id, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_temp_logs_batch_recorded ON temperature_logs(batch_id, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_temp_logs_shipment ON temperature_logs(shipment_id);
+  `);
+
+  db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+    "008_sprint6_cold_chain_monitoring",
+  );
+
+  // ─── SPRINT 7: PUBLIC QR TRACE & CERTIFICATIONS MIGRATIONS (T-107, T-122) ───
+  try {
+    runMigration009(db);
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+      "009_sprint7_public_qr_and_certifications",
+    );
+  } catch (err) {
+    console.warn("Migration 009 warning:", err.message);
+  }
 }
+
 
