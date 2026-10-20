@@ -24,6 +24,7 @@ function resetDatabase() {
   db.exec("DELETE FROM batch_relations");
   db.exec("DELETE FROM batch_transfers");
   db.exec("DELETE FROM batches");
+  db.exec("DELETE FROM locations");
   db.exec("DELETE FROM products");
   db.exec("DELETE FROM land_plots");
   db.exec("DELETE FROM farms");

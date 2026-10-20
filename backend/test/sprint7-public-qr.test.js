@@ -32,6 +32,7 @@ function resetDatabase() {
     "event_logs",
     "batch_transfers",
     "batches",
+    "locations",
     "products",
     "land_plots",
     "farms",

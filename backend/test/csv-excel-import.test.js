@@ -20,6 +20,7 @@ test.before(async () => {
   db.exec("PRAGMA foreign_keys = OFF;");
   db.exec("DELETE FROM event_logs");
   db.exec("DELETE FROM batches");
+  db.exec("DELETE FROM locations");
   db.exec("DELETE FROM products");
   db.exec("DELETE FROM land_plots");
   db.exec("DELETE FROM farms");
@@ -174,4 +175,3 @@ test("Excel/XLSX: converts workbook sheet with Vietnamese text and custom date i
   assert.equal(batchInDb.initial_quantity, 120.5);
   assert.equal(batchInDb.current_location, "Kho tiếp nhận nông sản Đà Lạt");
 });
-
