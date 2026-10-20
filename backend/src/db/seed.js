@@ -19,30 +19,28 @@ const passwordHash = (password) =>
 
 export function ensureDemoFarmerAccount() {
   const db = getDb();
-  const existingUser = db
-    .prepare("SELECT id FROM users WHERE email = ?")
-    .get("user@agritrace.demo");
+  const demoUsers = [
+    { email: "farm@agritrace.demo", name: "Quản trị Farm", role: "farm_admin", pass: "Farm@123", orgType: "farm" },
+    { email: "processor@agritrace.demo", name: "Quản trị HTX", role: "processor_admin", pass: "Processor@123", orgType: "processor" },
+    { email: "distributor@agritrace.demo", name: "Quản trị Cửa hàng", role: "distributor_admin", pass: "Distributor@123", orgType: "distributor" },
+    { email: "auditor@agritrace.demo", name: "Cán bộ kiểm tra", role: "auditor", pass: "Auditor@123", orgType: "farm" },
+    { email: "consumer@agritrace.demo", name: "Người tiêu dùng", role: "consumer", pass: "Consumer@123", orgType: "farm" },
+    { email: "user@agritrace.demo", name: "Người dùng cơ bản", role: "user", pass: "User@123", orgType: "farm" },
+  ];
 
-  if (existingUser) return;
-
-  const farmOrganization = db
-    .prepare(
-      "SELECT id FROM organizations WHERE type = 'farm' ORDER BY id LIMIT 1",
-    )
-    .get();
-
-  if (!farmOrganization) return;
-
-  db.prepare(
-    `INSERT INTO users(organization_id, name, email, password_hash, role)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).run(
-    farmOrganization.id,
-    "Farmer Demo",
-    "user@agritrace.demo",
-    passwordHash("User@123"),
-    "user",
-  );
+  for (const d of demoUsers) {
+    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(d.email);
+    if (!existing) {
+      const org = db.prepare("SELECT id FROM organizations WHERE type = ? ORDER BY id LIMIT 1").get(d.orgType)
+        || db.prepare("SELECT id FROM organizations ORDER BY id LIMIT 1").get();
+      if (org) {
+        db.prepare(
+          `INSERT INTO users(organization_id, name, email, password_hash, role)
+           VALUES (?, ?, ?, ?, ?)`,
+        ).run(org.id, d.name, d.email, passwordHash(d.pass), d.role);
+      }
+    }
+  }
 }
 
 export function cleanAllTables(db = getDb()) {
