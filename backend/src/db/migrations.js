@@ -1,4 +1,5 @@
 import { getDb } from "./database.js";
+import { up as runMigration009 } from "./migrations/009_sprint7_public_qr_and_certifications.js";
 
 export function runMigrations() {
   const db = getDb();
@@ -896,5 +897,16 @@ export function runMigrations() {
   db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
     "008_sprint6_cold_chain_monitoring",
   );
+
+  // ─── SPRINT 7: PUBLIC QR TRACE & CERTIFICATIONS MIGRATIONS (T-107, T-122) ───
+  try {
+    runMigration009(db);
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(name) VALUES (?)").run(
+      "009_sprint7_public_qr_and_certifications",
+    );
+  } catch (err) {
+    console.warn("Migration 009 warning:", err.message);
+  }
 }
+
 

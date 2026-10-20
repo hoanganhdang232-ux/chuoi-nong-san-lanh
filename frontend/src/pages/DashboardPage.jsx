@@ -32,6 +32,7 @@ import {
   Layers,
   ArrowDown,
   Search,
+  QrCode,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import LineageGraphView from "../components/LineageGraphView.jsx";
@@ -43,6 +44,7 @@ import ConfirmSaveModal from "../components/ConfirmSaveModal.jsx";
 import NotificationBell from "../components/NotificationBell.jsx";
 import RecallManagementView from "../components/RecallManagementView.jsx";
 import ColdChainView from "../components/ColdChainView.jsx";
+import QrCodeModal from "../components/QrCodeModal.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
@@ -390,6 +392,7 @@ export default function DashboardPage() {
   const [consumeModalBatch, setConsumeModalBatch] = useState(null);
   const [distributeBatchId, setDistributeBatchId] = useState(null);
   const [lineageModalBatch, setLineageModalBatch] = useState(null);
+  const [selectedBatchForQr, setSelectedBatchForQr] = useState(null);
   const [batchSearchTerm, setBatchSearchTerm] = useState("");
   const [batchStockFilter, setBatchStockFilter] = useState("all"); // 'all' | 'in_stock' | 'exhausted'
   const [confirmHarvestModal, setConfirmHarvestModal] = useState({
@@ -1529,15 +1532,28 @@ export default function DashboardPage() {
                                   )}
                                 </td>
                                 <td className="px-4 py-3.5 text-center">
-                                  {isSelected ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-[11px] font-bold text-white shadow-xs">
-                                      📍 Đang xem
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                                      Xem <ArrowRight size={12} />
-                                    </span>
-                                  )}
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedBatchForQr(batch);
+                                      }}
+                                      className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 transition"
+                                      title="Xem & In mã QR truy xuất"
+                                    >
+                                      <QrCode size={15} />
+                                    </button>
+                                    {isSelected ? (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+                                        📍 Đang xem
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                                        Xem <ArrowRight size={12} />
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1557,9 +1573,20 @@ export default function DashboardPage() {
                       Giám sát chuỗi lạnh
                     </h2>
                     {selectedBatch && (
-                      <span className="font-mono text-xs text-slate-600 dark:text-slate-300 font-semibold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
-                        {selectedBatch.batch_code}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBatchForQr(selectedBatch)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition"
+                          title="Tạo mã QR & In tem dán nhãn"
+                        >
+                          <QrCode size={13} />
+                          <span>Mã QR & In tem</span>
+                        </button>
+                        <span className="font-mono text-xs text-slate-600 dark:text-slate-300 font-semibold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                          {selectedBatch.batch_code}
+                        </span>
+                      </div>
                     )}
                   </div>
                   <div className="space-y-3">
@@ -3665,6 +3692,14 @@ export default function DashboardPage() {
               />
             </div>
           </div>
+        )}
+
+        {selectedBatchForQr && (
+          <QrCodeModal
+            batch={selectedBatchForQr}
+            isOpen={Boolean(selectedBatchForQr)}
+            onClose={() => setSelectedBatchForQr(null)}
+          />
         )}
 
         {/* Modal xác nhận lưu lô thu hoạch */}

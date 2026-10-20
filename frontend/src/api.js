@@ -275,4 +275,25 @@ export const api = {
       body: JSON.stringify({ daysOld }),
     }),
   getColdChainOverview: () => request("/v1/cold-chain/overview"),
+  // ─── SPRINT 7 PUBLIC QR & NOTIFICATION CENTER APIs ─────────────────────────
+  generateBatchQr: (batchId) =>
+    request(`/v1/batches/${batchId}/qr`, {
+      method: "POST",
+    }),
+  getPublicTraceV1: (code, headers = {}) =>
+    request(`/v1/public/trace/${encodeURIComponent(code)}`, { headers }),
+  verifyHashChain: (code) =>
+    request(`/v1/public/verify-chain/${encodeURIComponent(code)}`),
+  getNotificationHistory: (params = {}) => {
+    const query = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    const q = new URLSearchParams(query).toString();
+    return request(`/v1/notifications/history${q ? "?" + q : ""}`);
+  },
+  markAllNotificationsReadV1: () =>
+    request("/v1/notifications/read-all", {
+      method: "PUT",
+    }),
+  getCertifications: () => request("/v1/certifications"),
 };
