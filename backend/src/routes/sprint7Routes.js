@@ -26,8 +26,9 @@ router.post("/batches/:id/qr", authenticateToken, async (req, res) => {
     const hostHeader = req.get("host") || "localhost:5173";
     const protocol = req.protocol === "https" ? "https" : "http";
     const baseUrl = `${protocol}://${hostHeader}`;
+    const clientOrigin = req.body?.clientOrigin || null;
 
-    const qrResult = await generateBatchQr(batchId, { baseUrl });
+    const qrResult = await generateBatchQr(batchId, { baseUrl, clientOrigin });
     return res.status(200).json(qrResult);
   } catch (err) {
     return res.status(err.statusCode || 400).json({ message: err.message });

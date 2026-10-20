@@ -7,11 +7,12 @@ import crypto from "node:crypto";
 import { getDb } from "../db/database.js";
 import { transformToPublicTraceDTO } from "../dto/publicTraceDto.js";
 import { getOrSetCache, invalidatePublicTraceCache } from "./cacheService.js";
+import { getLocalNetworkIp } from "../utils/networkIp.js";
 
 /**
  * T-106 & T-107: Sinh mã QR và đường dẫn truy xuất ngắn gọn, công khai cho lô hàng
  */
-export async function generateBatchQr(batchId, { baseUrl = "http://localhost:5173" } = {}) {
+export async function generateBatchQr(batchId, { baseUrl = "http://localhost:5173", clientOrigin = null } = {}) {
   const db = getDb();
   const batch = db
     .prepare(
@@ -42,9 +43,30 @@ export async function generateBatchQr(batchId, { baseUrl = "http://localhost:517
     db.prepare("UPDATE batches SET public_code = ? WHERE id = ?").run(publicCode, batch.id);
   }
 
-  // Tạo URL truy xuất công khai chuẩn
-  const cleanBase = baseUrl.replace(/\/+$/, "");
-  const publicUrl = `${cleanBase}/p/${publicCode}`;
+  // Tạo URL truy xuất công khai chuẩn cho cả mạng nội bộ (LAN IP cho điện thoại) và localhost
+  const lanIp = getLocalNetworkIp();
+  const rawBase = (clientOrigin || baseUrl).replace(/\/+$/, "");
+
+  let localUrl;
+  let networkUrl;
+  try {
+    const parsed = new URL(rawBase);
+    const portPart = parsed.port ? `:${parsed.port}` : "";
+    localUrl = `${parsed.protocol}//localhost${portPart}/p/${publicCode}`;
+    networkUrl =
+      lanIp && lanIp !== "localhost"
+        ? `${parsed.protocol}//${lanIp}${portPart}/p/${publicCode}`
+        : localUrl;
+  } catch {
+    localUrl = `${rawBase}/p/${publicCode}`;
+    networkUrl =
+      lanIp && lanIp !== "localhost"
+        ? `http://${lanIp}:5173/p/${publicCode}`
+        : localUrl;
+  }
+
+  // Mặc định công khai dùng networkUrl để điện thoại quét QR qua Wi-Fi truy cập được ngay
+  const publicUrl = lanIp && lanIp !== "localhost" ? networkUrl : localUrl;
 
   // Sinh QR Code dưới cả dạng SVG và DataURL PNG chất lượng cao
   const qrSvg = await QRCode.toString(publicUrl, {
@@ -67,14 +89,28 @@ export async function generateBatchQr(batchId, { baseUrl = "http://localhost:517
     },
   });
 
+  const localQrDataUrl = await QRCode.toDataURL(localUrl, {
+    errorCorrectionLevel: "M",
+    margin: 2,
+    width: 600,
+    color: {
+      dark: "#0f172a",
+      light: "#ffffff",
+    },
+  });
+
   return {
     batchId: batch.id,
     batchCode: batch.batch_code,
     productName: batch.product_name,
     publicCode,
     publicUrl,
+    networkUrl,
+    localUrl,
+    lanIp,
     qrSvg,
     qrDataUrl,
+    localQrDataUrl,
     generatedAt: new Date().toISOString(),
   };
 }

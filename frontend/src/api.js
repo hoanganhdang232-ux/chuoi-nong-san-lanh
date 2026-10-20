@@ -1,6 +1,22 @@
-const API_URL =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:3001/api" : "/api");
+function getApiBaseUrl() {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== "undefined" && window.location) {
+    const { hostname, protocol, port } = window.location;
+    // Nếu frontend được phục vụ trực tiếp từ cổng backend (3001), dùng relative /api
+    if (port === "3001") {
+      return "/api";
+    }
+    // Nếu đang chạy dev (Vite port 5173 hoặc tương tự), kết nối tới backend port 3001 trên CÙNG địa chỉ IP/hostname
+    if (import.meta.env.DEV || port === "5173") {
+      return `${protocol}//${hostname}:3001/api`;
+    }
+  }
+  return "/api";
+}
+
+const API_URL = getApiBaseUrl();
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("agritrace_token");
@@ -279,6 +295,9 @@ export const api = {
   generateBatchQr: (batchId) =>
     request(`/v1/batches/${batchId}/qr`, {
       method: "POST",
+      body: JSON.stringify({
+        clientOrigin: typeof window !== "undefined" ? window.location.origin : null,
+      }),
     }),
   getPublicTraceV1: (code, headers = {}) =>
     request(`/v1/public/trace/${encodeURIComponent(code)}`, { headers }),
