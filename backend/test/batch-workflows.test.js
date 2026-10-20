@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 const { createApp } = await import("../src/app.js");
 const { getDb } = await import("../src/db/database.js");
 const { runMigrations } = await import("../src/db/migrations.js");
-const { seedDemoData } = await import("../src/db/seed.js");
+const { seedDemoData, cleanAllTables } = await import("../src/db/seed.js");
 const { createToken, findUserByEmail } =
   await import("../src/services/authService.js");
 const { sha256 } = await import("../src/utils/hash.js");
@@ -14,23 +14,7 @@ let baseUrl;
 const db = getDb();
 
 function resetDatabase() {
-  runMigrations();
-  db.exec(`
-    DROP TRIGGER IF EXISTS event_logs_prevent_update;
-    DROP TRIGGER IF EXISTS event_logs_prevent_delete;
-  `);
-  db.exec("PRAGMA foreign_keys = OFF;");
-  db.exec("DELETE FROM event_logs");
-  db.exec("DELETE FROM batch_transfers");
-  db.exec("DELETE FROM batch_relations");
-  db.exec("DELETE FROM batches");
-  db.exec("DELETE FROM products");
-  db.exec("DELETE FROM land_plots");
-  db.exec("DELETE FROM farms");
-  db.exec("DELETE FROM users");
-  db.exec("DELETE FROM organizations");
-  db.exec("DELETE FROM sqlite_sequence");
-  db.exec("PRAGMA foreign_keys = ON;");
+  cleanAllTables(db);
   runMigrations();
   seedDemoData();
 }

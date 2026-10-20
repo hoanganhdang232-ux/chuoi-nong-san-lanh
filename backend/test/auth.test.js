@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../src/app.js";
 import { getDb } from "../src/db/database.js";
-import { seedDemoData } from "../src/db/seed.js";
+import { seedDemoData, cleanAllTables } from "../src/db/seed.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { createToken, findUserByEmail } from "../src/services/authService.js";
 
@@ -11,21 +11,7 @@ let baseUrl;
 const db = getDb();
 
 test.before(async () => {
-  runMigrations();
-  db.exec(`
-    DROP TRIGGER IF EXISTS event_logs_prevent_update;
-    DROP TRIGGER IF EXISTS event_logs_prevent_delete;
-  `);
-  db.exec("PRAGMA foreign_keys = OFF;");
-  db.exec("DELETE FROM event_logs");
-  db.exec("DELETE FROM batches");
-  db.exec("DELETE FROM products");
-  db.exec("DELETE FROM land_plots");
-  db.exec("DELETE FROM farms");
-  db.exec("DELETE FROM users");
-  db.exec("DELETE FROM organizations");
-  db.exec("DELETE FROM sqlite_sequence");
-  db.exec("PRAGMA foreign_keys = ON;");
+  cleanAllTables(db);
   runMigrations();
   seedDemoData();
 

@@ -45,6 +45,37 @@ export function ensureDemoFarmerAccount() {
   );
 }
 
+export function cleanAllTables(db = getDb()) {
+  db.exec("PRAGMA foreign_keys = OFF;");
+  try {
+    const triggers = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+      .all();
+    for (const trigger of triggers) {
+      db.exec(`DROP TRIGGER IF EXISTS ${trigger.name}`);
+    }
+    const views = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'view'")
+      .all();
+    for (const view of views) {
+      db.exec(`DROP VIEW IF EXISTS ${view.name}`);
+    }
+    const tables = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+      )
+      .all();
+    for (const table of tables) {
+      db.exec(`DELETE FROM ${table.name}`);
+    }
+    db.exec("DELETE FROM sqlite_sequence;");
+  } catch (err) {
+    console.warn("Table cleanup warning:", err.message);
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON;");
+  }
+}
+
 export function seedDemoData() {
   const db = getDb();
 
@@ -350,6 +381,12 @@ export function seedDemoData() {
       },
     ];
     const storeIds = distributorStores.map((store) => {
+      const existing = db
+        .prepare("SELECT id FROM locations WHERE code = ?")
+        .get(store.code);
+      if (existing) {
+        return Number(existing.id);
+      }
       const res = db
         .prepare(
           "INSERT INTO locations(organization_id, code, name, address, phone, status) VALUES (?, ?, ?, ?, ?, ?)",
