@@ -9,9 +9,10 @@ import v1TransferRoutes from "./routes/v1TransferRoutes.js";
 import featureRoutes from "./routes/featureRoutes.js";
 import sprint4Routes from "./routes/sprint4Routes.js";
 import sprint5Routes from "./routes/sprint5Routes.js";
+import v1RecallRoutes from "./routes/v1RecallRoutes.js";
 import { auditLogMiddleware } from "./middleware/auditLog.js";
 import { runMigrations } from "./db/migrations.js";
-import { ensureDemoFarmerAccount } from "./db/seed.js";
+import { ensureDemoFarmerAccount, ensureDemoAdminAccount } from "./db/seed.js";
 import { processOverdueTransfers } from "./services/transferService.js";
 import { getDb } from "./db/database.js";
 
@@ -41,6 +42,7 @@ export function createApp() {
     }
   });
 
+  app.use("/api/v1", v1RecallRoutes);
   app.use("/api/v1", sprint5Routes);
   app.use("/api/v1", sprint4Routes);
   app.use("/api/auth", authRoutes);
@@ -67,6 +69,7 @@ export function createApp() {
 
   runMigrations();
   ensureDemoFarmerAccount();
+  ensureDemoAdminAccount();
   // Run once at startup and then hourly. The interval is intentionally
   // unref'd so it never prevents tests or a graceful server shutdown.
   processOverdueTransfers();

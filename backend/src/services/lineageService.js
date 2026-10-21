@@ -407,3 +407,160 @@ export function buildLineageGraph(batchId) {
     },
   };
 }
+
+/**
+ * SCRUM-170: Trace and list all descendant lots born from an incident lot (Forward Traceability)
+ * Traverses all tiers across organizations and detects merged lots.
+ */
+export function traceDownstreamDescendants(rootBatchId) {
+  const db = getDb();
+  const rootId = Number(rootBatchId);
+
+  const rootBatch = db.prepare("SELECT * FROM batches WHERE id = ?").get(rootId);
+  if (!rootBatch) return null;
+
+  // 1. Get all relations from batch_relations and batch_lineage
+  const allRelations = db
+    .prepare(
+      `SELECT parent_batch_id, child_batch_id, relation_type, quantity
+       FROM batch_relations
+       UNION
+       SELECT parent_batch_id, child_batch_id, 'split' AS relation_type, quantity_transferred AS quantity
+       FROM batch_lineage`,
+    )
+    .all();
+
+  const childrenOf = new Map();
+  const parentsOf = new Map();
+
+  for (const rel of allRelations) {
+    if (!childrenOf.has(rel.parent_batch_id)) {
+      childrenOf.set(rel.parent_batch_id, []);
+    }
+    const cList = childrenOf.get(rel.parent_batch_id);
+    if (!cList.includes(rel.child_batch_id)) {
+      cList.push(rel.child_batch_id);
+    }
+
+    if (!parentsOf.has(rel.child_batch_id)) {
+      parentsOf.set(rel.child_batch_id, []);
+    }
+    const pList = parentsOf.get(rel.child_batch_id);
+    if (!pList.includes(rel.parent_batch_id)) {
+      pList.push(rel.parent_batch_id);
+    }
+  }
+
+  // Also include candidate batches with parent_batch_id or source_batch_ids
+  const candidateBatches = db
+    .prepare("SELECT id, parent_batch_id, source_batch_ids FROM batches")
+    .all();
+
+  for (const b of candidateBatches) {
+    const parentIds = [b.parent_batch_id, ...parseBatchIds(b.source_batch_ids)].filter(Boolean);
+    for (const pid of parentIds) {
+      if (!childrenOf.has(pid)) {
+        childrenOf.set(pid, []);
+      }
+      const cList = childrenOf.get(pid);
+      if (!cList.includes(b.id)) {
+        cList.push(b.id);
+      }
+
+      if (!parentsOf.has(b.id)) {
+        parentsOf.set(b.id, []);
+      }
+      const pList = parentsOf.get(b.id);
+      if (!pList.includes(pid)) {
+        pList.push(pid);
+      }
+    }
+  }
+
+  // 2. BFS traversal starting from rootId, tracking depth_level
+  const visitedIds = new Set([rootId]);
+  const queue = [{ id: rootId, depth: 0 }];
+  const descendantMap = new Map();
+
+  while (queue.length > 0) {
+    const { id: currentId, depth } = queue.shift();
+    const children = childrenOf.get(currentId) || [];
+
+    for (const childId of children) {
+      if (!visitedIds.has(childId)) {
+        visitedIds.add(childId);
+        const childDepth = depth + 1;
+        descendantMap.set(childId, childDepth);
+        queue.push({ id: childId, depth: childDepth });
+      }
+    }
+  }
+
+  const descendantIds = Array.from(descendantMap.keys());
+  if (descendantIds.length === 0) {
+    return {
+      root_batch_id: rootId,
+      total_descendants: 0,
+      descendants: [],
+    };
+  }
+
+  // 3. Batch query descendant details joined with organization and location
+  const placeholders = descendantIds.map(() => "?").join(", ");
+  const rows = db
+    .prepare(
+      `SELECT
+        b.id,
+        b.batch_code,
+        b.organization_id,
+        o.name AS organization_name,
+        COALESCE(l.address, l.name, b.current_location, o.address, 'Chưa xác định') AS location_address,
+        b.remaining_quantity,
+        b.consumed_quantity,
+        b.status,
+        b.source_batch_ids
+       FROM batches b
+       LEFT JOIN organizations o ON o.id = b.organization_id
+       LEFT JOIN locations l ON l.id = b.location_id
+       WHERE b.id IN (${placeholders})
+       ORDER BY b.id ASC`,
+    )
+    .all(...descendantIds);
+
+  const rowMap = new Map(rows.map((r) => [r.id, r]));
+
+  // Keep BFS order
+  const descendants = [];
+  for (const childId of descendantIds) {
+    const b = rowMap.get(childId);
+    if (!b) continue;
+
+    const depthLevel = descendantMap.get(childId) || 1;
+    const directParents = parentsOf.get(childId) || [];
+    const sourceIds = parseBatchIds(b.source_batch_ids);
+    const allParentIds = Array.from(new Set([...directParents, ...sourceIds]));
+
+    const isMerged = allParentIds.length > 1;
+
+    descendants.push({
+      batch_id: b.id,
+      batch_code: b.batch_code,
+      organization_id: b.organization_id,
+      organization_name: b.organization_name || "",
+      location_address: b.location_address || "",
+      remaining_quantity: Number(b.remaining_quantity || 0),
+      consumed_quantity: Number(b.consumed_quantity || 0),
+      status: b.status,
+      depth_level: depthLevel,
+      is_merged: isMerged,
+      merged_source_batch_ids: isMerged ? allParentIds : directParents,
+      warning: isMerged ? "Cảnh báo: Lô gộp từ nhiều nguồn (nguy cơ lây nhiễm chéo cao)" : null,
+    });
+  }
+
+  return {
+    root_batch_id: rootId,
+    total_descendants: descendants.length,
+    descendants,
+  };
+}
