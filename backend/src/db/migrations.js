@@ -18,7 +18,7 @@ export function runMigrations() {
       name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('farm_admin','processor_admin','distributor_admin','auditor','consumer','user')),
+      role TEXT NOT NULL CHECK(role IN ('farm_admin','processor_admin','distributor_admin','auditor','consumer','user','system_admin')),
       is_active INTEGER NOT NULL DEFAULT 1,
       failed_login_count INTEGER NOT NULL DEFAULT 0,
       locked_until TEXT,
@@ -71,7 +71,7 @@ export function runMigrations() {
     CREATE TABLE IF NOT EXISTS locations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       organization_id INTEGER NOT NULL,
-      code TEXT NOT NULL UNIQUE,
+      code TEXT DEFAULT (lower(hex(randomblob(6)))),
       name TEXT NOT NULL,
       address TEXT,
       phone TEXT,
@@ -93,7 +93,7 @@ export function runMigrations() {
       remaining_quantity REAL NOT NULL,
       current_location TEXT,
       temperature_c REAL,
-      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE')),
+      status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE','QUARANTINED','quarantined','RECALLED','recalling','RECALLING')),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (product_id) REFERENCES products(id),
@@ -190,6 +190,19 @@ export function runMigrations() {
       FOREIGN KEY (triggered_by) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS recall_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'opened' CHECK(status IN ('opened', 'in_progress', 'completed', 'cancelled')),
+      created_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (batch_id) REFERENCES batches(id),
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_recall_orders_batch ON recall_orders(batch_id);
+
     CREATE TABLE IF NOT EXISTS recall_items (
       recall_id INTEGER NOT NULL,
       batch_id INTEGER NOT NULL,
@@ -198,7 +211,6 @@ export function runMigrations() {
       remaining_quantity REAL NOT NULL,
       consumed_quantity REAL NOT NULL,
       PRIMARY KEY (recall_id, batch_id),
-      FOREIGN KEY (recall_id) REFERENCES recall_cases(id),
       FOREIGN KEY (batch_id) REFERENCES batches(id),
       FOREIGN KEY (organization_id) REFERENCES organizations(id)
     );
@@ -249,7 +261,7 @@ export function runMigrations() {
       )
       .get()?.sql || "";
 
-  if (!usersTableSql.includes("'user'")) {
+  if (!usersTableSql.includes("'system_admin'")) {
     db.exec("PRAGMA foreign_keys = OFF;");
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -260,7 +272,7 @@ export function runMigrations() {
           name TEXT NOT NULL,
           email TEXT NOT NULL UNIQUE,
           password_hash TEXT NOT NULL,
-          role TEXT NOT NULL CHECK(role IN ('farm_admin','processor_admin','distributor_admin','auditor','consumer','user')),
+          role TEXT NOT NULL CHECK(role IN ('farm_admin','processor_admin','distributor_admin','auditor','consumer','user','system_admin')),
           is_active INTEGER NOT NULL DEFAULT 1,
           failed_login_count INTEGER NOT NULL DEFAULT 0,
           locked_until TEXT,
@@ -320,7 +332,7 @@ export function runMigrations() {
           location_id INTEGER,
           temperature_c REAL,
           cold_chain_alert INTEGER NOT NULL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE')),
+          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE','QUARANTINED','quarantined','RECALLED','recalling','RECALLING')),
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (product_id) REFERENCES products(id),
@@ -635,7 +647,7 @@ export function runMigrations() {
       )
       .get()?.sql || "";
 
-  if (!currentBatchSql.includes("'QUARANTINED'")) {
+  if (!currentBatchSql.includes("'recalling'")) {
     db.exec("PRAGMA foreign_keys = OFF;");
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -656,7 +668,7 @@ export function runMigrations() {
           location_id INTEGER,
           temperature_c REAL,
           cold_chain_alert INTEGER NOT NULL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE','QUARANTINED','quarantined','RECALLED')),
+          status TEXT NOT NULL DEFAULT 'registered' CHECK(status IN ('registered','pending_confirmation','processed','in_transit','delivered','recalled','consumed','CONSUMED','active','ACTIVE','QUARANTINED','quarantined','RECALLED','recalling','RECALLING')),
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (product_id) REFERENCES products(id),

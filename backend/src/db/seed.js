@@ -12,6 +12,7 @@ const demoPasswordHashes = {
   "Auditor@123": "$argon2id$v=19$m=65536,p=4,t=3$oAFvT3XFLCBgXq9QxkeGJw$diU1H93BU4CYGMc369UuYcIOt0E34cpiVdjlsTxtKn8",
   "Consumer@123": "$argon2id$v=19$m=65536,p=4,t=3$PQzhu2ZODU0fkiemFpPwsg$FcsDvw3CfspQEis8hUhRZrVK18sRwGt/jZ/5oKD+Y2s",
   "User@123": "$argon2id$v=19$m=65536,p=4,t=3$dSunGimagfcTR3FFOuQjLw$i/2k8eP5LpZzYvogN/rlCdfprmrAPuMY33j8ujRU3Uc",
+  "Admin@123": "$argon2id$v=19$m=65536,p=4,t=3$oAFvT3XFLCBgXq9QxkeGJw$diU1H93BU4CYGMc369UuYcIOt0E34cpiVdjlsTxtKn8",
 };
 
 const passwordHash = (password) =>
@@ -42,6 +43,29 @@ export function ensureDemoFarmerAccount() {
     "user@agritrace.demo",
     passwordHash("User@123"),
     "user",
+  );
+}
+
+export function ensureDemoAdminAccount() {
+  const db = getDb();
+  const existingAdmin = db
+    .prepare("SELECT id FROM users WHERE email = ?")
+    .get("admin@agritrace.demo");
+
+  if (existingAdmin) return;
+
+  const org = db.prepare("SELECT id FROM organizations ORDER BY id LIMIT 1").get();
+  if (!org) return;
+
+  db.prepare(
+    `INSERT INTO users(organization_id, name, email, password_hash, role)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(
+    org.id,
+    "System Admin",
+    "admin@agritrace.demo",
+    passwordHash("Admin@123"),
+    "system_admin",
   );
 }
 
@@ -113,6 +137,13 @@ export function seedDemoData() {
         email: "user@agritrace.demo",
         password: "User@123",
         role: "user",
+      },
+      {
+        organization_id: organizationIds.farm,
+        name: "Quản trị Hệ thống",
+        email: "admin@agritrace.demo",
+        password: "Admin@123",
+        role: "system_admin",
       },
     ];
 
@@ -350,6 +381,8 @@ export function seedDemoData() {
       },
     ];
     const storeIds = distributorStores.map((store) => {
+      const existing = db.prepare("SELECT id FROM locations WHERE code = ?").get(store.code);
+      if (existing) return Number(existing.id);
       const res = db
         .prepare(
           "INSERT INTO locations(organization_id, code, name, address, phone, status) VALUES (?, ?, ?, ?, ?, ?)",
