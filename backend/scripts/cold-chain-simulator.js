@@ -65,7 +65,20 @@ const API_BASE = values.url.replace(/\/api\/v1\/telemetry\/temperature$/, "");
 async function getTargetBatch() {
   if (values.batch) return values.batch;
   try {
-    const res = await fetch(`${API_BASE}/api/batches`);
+    let token = null;
+    const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "farm@agritrace.demo", password: "Farm@123" }),
+    });
+    if (loginRes.ok) {
+      const authData = await loginRes.json();
+      token = authData.token;
+    }
+
+    const res = await fetch(`${API_BASE}/api/batches`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     if (res.ok) {
       const batches = await res.json();
       if (Array.isArray(batches) && batches.length > 0) {

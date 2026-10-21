@@ -12,10 +12,9 @@ import {
   Boxes,
   Radio,
   Layers,
-  X,
   FileSpreadsheet,
 } from "lucide-react";
-import { api } from "../api.js";
+import { api, API_URL } from "../api.js";
 import { useToast } from "../context/ToastContext.jsx";
 import { scrollToElement } from "../utils/scrollHelper.js";
 import * as XLSX from "xlsx";
@@ -105,7 +104,7 @@ export default function RecallManagementView({ user, batches = [], onBatchUpdate
   useEffect(() => {
     let eventSource;
     try {
-      const streamUrl = "/api/v1/recalls/stream";
+      const streamUrl = `${API_URL}/v1/recalls/stream`;
       eventSource = new EventSource(streamUrl);
 
       eventSource.onopen = () => {

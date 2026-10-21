@@ -94,7 +94,7 @@ router.post("/harvest", requireRole("farm_admin"), (req, res) => {
   const harvestDate =
     typeof harvestedAt === "string" && harvestedAt.trim()
       ? new Date(harvestedAt)
-      : null;
+      : (harvestedAt ? new Date(NaN) : new Date());
 
   if (
     !["number", "string"].includes(typeof landPlotId) ||
@@ -476,6 +476,11 @@ router.post("/land-plots", requireRole("farm_admin"), (req, res) => {
       .status(404)
       .json({ message: "Không tìm thấy trang trại của tổ chức." });
 
+  const parseCoord = (c) =>
+    c !== undefined && c !== null && String(c).trim() !== "" && Number.isFinite(Number(c))
+      ? Number(c)
+      : null;
+
   const result = customCreatedAt
     ? getDb()
         .prepare(
@@ -485,8 +490,8 @@ router.post("/land-plots", requireRole("farm_admin"), (req, res) => {
           farm.id,
           String(name).trim(),
           area,
-          Number(latitude) || null,
-          Number(longitude) || null,
+          parseCoord(latitude),
+          parseCoord(longitude),
           customCreatedAt,
         )
     : getDb()
@@ -497,8 +502,8 @@ router.post("/land-plots", requireRole("farm_admin"), (req, res) => {
           farm.id,
           String(name).trim(),
           area,
-          Number(latitude) || null,
-          Number(longitude) || null,
+          parseCoord(latitude),
+          parseCoord(longitude),
         );
 
   res.status(201).json({
@@ -614,12 +619,17 @@ router.put("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
     .get(plotId, req.user.organization_id);
   if (!plot) return res.status(404).json({ message: "Không tìm thấy thửa đất." });
 
+  const parseCoord = (c) =>
+    c !== undefined && c !== null && String(c).trim() !== "" && Number.isFinite(Number(c))
+      ? Number(c)
+      : null;
+
   if (customCreatedAt) {
     db.prepare("UPDATE land_plots SET name = ?, area_ha = ?, latitude = ?, longitude = ?, created_at = ? WHERE id = ?").run(
       name,
       area,
-      Number(req.body?.latitude) || null,
-      Number(req.body?.longitude) || null,
+      parseCoord(req.body?.latitude),
+      parseCoord(req.body?.longitude),
       customCreatedAt,
       plotId,
     );
@@ -627,8 +637,8 @@ router.put("/land-plots/:id", requireRole("farm_admin"), (req, res) => {
     db.prepare("UPDATE land_plots SET name = ?, area_ha = ?, latitude = ?, longitude = ? WHERE id = ?").run(
       name,
       area,
-      Number(req.body?.latitude) || null,
-      Number(req.body?.longitude) || null,
+      parseCoord(req.body?.latitude),
+      parseCoord(req.body?.longitude),
       plotId,
     );
   }

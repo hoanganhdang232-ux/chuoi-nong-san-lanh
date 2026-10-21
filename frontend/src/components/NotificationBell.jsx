@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Bell, Siren, CheckCircle2, AlertTriangle, Info, Check, RefreshCw, LayoutList } from "lucide-react";
-import { api } from "../api.js";
+import { api, API_URL } from "../api.js";
 import { useToast } from "../context/ToastContext.jsx";
 import NotificationCenterDrawer from "./NotificationCenterDrawer.jsx";
 
@@ -39,7 +39,7 @@ export default function NotificationBell({ user }) {
   useEffect(() => {
     let eventSource;
     try {
-      const sseUrl = "/api/v1/recalls/stream";
+      const sseUrl = `${API_URL}/v1/recalls/stream`;
       eventSource = new EventSource(sseUrl);
 
       const handleIncomingEvent = (event) => {

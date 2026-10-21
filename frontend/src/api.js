@@ -16,7 +16,7 @@ function getApiBaseUrl() {
   return "/api";
 }
 
-const API_URL = getApiBaseUrl();
+export const API_URL = getApiBaseUrl();
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("agritrace_token");
@@ -145,7 +145,9 @@ export const api = {
     request(`/features/public/trace/${encodeURIComponent(batchCode)}`),
   // ─── SPRINT 4 APIs ────────────────────────────────────────────────────────
   getDescendants: (batchId) => request(`/v1/batches/${batchId}/descendants`),
+  getBatchDescendants: (batchId) => request(`/v1/batches/${batchId}/descendants`),
   getLineageGraph: (batchId) => request(`/v1/batches/${batchId}/lineage-graph`),
+  getBatchLineageGraph: (batchId) => request(`/v1/batches/${batchId}/lineage-graph`),
   consumeBatch: (batchId, payload = {}) =>
     request(`/v1/batches/${batchId}/consume`, {
       method: "POST",

@@ -1110,7 +1110,10 @@ export default function DashboardPage() {
     if (!confirmHarvestModal.data) return;
     setConfirmHarvestModal((prev) => ({ ...prev, submitting: true }));
     try {
-      const result = await api.createHarvest(harvestForm);
+      const result = await api.createHarvest({
+        ...harvestForm,
+        harvestedAt: harvestForm.harvestedAt ? new Date(harvestForm.harvestedAt).toISOString() : new Date().toISOString(),
+      });
       setHarvestForm({
         landPlotId: "",
         productId: "",
@@ -2570,7 +2573,7 @@ export default function DashboardPage() {
             </section>
           )}
 
-        {selectedView === "Chuỗi lạnh" && (
+        {(selectedView === "Chuỗi lạnh" || selectedView === "Tổ chức") && (
           <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <div className="flex items-center gap-3">
               <ArrowRightLeft className="text-emerald-600" size={22} />
@@ -2668,7 +2671,7 @@ export default function DashboardPage() {
         )}
 
         {/* Danh sách yêu cầu bàn giao */}
-        {transferRequests.length > 0 && (
+        {(transferRequests.length > 0 || selectedView === "Tổ chức") && (
           <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
               <div>

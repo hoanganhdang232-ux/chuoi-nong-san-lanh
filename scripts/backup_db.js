@@ -9,6 +9,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { DatabaseSync } from "node:sqlite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
@@ -36,7 +37,16 @@ export function performBackup({ customDbPath = DB_PATH, customBackupDir = BACKUP
     fs.mkdirSync(customBackupDir, { recursive: true });
   }
 
-  // 1. Sao chép snapshot an toàn
+  // 1. Sao chép snapshot an toàn: Đồng bộ WAL vào file .db trước khi đọc
+  if (customDbPath.endsWith(".db")) {
+    try {
+      const syncDb = new DatabaseSync(customDbPath);
+      syncDb.exec("PRAGMA wal_checkpoint(PASSIVE);");
+    } catch {
+      // Bỏ qua nếu CSDL đang mở hoặc môi trường không hỗ trợ
+    }
+  }
+
   // Đọc dữ liệu nhị phân của CSDL hiện tại
   const dbBuffer = fs.readFileSync(customDbPath);
   const rawSize = dbBuffer.length;

@@ -42,9 +42,11 @@ export default function LineageGraphView({
     setLoading(true);
     setError(null);
     try {
+      const fetchGraph = api.getBatchLineageGraph || api.getLineageGraph;
+      const fetchDesc = api.getBatchDescendants || api.getDescendants;
       const [graphRes, descRes] = await Promise.all([
-        api.getBatchLineageGraph(id),
-        api.getBatchDescendants(id),
+        fetchGraph(id),
+        fetchDesc(id),
       ]);
       setGraphData(graphRes);
       setDescendantsData(descRes);

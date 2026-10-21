@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
+import { ThemeProvider } from "./context/ThemeContext.jsx";
+import { ToastProvider } from "./context/ToastContext.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import PublicTracePage from "./pages/PublicTracePage.jsx";
@@ -41,9 +43,6 @@ function AppRoutes() {
     </Routes>
   );
 }
-
-import { ThemeProvider } from "./context/ThemeContext.jsx";
-import { ToastProvider } from "./context/ToastContext.jsx";
 
 export default function App() {
   return (

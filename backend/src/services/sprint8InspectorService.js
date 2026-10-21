@@ -150,24 +150,32 @@ export function getInspectorTrace(identifier) {
   // 4. Xác minh toán học tính toàn vẹn Hash Chain
   const hashProof = verifyHashChainProof(batch.public_code || batch.batch_code);
 
-  // 5. Cây phả hệ lô hàng (Genealogy)
+  // 5. Cây phả hệ lô hàng (Genealogy - kết hợp cả batch_lineage và batch_relations)
   const lineageParents = db
     .prepare(
-      `SELECT bl.parent_batch_id, bl.quantity_transferred, b2.batch_code, p2.name AS product_name
-       FROM batch_lineage bl
-       JOIN batches b2 ON b2.id = bl.parent_batch_id
+      `SELECT r.parent_batch_id, r.quantity_transferred, b2.batch_code, p2.name AS product_name
+       FROM (
+         SELECT parent_batch_id, child_batch_id, quantity_transferred FROM batch_lineage
+         UNION
+         SELECT parent_batch_id, child_batch_id, quantity AS quantity_transferred FROM batch_relations
+       ) r
+       JOIN batches b2 ON b2.id = r.parent_batch_id
        JOIN products p2 ON p2.id = b2.product_id
-       WHERE bl.child_batch_id = ?`,
+       WHERE r.child_batch_id = ?`,
     )
     .all(batch.id);
 
   const lineageChildren = db
     .prepare(
-      `SELECT bl.child_batch_id, bl.quantity_transferred, b2.batch_code, p2.name AS product_name
-       FROM batch_lineage bl
-       JOIN batches b2 ON b2.id = bl.child_batch_id
+      `SELECT r.child_batch_id, r.quantity_transferred, b2.batch_code, p2.name AS product_name
+       FROM (
+         SELECT parent_batch_id, child_batch_id, quantity_transferred FROM batch_lineage
+         UNION
+         SELECT parent_batch_id, child_batch_id, quantity AS quantity_transferred FROM batch_relations
+       ) r
+       JOIN batches b2 ON b2.id = r.child_batch_id
        JOIN products p2 ON p2.id = b2.product_id
-       WHERE bl.parent_batch_id = ?`,
+       WHERE r.parent_batch_id = ?`,
     )
     .all(batch.id);
 

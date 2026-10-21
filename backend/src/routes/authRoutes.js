@@ -16,83 +16,87 @@ import {
 const router = Router();
 
 router.post("/login", async (req, res) => {
-  const email = String(req.body?.email || "").trim();
-  const password = String(req.body?.password || "");
+  try {
+    const email = String(req.body?.email || "").trim();
+    const password = String(req.body?.password || "");
 
-  if (!email || !password) {
-    return res
-      .status(400)
-      .json({ message: "Vui lòng nhập email và mật khẩu." });
-  }
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ message: "Vui lòng nhập email và mật khẩu." });
+    }
 
-  const user = findUserByEmail(email);
-  if (!user) {
-    return res.status(401).json({ message: "Email hoặc mật khẩu không đúng." });
-  }
+    const user = findUserByEmail(email);
+    if (!user) {
+      return res.status(401).json({ message: "Email hoặc mật khẩu không đúng." });
+    }
 
-  const lockDeadline = user.locked_until
-    ? new Date(user.locked_until).getTime()
-    : null;
-  if (lockDeadline && lockDeadline > Date.now()) {
-    return res.status(423).json({
-      message: "Tài khoản đã bị khóa do đăng nhập sai nhiều lần.",
-      retryAfterMinutes: Math.max(
-        1,
-        Math.ceil((lockDeadline - Date.now()) / 60000),
-      ),
-    });
-  }
-
-  const isPasswordValid = await verifyPassword(password, user.password_hash);
-  if (!isPasswordValid) {
-    const failure = updateLoginFailure(user.id);
-    const info = getLoginFailureInfo({
-      ...user,
-      failed_login_count: failure.failed_login_count,
-      locked_until: failure.locked_until,
-    });
-    if (info.lockedUntil) {
+    const lockDeadline = user.locked_until
+      ? new Date(user.locked_until).getTime()
+      : null;
+    if (lockDeadline && lockDeadline > Date.now()) {
       return res.status(423).json({
         message: "Tài khoản đã bị khóa do đăng nhập sai nhiều lần.",
         retryAfterMinutes: Math.max(
           1,
-          Math.ceil(
-            (new Date(info.lockedUntil).getTime() - Date.now()) / 60000,
-          ),
+          Math.ceil((lockDeadline - Date.now()) / 60000),
         ),
       });
     }
-    return res.status(401).json({
-      message: `Email hoặc mật khẩu không đúng. Còn lại ${info.remainingAttempts} lần thử.`,
-      remainingAttempts: info.remainingAttempts,
+
+    const isPasswordValid = await verifyPassword(password, user.password_hash);
+    if (!isPasswordValid) {
+      const failure = updateLoginFailure(user.id);
+      const info = getLoginFailureInfo({
+        ...user,
+        failed_login_count: failure.failed_login_count,
+        locked_until: failure.locked_until,
+      });
+      if (info.lockedUntil) {
+        return res.status(423).json({
+          message: "Tài khoản đã bị khóa do đăng nhập sai nhiều lần.",
+          retryAfterMinutes: Math.max(
+            1,
+            Math.ceil(
+              (new Date(info.lockedUntil).getTime() - Date.now()) / 60000,
+            ),
+          ),
+        });
+      }
+      return res.status(401).json({
+        message: `Email hoặc mật khẩu không đúng. Còn lại ${info.remainingAttempts} lần thử.`,
+        remainingAttempts: info.remainingAttempts,
+      });
+    }
+
+    resetLoginFailure(user.id);
+
+    if (needsPasswordRehash(user.password_hash)) {
+      const upgradedHash = await hashPassword(password);
+      getDb()
+        .prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .run(upgradedHash, user.id);
+    }
+
+    const safeUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      organizationId: user.organization_id,
+      organizationName: user.organization_name,
+      organizationType: user.organization_type,
+    };
+
+    const token = createSessionToken(user);
+    return res.json({
+      token,
+      user: safeUser,
+      message: "Đăng nhập thành công.",
     });
+  } catch (err) {
+    return res.status(500).json({ message: "Lỗi xử lý đăng nhập hệ thống: " + (err.message || "Đã xảy ra lỗi.") });
   }
-
-  resetLoginFailure(user.id);
-
-  if (needsPasswordRehash(user.password_hash)) {
-    const upgradedHash = await hashPassword(password);
-    getDb()
-      .prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .run(upgradedHash, user.id);
-  }
-
-  const safeUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    organizationId: user.organization_id,
-    organizationName: user.organization_name,
-    organizationType: user.organization_type,
-  };
-
-  const token = createSessionToken(user);
-  return res.json({
-    token,
-    user: safeUser,
-    message: "Đăng nhập thành công.",
-  });
 });
 
 router.post("/logout", authenticateToken, (req, res) => {
